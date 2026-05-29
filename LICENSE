@@ -1,0 +1,127 @@
+Copyright (c) 2026 AGLedger LLC. All rights reserved.
+
+PROPRIETARY SOFTWARE LICENSE
+
+This software, together with its associated documentation files (the "Software"),
+is the proprietary property of AGLedger LLC ("Licensor"). The Software is
+licensed, not sold. Your right to use the Software is limited as set out below.
+
+BY DOWNLOADING, INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE (INCLUDING
+VIA `npm install`, `pip install`, OR ANY EQUIVALENT PACKAGE-MANAGER COMMAND),
+YOU AGREE TO THE TERMS OF THIS LICENSE. IF YOU DO NOT AGREE, DO NOT DOWNLOAD,
+INSTALL, OR USE THE SOFTWARE.
+
+1. GRANT OF USE
+
+Licensor grants you a limited, non-exclusive, non-transferable, revocable
+license to install and use the Software solely for the purpose of integrating
+with a self-hosted AGLedger deployment operated by you or your organization, or
+by a third party on your behalf with your authorization. The Software is not
+designed for, and is not licensed for use with, any AGLedger-hosted service.
+AGLedger operates the AGLedger software on a self-hosted model; there is no
+hosted AGLedger API.
+
+2. RESTRICTIONS
+
+You may not:
+
+(a) copy, modify, merge, publish, distribute, sublicense, sell, rent, lease,
+    or transfer copies of the Software, except as strictly required to use
+    the Software for its intended integration purpose;
+(b) offer the Software, or the functionality enabled by the Software, as a
+    hosted or managed service to third parties, whether as a standalone
+    offering or embedded within a larger service;
+(c) use the Software to build, train, or benchmark a product or service that
+    competes with AGLedger;
+(d) reverse engineer, decompile, or disassemble the Software, except to the
+    extent expressly permitted by applicable law that cannot be waived by
+    contract;
+(e) circumvent, disable, or tamper with any authentication, license, or usage-
+    enforcement mechanism of the Software or of any AGLedger deployment;
+(f) remove, alter, or obscure any copyright, trademark, patent, or other
+    proprietary notice in the Software;
+(g) use the Software in violation of U.S. Export Administration Regulations,
+    economic sanctions, or other applicable export and trade-control laws.
+
+3. OPEN SOURCE COMPONENTS
+
+The Software may include third-party open-source components, each subject to
+its own license terms. A list of such components and their licenses is included
+with or referenced from the Software. In the event of a conflict between this
+License and an open-source license, the open-source license governs solely with
+respect to that component.
+
+4. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS, IMPLIED, OR STATUTORY, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NONINFRINGEMENT. AGLEDGER LLC DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-
+FREE, SECURE, OR UNINTERRUPTED.
+
+5. LIMITATION OF LIABILITY
+
+The limitations in this Section 5 are a material inducement to AGLedger LLC to
+make the Software publicly available at no charge, and they apply notwithstanding
+any failure of essential purpose of any limited remedy and regardless of the
+theory of liability (contract, tort, strict liability, statute, or otherwise).
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL AGLEDGER
+LLC BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY,
+OR PUNITIVE DAMAGES, OR FOR LOSS OF PROFITS, REVENUE, DATA, USE, GOODWILL, OR
+BUSINESS OPPORTUNITY, ARISING FROM OR RELATED TO THE SOFTWARE, EVEN IF ADVISED
+OF THE POSSIBILITY OF SUCH DAMAGES. AGLEDGER LLC'S TOTAL AGGREGATE LIABILITY
+FOR ALL CLAIMS RELATED TO THE SOFTWARE SHALL NOT EXCEED ONE HUNDRED U.S.
+DOLLARS ($100.00). Any claim must be commenced within one (1) year after the
+cause of action accrues, to the maximum extent permitted by applicable law.
+
+6. EXPORT COMPLIANCE
+
+The Software may include cryptographic functionality (including Ed25519, AES-
+256-GCM, SHA-256, and X25519). AGLedger LLC classifies the Software under
+ECCN 5D002 in good faith. To the extent AGLedger LLC makes the source code of
+the Software publicly available through a public repository, that source code
+is subject to the treatment afforded under 15 CFR § 742.15(b) of the U.S.
+Export Administration Regulations. Binary and object-code distributions are
+subject to License Exception ENC under 15 CFR § 740.17, subject to the one-
+time notification and any required Encryption Registration to the U.S. Bureau
+of Industry and Security (BIS) and the NSA ENC Encryption Request Coordinator.
+This statement is not a warranty; you are responsible for independently
+confirming the correct classification and license authority for your use,
+destination, and end-user. You shall not export or re-export the Software to
+any destination, entity, or end-use prohibited by applicable export, sanctions,
+or trade-control laws.
+
+7. TRADEMARKS
+
+AGLedger, Agentic Ledger, Settlement Signal, and Agentic Operations and
+Accountability Protocol (AOAP) are trademarks of AGLedger LLC. All other
+trademarks are the property of their respective owners.
+
+8. PATENTS
+
+The Software is covered by one or more U.S. patent applications pending before
+the U.S. Patent and Trademark Office in AGLedger LLC's patent portfolio.
+
+9. RELATIONSHIP TO OTHER AGLEDGER AGREEMENTS
+
+If you are also a Licensee under an AGLedger Software License Agreement
+executed with an Order Form, that Software License Agreement governs your
+organization's use of the Licensed Software (including the Software distributed
+under this License) and supersedes this License to the extent of any conflict.
+Absent such an agreement, this License is the exclusive and entire license
+between you and AGLedger LLC for the Software.
+
+10. GOVERNING LAW
+
+This License is governed by the laws of the State of Idaho, without regard to
+its conflict-of-laws provisions. Any dispute arising out of or related to this
+License shall first be subject to good-faith negotiation for thirty (30) days,
+and then, at AGLedger LLC's option, to binding arbitration under the rules of
+the American Arbitration Association in Ada County, Idaho, or to the state or
+federal courts located in Ada County, Idaho. You consent to the personal
+jurisdiction and venue of those forums.
+
+11. CONTACT
+
+For licensing inquiries, contact: legal@agledger.ai

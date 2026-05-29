@@ -1,0 +1,51 @@
+{
+  "name": "@agledger/verify",
+  "version": "0.1.3",
+  "description": "Standalone offline verifier for a full AGLedger audit-vault + org-admin-reads NDJSON dump. Refactored onto @agledger/verify-core — no engine, database, or network dependency.",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "agledger-verify": "./bin/agledger-verify.mjs"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "prebuild": "rm -rf dist",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agledger/verify-core": "^0.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.0",
+    "cborg": "5.1.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agledger-ai/agledger-agents",
+    "directory": "packages/verify"
+  },
+  "homepage": "https://agledger.ai",
+  "author": "AGLedger LLC"
+}
