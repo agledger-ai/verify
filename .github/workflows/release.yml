@@ -10,7 +10,14 @@ on:
 
 permissions:
   contents: read
-  id-token: write # OIDC token for trusted publishing + provenance
+  id-token: write # OIDC: trusted publishing + npm provenance + SBOM attestation signing
+  attestations: write # store the signed CycloneDX SBOM attestation
+
+# Serialize releases on the same tag: two pushes in quick succession can't race
+# into a double-publish (the second would red-fail on "version already exists").
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -23,7 +30,7 @@ jobs:
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
-          package-manager-cache: false # never cache in a release build; caching breaks the OIDC handshake (npm trusted-publishing docs)
+          package-manager-cache: false # never cache in a release build (npm trusted-publishing docs)
 
       - name: Ensure npm supports trusted publishing
         run: npm install -g npm@latest # trusted publishing needs npm >= 11.5.1
@@ -52,11 +59,24 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: npx --yes @cyclonedx/cyclonedx-npm@4.2.1 --output-format JSON --output-file sbom.cdx.json
 
+      # Deterministic npm tarball — the SBOM-attestation subject. npm tarballs are
+      # reproducible, so this digest matches the artifact `npm publish` uploads
+      # below; we still publish from the directory so prepublishOnly gates run.
+      - name: Pack tarball (SBOM attestation subject)
+        id: pack
+        run: echo "tarball=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Attest CycloneDX SBOM (signed, verifiable)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: ${{ steps.pack.outputs.tarball }}
+          sbom-path: sbom.cdx.json
+
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-${{ github.ref_name }}
           path: sbom.cdx.json
 
-      - name: Publish to npm (provenance via trusted publishing)
-        run: npm publish
+      - name: Publish to npm (explicit provenance via trusted publishing)
+        run: npm publish --provenance
