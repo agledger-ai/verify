@@ -105,11 +105,23 @@ All timestamps are ISO-8601. Bigints are serialized as JS numbers.
 ## Conformance corpus
 
 The DUMP-kind vectors under `testdata/conformance/dump/` (manifest:
-`testdata/conformance/manifest-dump.json`) are the anti-drift seam shared with
-the independent Python verifier. They are **real engine output** — produced and
-owned by `agledger-api`, not generated here. Regenerate (on a wire-format
-change) from a checkout of `agledger-api` with a local Postgres up:
+`testdata/conformance/manifest-dump.json`) and the EXPORT-kind vectors under
+`testdata/conformance/export/` (manifest: `testdata/conformance/manifest-export.json`)
+are the anti-drift seam shared with the independent Python verifier. They are
+**real engine output** — produced and owned by `agledger-api`, not generated
+here; there is no local generate script in this repo.
+
+To refresh on a wire-format change, regenerate from a checkout of `agledger-api`
+(with a local Postgres up) using its corpus generator, then copy the output into
+this repo:
 
 ```bash
-pnpm generate:corpus   # writes export/ + dump/ + both manifests into this repo
+# in the agledger-api checkout
+npx tsx scripts/generate-conformance-corpus.ts
+
+# copy the regenerated corpus into this repo's testdata/conformance/
+#   - export/                (the EXPORT-kind vectors + key files)
+#   - dump/                  (the DUMP-kind vector directories)
+#   - manifest-export.json
+#   - manifest-dump.json
 ```
