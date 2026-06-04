@@ -30,14 +30,18 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo",
     "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint:pkg": "publint --strict && attw --pack . --ignore-rules cjs-resolves-to-esm no-resolution",
+    "prepublishOnly": "npm run build && npm run lint:pkg"
   },
   "dependencies": {
     "@agledger/verify-core": "^0.1.3"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.3",
     "@types/node": "^24.0.0",
     "cborg": "5.1.1",
+    "publint": "^0.3.21",
     "typescript": "^6.0.0",
     "vitest": "^4.1.0"
   },
