@@ -1,0 +1,182 @@
+{
+  "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
+  "formatVersion": "2.0",
+  "canonicalization": "RFC8949-CDE",
+  "generatedAt": "2026-06-02T15:46:23.649Z",
+  "provenance": {
+    "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
+    "apiGitSha": "54891bac",
+    "apiVersion": "0.26.5",
+    "formatVersion": "2.0"
+  },
+  "vectors": [
+    {
+      "file": "export/valid.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 3,
+        "unsigned": 0,
+        "skipped": 0
+      },
+      "note": "Clean 3-entry signed chain verified against out-of-band keys."
+    },
+    {
+      "file": "export/position-gap.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_POSITION_GAP",
+      "brokenAt": 3,
+      "note": "Entry 2 row chainPosition renumbered to 5 — monotonic position broken; after sort the gap surfaces at the position-3 entry."
+    },
+    {
+      "file": "export/genesis-invalid.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_GENESIS_INVALID",
+      "brokenAt": 1,
+      "note": "Genesis entry carries a non-null previousHash — chain head removed."
+    },
+    {
+      "file": "export/link-broken.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_LINK_BROKEN",
+      "brokenAt": 2,
+      "note": "Entry 2 previousHash no longer matches entry 1 payloadHash."
+    },
+    {
+      "file": "export/hash-mismatch.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_HASH_MISMATCH",
+      "brokenAt": 2,
+      "note": "Stored payloadHash on entry 2 != sha256(coseSign1)."
+    },
+    {
+      "file": "export/malformed-entry.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_MALFORMED_ENTRY",
+      "brokenAt": 2,
+      "note": "Entry 2 is missing the coseSign1 field."
+    },
+    {
+      "file": "export/cose-decode-failed.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_COSE_DECODE_FAILED",
+      "brokenAt": 2,
+      "note": "Entry 2 coseSign1 is non-COSE bytes (hash re-stamped so decode is what fails)."
+    },
+    {
+      "file": "export/cose-header-mismatch.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_COSE_HEADER_MISMATCH",
+      "brokenAt": 2,
+      "note": "Entry 2 has a valid signature but its signed -65537 chain claim (prevHash) disagrees with the chain — the visible columns were renumbered after signing."
+    },
+    {
+      "file": "export/signature-invalid.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_SIGNATURE_INVALID",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "Entry 2 signature byte flipped; envelope still decodes and the chain claim matches, so signature verification is what fails."
+    },
+    {
+      "file": "export/signature-missing-key.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_SIGNATURE_MISSING_KEY",
+      "brokenAt": 2,
+      "note": "Entry 2 references signingKeyId=ghost-key with no key embedded or out of band."
+    },
+    {
+      "file": "export/unsupported-version.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "UNSUPPORTED_FORMAT",
+      "brokenAt": 0,
+      "note": "exportFormatVersion 3.0 — precedes any chain walk."
+    },
+    {
+      "file": "export/unsupported-canonicalization.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "UNSUPPORTED_FORMAT",
+      "brokenAt": 0,
+      "note": "canonicalization JCS (not RFC8949-CDE) — precedes any chain walk."
+    },
+    {
+      "file": "export/empty.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_EMPTY",
+      "brokenAt": 0,
+      "note": "Zero entries — a chain with nothing to verify is never a silent pass."
+    },
+    {
+      "file": "export/valid.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_KEY_POLICY_VIOLATION",
+      "brokenAt": 1,
+      "options": {
+        "keysFile": "export/keys-oob.json",
+        "requireKeyId": "some-other-key"
+      },
+      "note": "Clean chain, but the caller requires a key id no entry uses — policy violation at the first entry."
+    },
+    {
+      "file": "export/key-substitution.json",
+      "kind": "export",
+      "expect": "pass",
+      "note": "Entry 2 re-signed with the attacker key (identical predicate, pure key swap) and embedded in signingPublicKeys. With no options it PASSES — documenting that embedded keys are trusted by default. The requireOutOfBandKeys vector below is the same fixture failing closed."
+    },
+    {
+      "file": "export/key-substitution.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_KEY_POLICY_VIOLATION",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob.json",
+        "requireOutOfBandKeys": true
+      },
+      "note": "Same pure-key-swap fixture under requireOutOfBandKeys: entry 2 attacker key is embedded-only, so it fails closed. The vault key is supplied out of band, so entries 1 and 3 pass; the policy break surfaces at position 2."
+    },
+    {
+      "file": "export/payload-binding-mismatch.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "Entry 2 denormalised payload rewritten while coseSign1 carries the original predicate — binding-integrity failure caught before any content evaluation."
+    },
+    {
+      "file": "export/unsigned.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 0,
+        "unsigned": 0,
+        "skipped": 3
+      },
+      "note": "Engine booted without a signing key: every row has signing_key_id=NULL and an all-zero signature slot. Chain integrity holds via hash links; the signature check is skipped (no key), never folded into a cryptographically-signed verdict."
+    }
+  ]
+}

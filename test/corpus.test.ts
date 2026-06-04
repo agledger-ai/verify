@@ -9,7 +9,7 @@ import { runCli } from '../src/cli.js';
 import type { Failure, FailureCode } from '../src/types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const CONFORMANCE = join(here, '..', '..', '..', 'testdata', 'conformance');
+const CONFORMANCE = join(here, '..', 'testdata', 'conformance');
 
 interface VectorSpec {
   file: string;

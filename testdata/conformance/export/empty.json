@@ -1,0 +1,62 @@
+{
+  "recordId": "a07d524d-18fe-4b96-a6e4-11ae08f48f8b",
+  "chainIntegrity": true,
+  "chainIntegrityReason": null,
+  "chainIntegrityDetail": null,
+  "signingPublicKey": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI=",
+  "signingPublicKeys": {
+    "15d63684b387235c": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI="
+  },
+  "signatureCoverage": {
+    "signed": 3,
+    "unsigned": 0,
+    "total": 3
+  },
+  "integrityLevel": "hash_chain_and_signatures",
+  "exportFormatVersion": "2.0",
+  "canonicalization": "RFC8949-CDE",
+  "verificationGuide": {
+    "summary": "Each entry carries a canonical COSE_Sign1 envelope (RFC 9052) over an in-toto v1 Statement payload. The chain links via sha256 of each envelope; when VAULT_SIGNING_KEY is configured, each envelope is Ed25519-signed and verifiable offline against the published verification keys. Verify the chain independently of this server before relying on it.",
+    "steps": [
+      "Read `integrityLevel` and `signatureCoverage`. `hash_chain_only` means no signatures — only the chain links are verifiable. `hash_chain_and_signatures` means every entry is signed.",
+      "For each entry: re-derive sha256 over `integrity.coseSign1` (base64-decode first) and confirm it equals `integrity.payloadHash`. Confirm `integrity.previousHash` equals the previous entry's `integrity.payloadHash` (or null at chainPosition=1).",
+      "For each signed entry: decode the COSE_Sign1 envelope, look up the signing key by `integrity.signingKeyId` in `signingPublicKeys`, and verify the Ed25519 signature over the canonical Sig_structure (`[\"Signature1\", protected, \"\", payload]`).",
+      "Re-build the predicate from the entry's `payload` jsonb using the same builder the writer used; deep-equal against the decoded predicate from `coseSign1`. Divergence indicates privileged-DBA tamper of the denormalized view (also surfaced as `chainIntegrityReason: payload_drift`).",
+      "Cross-check the chain length against `exportMetadata.expectedEntries` (the latest signed checkpoint position). A shorter chain means audit_vault was truncated out-of-band even though the visible chain is locally consistent."
+    ],
+    "embeddedKeysHint": "This export embeds the engine's active signing public key(s) at `signingPublicKeys` (keyId → base64). Convenient but trust-on-first-use: an attacker who replaces both the chain AND the embedded key gets a self-consistent forged export.",
+    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from /v1/verification-keys (or the cached /.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Pin the public keys at provisioning time; rotation events fire on the webhook channel.",
+    "offlineVerifier": "Turnkey offline verifier: `@agledger/verify` on npm (v0.1.0+). Drive `agledger-verify <dump-dir>` against a `pnpm vault:dump` output for full chain + signature + checkpoint cross-check with zero AGLedger code in the dependency tree. Pure node:crypto."
+  },
+  "exportMetadata": {
+    "recordId": "a07d524d-18fe-4b96-a6e4-11ae08f48f8b",
+    "orgId": "2d61b445-26c9-41a9-810d-1d25966c0f90",
+    "type": "test-generic-v1",
+    "operatingMode": "cleartext",
+    "exportDate": "2026-06-02T15:46:23.601Z",
+    "totalEntries": 0,
+    "expectedEntries": null,
+    "chainIntegrity": true,
+    "chainIntegrityReason": null,
+    "chainIntegrityDetail": null,
+    "signatureCoverage": {
+      "signed": 3,
+      "unsigned": 0,
+      "total": 3
+    },
+    "integrityLevel": "hash_chain_and_signatures",
+    "exportFormatVersion": "2.0",
+    "canonicalization": "RFC8949-CDE",
+    "signingPublicKey": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI=",
+    "signingPublicKeys": {
+      "15d63684b387235c": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI="
+    },
+    "signingKeyWindows": {
+      "15d63684b387235c": {
+        "activatedAt": "2026-06-02T15:45:30.443Z",
+        "retiredAt": null
+      }
+    }
+  },
+  "entries": []
+}
