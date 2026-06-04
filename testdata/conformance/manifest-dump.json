@@ -1,0 +1,76 @@
+{
+  "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of five NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
+  "formatVersion": "2.0",
+  "canonicalization": "RFC8949-CDE",
+  "generatedAt": "2026-06-02T15:46:23.739Z",
+  "provenance": {
+    "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
+    "apiGitSha": "54891bac",
+    "apiVersion": "0.26.5",
+    "formatVersion": "2.0"
+  },
+  "vectors": [
+    {
+      "file": "dump/valid",
+      "kind": "dump",
+      "expect": "pass",
+      "note": "Two record chains, an OIDC-attributed chain, a vault checkpoint, and two org-admin-reads leaves under a signed tree head. Verifies clean."
+    },
+    {
+      "file": "dump/chain-empty",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_EMPTY",
+      "note": "audit_vault truncated to zero rows. A verifier that reports clean on an empty vault is fail-open; this must surface CHAIN_EMPTY."
+    },
+    {
+      "file": "dump/checkpoint-row-missing",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_ROW_MISSING",
+      "note": "All audit_vault rows for the checkpointed record were deleted out of band; the surviving signed checkpoint proves the missing rows."
+    },
+    {
+      "file": "dump/checkpoint-hash-mismatch",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_HASH_MISMATCH",
+      "note": "The signed checkpoint payload_hash no longer matches the audit_vault row at its position — the chain diverged from what was checkpointed."
+    },
+    {
+      "file": "dump/chain-payload-binding-mismatch",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
+      "note": "The denormalised row.payload was rewritten while cose_sign1 still carries the original predicate — binding-integrity failure, not a content judgement."
+    },
+    {
+      "file": "dump/chain-oidc-actor-mismatch",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_OIDC_ACTOR_MISMATCH",
+      "note": "actor_oidc_synthesized=true but the denormalised actor_oidc_sub was rewritten away from predicate.on_behalf_of.oidc — DBA tamper on a synthesized row."
+    },
+    {
+      "file": "dump/chain-key-expired",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_KEY_EXPIRED",
+      "note": "The signing key was retired one hour before the first entry was written — a retired key produced this entry (the retired-key fail-open fix)."
+    },
+    {
+      "file": "dump/tenant-checkpoint-root-mismatch",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_CHECKPOINT_ROOT_MISMATCH",
+      "note": "The org_admin_reads signed tree head commits to a root that does not match the Merkle root recomputed over its leaves."
+    },
+    {
+      "file": "dump/tenant-checkpoint-fork",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_CHECKPOINT_FORK",
+      "note": "Two signed tree heads at the same tree_size carry different roots for the same org — engine fork or signing-key compromise."
+    }
+  ]
+}
