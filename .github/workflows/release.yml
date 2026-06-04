@@ -56,6 +56,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Package lint (publint + attw)
+        run: npm run lint:pkg
+
       - name: Generate CycloneDX SBOM
         run: npx --yes @cyclonedx/cyclonedx-npm@4.2.1 --output-format JSON --output-file sbom.cdx.json
 
@@ -67,10 +70,11 @@ jobs:
         run: echo "tarball=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Attest CycloneDX SBOM (signed, verifiable)
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0 (attest-sbom is deprecated)
         with:
           subject-path: ${{ steps.pack.outputs.tarball }}
-          sbom-path: sbom.cdx.json
+          predicate-type: 'https://cyclonedx.org/bom'
+          predicate-path: sbom.cdx.json
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
