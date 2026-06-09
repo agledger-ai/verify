@@ -21,6 +21,13 @@ designed for, and is not licensed for use with, any AGLedger-hosted service.
 AGLedger operates the AGLedger software on a self-hosted model; there is no
 hosted AGLedger API.
 
+AGLedger LLC operates no service in your data path. AGLedger LLC does not
+receive, access, inspect, or judge the records, completions, or deliverable
+content you process through your self-hosted deployment, and does not use any
+such data to train, fine-tune, evaluate, or benchmark any machine-learning or
+artificial-intelligence model, or to develop any product or service. AGLedger
+LLC receives no usage data or other data from your self-hosted deployment.
+
 2. RESTRICTIONS
 
 You may not:
@@ -83,10 +90,11 @@ ECCN 5D002 in good faith. To the extent AGLedger LLC makes the source code of
 the Software publicly available through a public repository, that source code
 is subject to the treatment afforded under 15 CFR § 742.15(b) of the U.S.
 Export Administration Regulations. Binary and object-code distributions are
-subject to License Exception ENC under 15 CFR § 740.17, subject to the one-
-time notification and any required Encryption Registration to the U.S. Bureau
-of Industry and Security (BIS) and the NSA ENC Encryption Request Coordinator.
-This statement is not a warranty; you are responsible for independently
+subject to License Exception ENC under 15 CFR § 740.17(b)(1) as self-classified
+mass-market encryption items, for which AGLedger LLC submits the annual self-
+classification report to the U.S. Bureau of Industry and Security (BIS) under
+15 CFR § 740.17(e)(3). This statement is not a warranty; you are responsible
+for independently
 confirming the correct classification and license authority for your use,
 destination, and end-user. You shall not export or re-export the Software to
 any destination, entity, or end-use prohibited by applicable export, sanctions,
@@ -94,9 +102,9 @@ or trade-control laws.
 
 7. TRADEMARKS
 
-AGLedger, Agentic Ledger, Settlement Signal, and Agentic Operations and
-Accountability Protocol (AOAP) are trademarks of AGLedger LLC. All other
-trademarks are the property of their respective owners.
+AGLedger is a trademark of AGLedger LLC, and Settlement Signal is a pending
+trademark of AGLedger LLC. All other trademarks are the property of their
+respective owners.
 
 8. PATENTS
 
