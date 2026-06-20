@@ -1,0 +1,26 @@
+name: Workflow security (zizmor)
+
+# Static analysis of our own GitHub Actions workflows — catches credential
+# persistence, excessive permissions, template injection, and cache poisoning
+# in the CI/release pipeline (the OIDC publish path is the crown-jewel risk).
+# Findings surface in the Security tab as SARIF.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
