@@ -4,9 +4,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_FILENAMES } from '../src/loader.js';
-import { formatDumpReportText, parseArgs, runCli } from '../src/cli.js';
+import { formatDumpReportText, formatExportReportText, parseArgs, runCli } from '../src/cli.js';
 import { verifyDump } from '../src/dump-verifier.js';
+import type { VerifyExportResult } from '@agledger/verify-core';
 import { buildHappyDump, cloneDump } from './fixtures.js';
+
+/** Minimal clean export result; tests override only the field under test. */
+function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExportResult {
+  return {
+    valid: true,
+    totalEntries: 10,
+    verifiedEntries: 10,
+    entries: [],
+    recordId: 'rec-1',
+    signatureCoverage: { signed: 10, unsigned: 0, skipped: 0, total: 10 },
+    optionalChecks: { payload_binding: 'applied', oidc_actor: 'applied', key_temporal: 'applied' },
+    keyProvenance: { outOfBand: 10, embedded: 0 },
+    unsignedProjectionFields: [],
+    ...overrides,
+  };
+}
 
 describe('parseArgs', () => {
   it('captures target and defaults to text report format', () => {
@@ -58,6 +75,25 @@ describe('formatDumpReportText', () => {
     const text = formatDumpReportText(verifyDump(tampered));
     expect(text).toMatch(/^\[FAIL\]/);
     expect(text).toContain('CHAIN_HASH_MISMATCH');
+  });
+});
+
+describe('formatExportReportText — unsigned-projection note (api#769)', () => {
+  it('warns that a PASS does not vouch for unsigned display projections', () => {
+    const text = formatExportReportText(
+      exportResult({ unsignedProjectionFields: ['actorDisplayName', 'actorOwnerType', 'humanReadableLabel'] }),
+    );
+    expect(text).toMatch(/^\[PASS\]/);
+    expect(text).toContain('note');
+    expect(text).toContain('actorDisplayName');
+    expect(text).toContain('NOT signature-covered');
+    expect(text).toContain('actorOwnerId'); // points at the signed identity
+  });
+
+  it('emits no note when the export carries no unsigned-projection guidance', () => {
+    const text = formatExportReportText(exportResult({ unsignedProjectionFields: [] }));
+    expect(text).not.toContain('note');
+    expect(text).not.toContain('NOT signature-covered');
   });
 });
 

@@ -4,6 +4,16 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-06-22
+
+### Added
+
+- **Unsigned-projection warning on the audit-export verdict** (cross-repo #96 / api#769). A green `[PASS]` over a `/v1/records/{id}/audit-export` dump no longer silently vouches for spoofable display labels. When the export self-describes unsigned projection fields (`verificationGuide.unsignedFields`), the verdict now prints a non-fatal `note:` naming them and stating that attribution is the signed `actorOwnerId`/`actorId` UUID, not these labels. The `--report-format json` output carries the machine-readable `unsignedProjectionFields` array. No change to chain verification or exit codes.
+
+### Changed
+
+- Bumped `@agledger/verify-core` to `^1.0.1` (provides `unsignedProjectionFields`).
+
 ## [1.0.0] - 2026-06-20
 
 ### Changed

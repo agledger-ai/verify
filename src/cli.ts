@@ -123,6 +123,13 @@ export function formatExportReportText(result: VerifyExportResult): string {
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
   }
+  // api#769: a PASS must not be read as vouching for unsigned display projections
+  // (e.g. actorDisplayName). Signed attribution is the actorOwnerId/actorId UUID.
+  if (result.unsignedProjectionFields.length > 0) {
+    lines.push(
+      `  note              : ${result.unsignedProjectionFields.length} unsigned display projection field(s) (${result.unsignedProjectionFields.join(', ')}) are NOT signature-covered — attribution is the signed actorOwnerId/actorId UUID, not these labels.`,
+    );
+  }
   return lines.join('\n');
 }
 
