@@ -133,3 +133,44 @@ describe('offline verifier makes no network access', () => {
     ).toHaveLength(0);
   });
 });
+
+describe('bounded em-dash density in shipped markdown', () => {
+  // Heavy em-dash usage reads as machine-generated. Cap the density in every
+  // shipped Markdown doc so prose stays at a natural human level.
+  const MAX_EM_DASHES = 4;
+
+  function collectMarkdown(dir: string): string[] {
+    const results: string[] = [];
+    for (const entry of readdirSync(dir)) {
+      if (
+        entry === 'node_modules' ||
+        entry === 'dist' ||
+        entry === 'build' ||
+        entry === '.git'
+      ) {
+        continue;
+      }
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        results.push(...collectMarkdown(full));
+      } else if (extname(full) === '.md' && entry !== 'CHANGELOG.md') {
+        results.push(full);
+      }
+    }
+    return results;
+  }
+
+  it(`has at most ${MAX_EM_DASHES} em-dashes (U+2014) per file`, () => {
+    const violations: string[] = [];
+    for (const file of collectMarkdown(ROOT)) {
+      const count = (readFileSync(file, 'utf8').match(/—/g) ?? []).length;
+      if (count > MAX_EM_DASHES) {
+        violations.push(`${relPath(file)}  ${count} em-dashes (max ${MAX_EM_DASHES})`);
+      }
+    }
+    expect(
+      violations,
+      `Markdown files exceeding the em-dash cap:\n${violations.join('\n')}`,
+    ).toHaveLength(0);
+  });
+});
