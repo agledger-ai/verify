@@ -108,7 +108,7 @@ The DUMP-kind vectors under `testdata/conformance/dump/` (manifest:
 `testdata/conformance/manifest-dump.json`) and the EXPORT-kind vectors under
 `testdata/conformance/export/` (manifest: `testdata/conformance/manifest-export.json`)
 are the anti-drift seam shared with the independent Python verifier. They are
-**real engine output** — produced and owned by `agledger-api`, not generated
+**real engine output**, produced and owned by `agledger-api`, not generated
 here; there is no local generate script in this repo.
 
 To refresh on a wire-format change, regenerate from a checkout of `agledger-api`
