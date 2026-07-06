@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_FILENAMES } from '../src/loader.js';
 import { formatDumpReportText, formatExportReportText, parseArgs, runCli } from '../src/cli.js';
@@ -26,8 +27,15 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
 }
 
 describe('parseArgs', () => {
+  const parsedDefaults = { keys: null, requireKeyId: null, requireOutOfBandKeys: false };
+
   it('captures target and defaults to text report format', () => {
-    expect(parseArgs(['/tmp/dump'])).toEqual({ target: '/tmp/dump', reportFormat: 'text', showHelp: false });
+    expect(parseArgs(['/tmp/dump'])).toEqual({
+      target: '/tmp/dump',
+      reportFormat: 'text',
+      showHelp: false,
+      ...parsedDefaults,
+    });
   });
 
   it('accepts --report-format json', () => {
@@ -35,6 +43,7 @@ describe('parseArgs', () => {
       target: '/tmp/dump',
       reportFormat: 'json',
       showHelp: false,
+      ...parsedDefaults,
     });
   });
 
@@ -43,6 +52,7 @@ describe('parseArgs', () => {
       target: '/tmp/dump',
       reportFormat: 'json',
       showHelp: false,
+      ...parsedDefaults,
     });
   });
 
@@ -56,6 +66,24 @@ describe('parseArgs', () => {
 
   it('rejects an unknown report format', () => {
     expect(() => parseArgs(['/tmp/dump', '--report-format', 'yaml'])).toThrow(/--report-format must be/);
+  });
+
+  it('captures the key-policy flags (verify#8)', () => {
+    expect(
+      parseArgs(['export.json', '--keys', 'keys.json', '--require-key-id=abc', '--require-out-of-band-keys']),
+    ).toEqual({
+      target: 'export.json',
+      reportFormat: 'text',
+      showHelp: false,
+      keys: 'keys.json',
+      requireKeyId: 'abc',
+      requireOutOfBandKeys: true,
+    });
+  });
+
+  it('rejects --keys without a value', () => {
+    expect(() => parseArgs(['export.json', '--keys'])).toThrow(/--keys requires a value/);
+    expect(() => parseArgs(['export.json', '--keys', '--require-out-of-band-keys'])).toThrow(/--keys requires a value/);
   });
 });
 
@@ -170,3 +198,72 @@ describe('runCli (dump-dir end-to-end)', () => {
     expect(parsed.orgAdminReads.failures.length).toBeGreaterThan(0);
   });
 });
+
+describe('runCli key-policy flags (verify#8, conformance corpus)', () => {
+  const CONFORMANCE = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance');
+  const keySub = join(CONFORMANCE, 'export', 'key-substitution.json');
+  const validExport = join(CONFORMANCE, 'export', 'valid.json');
+  const oobKeys = join(CONFORMANCE, 'export', 'keys-oob.json');
+
+  it('embedded-keys-only PASS carries the not-independent warning', () => {
+    const result = runCli([keySub]);
+    expect(result.exitCode).toBe(0); // documented default: embedded keys are trusted
+    expect(result.stdout).toContain('out-of-band=0');
+    expect(result.stdout).toContain('WARNING');
+    expect(result.stdout).toContain('not independence');
+  });
+
+  it('--keys + --require-out-of-band-keys fails the key-substitution fixture closed', () => {
+    const result = runCli([keySub, '--keys', oobKeys, '--require-out-of-band-keys']);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain('CHAIN_KEY_POLICY_VIOLATION');
+    expect(result.stdout).toContain('broken at pos 2');
+  });
+
+  it('--keys with a clean export passes without the warning', () => {
+    const result = runCli([validExport, '--keys', oobKeys, '--require-out-of-band-keys']);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain('WARNING');
+  });
+
+  it('--require-key-id rejects a chain signed by another key', () => {
+    const result = runCli([validExport, '--keys', oobKeys, '--require-key-id', 'some-other-key']);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain('CHAIN_KEY_POLICY_VIOLATION');
+  });
+
+  it('unwraps the raw /v1/verification-keys envelope shape', () => {
+    const map = JSON.parse(readFileSync(oobKeys, 'utf-8')) as Record<string, string>;
+    const envelope = {
+      data: Object.entries(map).map(([keyId, publicKey]) => ({ keyId, publicKey })),
+      canonicalization: 'RFC8949-CDE',
+    };
+    const envPath = join(tmpdir(), `agledger-verify-envelope-${process.pid}.json`);
+    writeFileSync(envPath, JSON.stringify(envelope));
+    try {
+      const result = runCli([validExport, '--keys', envPath, '--require-out-of-band-keys']);
+      expect(result.exitCode).toBe(0);
+    } finally {
+      rmSync(envPath, { force: true });
+    }
+  });
+
+  it('rejects a malformed --keys file with a usage error, not a stack trace', () => {
+    const badPath = join(tmpdir(), `agledger-verify-badkeys-${process.pid}.json`);
+    writeFileSync(badPath, JSON.stringify([null]));
+    try {
+      const result = runCli([validExport, '--keys', badPath]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('--keys file must be');
+    } finally {
+      rmSync(badPath, { force: true });
+    }
+  });
+
+  it('rejects key-policy flags on a dump directory', () => {
+    const result = runCli([CONFORMANCE, '--keys', oobKeys]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('/audit-export files only');
+  });
+});
+

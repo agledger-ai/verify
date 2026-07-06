@@ -25,7 +25,8 @@ the dump.
 ## CLI
 
 ```bash
-agledger-verify <target> [--report-format text|json]
+agledger-verify <target> [--report-format text|json] [--keys <file>]
+                [--require-key-id <id>] [--require-out-of-band-keys]
 ```
 
 `<target>` is auto-detected:
@@ -38,6 +39,31 @@ agledger-verify <target> [--report-format text|json]
 
 Exits `0` on a fully verified target, nonzero on any verification failure or
 input error. `--report-format json` emits a single JSON object (not NDJSON).
+
+### Independent verification of an export
+
+Without `--keys`, an `/audit-export` file is verified against the signing keys
+carried **inside that same export**. That proves internal consistency, not
+independence: an attacker who fully re-signs a chain with their own key and
+embeds it also passes, and the text report says so
+(`key provenance: out-of-band=0` plus an explicit warning line). For the
+independent audit this README's "Why" section describes, fetch the keys
+separately and require them:
+
+```bash
+# Save the engine's verification keys through a channel you trust
+# (the raw response envelope is accepted as-is; .data is unwrapped).
+curl -s https://ledger.example.com/v1/verification-keys > keys.json
+
+agledger-verify export.json --keys keys.json --require-out-of-band-keys
+```
+
+`--keys` accepts a `{keyId: SPKI-DER-base64}` map, a
+`[{keyId, publicKey, ...}]` list, or the raw `GET /v1/verification-keys`
+response envelope. `--require-key-id <id>` additionally rejects an
+otherwise-valid export signed by a retired or unexpected key. The key-policy
+flags apply to `/audit-export` files only; a dump directory carries its own
+signed key history (`vault_signing_keys.ndjson`) and rejects them.
 
 ## Library
 

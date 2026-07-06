@@ -11,7 +11,12 @@
  * `--report-format json` emits a single JSON object (not NDJSON).
  */
 import { readFileSync, statSync } from 'node:fs';
-import { verifyAuditExport, type RecordAuditExportInput, type VerifyExportResult } from '@agledger/verify-core';
+import {
+  verifyAuditExport,
+  type OutOfBandKeyEntry,
+  type RecordAuditExportInput,
+  type VerifyExportResult,
+} from '@agledger/verify-core';
 import { loadDump } from './loader.js';
 import { verifyDump } from './dump-verifier.js';
 import type { VerifyReport } from './types.js';
@@ -20,10 +25,26 @@ export interface ParsedArgs {
   target: string | null;
   reportFormat: 'text' | 'json';
   showHelp: boolean;
+  keys: string | null;
+  requireKeyId: string | null;
+  requireOutOfBandKeys: boolean;
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
-  const out: ParsedArgs = { target: null, reportFormat: 'text', showHelp: false };
+  const out: ParsedArgs = {
+    target: null,
+    reportFormat: 'text',
+    showHelp: false,
+    keys: null,
+    requireKeyId: null,
+    requireOutOfBandKeys: false,
+  };
+  const takeValue = (flag: string, next: string | undefined): string => {
+    if (next === undefined || next.startsWith('-')) {
+      throw new Error(`${flag} requires a value (got ${next ?? 'nothing'})`);
+    }
+    return next;
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;
@@ -42,6 +63,20 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         throw new Error(`--report-format must be "json" or "text" (got ${value})`);
       }
       out.reportFormat = value;
+    } else if (arg === '--keys' || arg === '-k') {
+      out.keys = takeValue('--keys', argv[i + 1]);
+      i++;
+    } else if (arg.startsWith('--keys=')) {
+      out.keys = arg.slice('--keys='.length);
+      if (!out.keys) throw new Error('--keys requires a value');
+    } else if (arg === '--require-key-id') {
+      out.requireKeyId = takeValue('--require-key-id', argv[i + 1]);
+      i++;
+    } else if (arg.startsWith('--require-key-id=')) {
+      out.requireKeyId = arg.slice('--require-key-id='.length);
+      if (!out.requireKeyId) throw new Error('--require-key-id requires a value');
+    } else if (arg === '--require-out-of-band-keys') {
+      out.requireOutOfBandKeys = true;
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown flag: ${arg}`);
     } else if (!out.target) {
@@ -56,7 +91,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 export const HELP_TEXT = `agledger-verify — offline verifier for AGLedger audit chains
 
 Usage:
-  agledger-verify <target> [--report-format text|json]
+  agledger-verify <target> [--report-format text|json] [--keys <file>]
+                  [--require-key-id <id>] [--require-out-of-band-keys]
 
 <target> is auto-detected:
   - a directory: a full-vault NDJSON dump (audit_vault.ndjson + the four
@@ -65,8 +101,32 @@ Usage:
     entries) verified with the per-record export verifier.
 
 Options:
-  --report-format, -f   Output format. Default: text.
-  --help, -h            Show this help.
+  --report-format, -f         Output format. Default: text.
+  --keys, -k                  Path to a JSON file holding out-of-band public
+                              keys, for an /audit-export file. Accepts a
+                              {keyId: SPKI-DER-base64} map, a
+                              [{keyId, publicKey, ...}] list, or the raw
+                              GET /v1/verification-keys response envelope
+                              (the .data array is unwrapped automatically).
+                              Merged over any keys embedded in the export.
+  --require-key-id            Require every entry to reference this keyId.
+                              Rejects otherwise-valid exports signed by a
+                              retired or unexpected key.
+  --require-out-of-band-keys  High-assurance: refuse keys embedded in the
+                              export. Verifying an export against its own
+                              embedded keys is not an independent audit;
+                              supply keys via --keys instead.
+  --help, -h                  Show this help.
+
+Without --keys, an /audit-export file is verified against the signing keys
+carried INSIDE that same export (the report notes this as key provenance
+out-of-band=0). That proves internal consistency, not independence: an
+attacker who re-signs the chain with their own embedded key still passes.
+For an independent audit, fetch the keys separately (e.g. save
+GET /v1/verification-keys) and pass --keys with --require-out-of-band-keys.
+
+The key-policy flags apply to /audit-export files only; a dump directory
+carries its own signed key history and rejects these flags.
 
 A dump directory must contain:
   audit_vault.ndjson
@@ -120,6 +180,15 @@ export function formatExportReportText(result: VerifyExportResult): string {
   lines.push(
     `  key provenance    : out-of-band=${result.keyProvenance.outOfBand} embedded=${result.keyProvenance.embedded}`,
   );
+  // verify#8: a PASS earned only against keys the export itself carries is not
+  // an independent verification — a full re-sign + key-swap would also pass.
+  // Say so next to the headline instead of leaving it encoded in the
+  // provenance counters.
+  if (result.valid && result.keyProvenance.outOfBand === 0 && result.keyProvenance.embedded > 0) {
+    lines.push(
+      '  WARNING           : verified only against keys embedded in the export itself. This proves internal consistency, not independence; supply --keys (and --require-out-of-band-keys) with keys obtained out of band.',
+    );
+  }
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
   }
@@ -170,8 +239,19 @@ export function runCli(argv: readonly string[]): CliResult {
     return { exitCode: 1, stdout: '', stderr: `Missing <target>.\n\n${HELP_TEXT}` };
   }
 
+  const hasKeyPolicyFlags =
+    parsed.keys !== null || parsed.requireKeyId !== null || parsed.requireOutOfBandKeys;
+
   // Directory -> full-vault dump.
   if (isDirectory(parsed.target)) {
+    if (hasKeyPolicyFlags) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr:
+          '--keys / --require-key-id / --require-out-of-band-keys apply to /audit-export files only; a dump directory carries its own signed key history (vault_signing_keys.ndjson).\n',
+      };
+    }
     let report: VerifyReport;
     try {
       report = verifyDump(loadDump(parsed.target));
@@ -206,10 +286,67 @@ export function runCli(argv: readonly string[]): CliResult {
     };
   }
 
-  const result = verifyAuditExport(parsedJson);
+  let publicKeys: Record<string, string> | ReadonlyArray<OutOfBandKeyEntry> | undefined;
+  if (parsed.keys !== null) {
+    let rawKeys: string;
+    try {
+      rawKeys = readFileSync(parsed.keys, 'utf-8');
+    } catch (err) {
+      return { exitCode: 1, stdout: '', stderr: `${(err as Error).message}\n` };
+    }
+    let parsedKeys: unknown;
+    try {
+      parsedKeys = JSON.parse(rawKeys);
+    } catch (err) {
+      return { exitCode: 1, stdout: '', stderr: `Invalid JSON in ${parsed.keys}: ${(err as Error).message}\n` };
+    }
+    publicKeys = unwrapKeys(parsedKeys);
+  }
+
+  // verify-core throws TypeError at the out-of-band-key boundary when the
+  // file's shape is wrong (e.g. {keyId: 42}, [null]). Surface that as a CLI
+  // usage error rather than an uncaught stack trace.
+  let result: VerifyExportResult;
+  try {
+    result = verifyAuditExport(parsedJson, {
+      publicKeys,
+      requireKeyId: parsed.requireKeyId ?? undefined,
+      requireOutOfBandKeys: parsed.requireOutOfBandKeys,
+    });
+  } catch (err) {
+    if (err instanceof TypeError) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `${err.message}\nThe --keys file must be a {keyId: SPKI-DER-base64} map or a list of {keyId, publicKey, ...} entries (the .data list from /v1/verification-keys).\n`,
+      };
+    }
+    throw err;
+  }
   const stdout =
     parsed.reportFormat === 'json'
       ? JSON.stringify(result, null, 2) + '\n'
       : formatExportReportText(result) + '\n';
   return { exitCode: result.valid ? 0 : 1, stdout, stderr: '' };
+}
+
+/**
+ * Accept the raw `GET /v1/verification-keys` response shape. That endpoint
+ * returns an envelope `{ data: [{ keyId, publicKey, ... }], ... }`, not the
+ * bare array its consumers expect — unwrap `.data` so a file saved straight
+ * from the endpoint verifies without hand-editing (same behavior as
+ * `agledger verify --keys`, F-732). A bare `[{keyId, publicKey}]` list or a
+ * `{keyId: base64}` map passes through untouched; verify-core then validates
+ * the shape and throws on anything else.
+ */
+function unwrapKeys(raw: unknown): Record<string, string> | ReadonlyArray<OutOfBandKeyEntry> {
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    Array.isArray((raw as { data?: unknown }).data)
+  ) {
+    return (raw as { data: ReadonlyArray<OutOfBandKeyEntry> }).data;
+  }
+  return raw as Record<string, string> | ReadonlyArray<OutOfBandKeyEntry>;
 }
