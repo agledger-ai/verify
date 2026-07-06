@@ -40,7 +40,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.3",
     "@types/node": "^24.0.0",
-    "cborg": "5.1.1",
+    "cborg": "5.1.4",
     "publint": "^0.3.21",
     "typescript": "^6.0.0",
     "vitest": "^4.1.0"
