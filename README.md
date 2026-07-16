@@ -5,7 +5,7 @@ per-record `audit_vault` hash chain, the vault checkpoints, and the
 `org_admin_reads` Merkle log, all read from a static NDJSON dump. No engine, no
 database, no network.
 
-Built on [`@agledger/verify-core`](../verify-core): the per-record (and per-org
+Built on [`@agledger/verify-core`](https://www.npmjs.com/package/@agledger/verify-core): the per-record (and per-org
 schema-event) hash-chain walk is the same body of logic the SDK `/verify`
 subpath, the CLI, and the MCP server all run. This package adds the
 dump-structural passes the core does not model (checkpoint cross-check, the
@@ -17,8 +17,8 @@ The engine signs every state transition with Ed25519. A customer's auditor
 needs an independent verifier that does not trust the engine. If the engine
 were compromised, an in-engine "everything is fine" report would be worth
 nothing. This package is that escape hatch: it lives outside the engine and
-checks a dump the operator produces with the engine's `vault:dump` exporter
-(`scripts/dump-vault.ts` in agledger-api). For a fully independent audit, supply
+checks a dump the operator produces with the engine's `vault:dump` exporter.
+For a fully independent audit, supply
 the vault verification keys out of band rather than trusting any keys carried in
 the dump.
 
@@ -134,20 +134,5 @@ The DUMP-kind vectors under `testdata/conformance/dump/` (manifest:
 `testdata/conformance/manifest-dump.json`) and the EXPORT-kind vectors under
 `testdata/conformance/export/` (manifest: `testdata/conformance/manifest-export.json`)
 are the anti-drift seam shared with the independent Python verifier. They are
-**real engine output**, produced and owned by `agledger-api`, not generated
-here; there is no local generate script in this repo.
-
-To refresh on a wire-format change, regenerate from a checkout of `agledger-api`
-(with a local Postgres up) using its corpus generator, then copy the output into
-this repo:
-
-```bash
-# in the agledger-api checkout
-npx tsx scripts/generate-conformance-corpus.ts
-
-# copy the regenerated corpus into this repo's testdata/conformance/
-#   - export/                (the EXPORT-kind vectors + key files)
-#   - dump/                  (the DUMP-kind vector directories)
-#   - manifest-export.json
-#   - manifest-dump.json
-```
+**real engine output**, not synthesized here, so the two verifiers are held to
+the same wire format and agree verdict-for-verdict.
