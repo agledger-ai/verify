@@ -4,6 +4,19 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-07-16
+
+Docs and tooling. No verification or wire-format change.
+
+### Fixed
+
+- README and package links no longer send readers into the private `agledger-api` repo (cross-repo #99); they point at the public source repo instead. Removed the refactoring-history note from the npm package description.
+
+### Changed
+
+- Refreshed the lockfile to in-range latest (`@agledger/verify-core` 1.0.2, plus dev tooling).
+- Upgraded the TypeScript devDependency to `^7.0.2`. Build, typecheck, tests, and publint/attw all pass under 7.0.2.
+
 ## [1.1.0] - 2026-07-06
 
 Closes cross-repo verify#8: the CLI could not perform the out-of-band-keyed verification the README prescribes, so a key-substituted export (full re-sign with an attacker key embedded in the document) returned `[PASS]`.
