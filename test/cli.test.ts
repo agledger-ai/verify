@@ -5,7 +5,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_FILENAMES } from '../src/loader.js';
-import { formatDumpReportText, formatExportReportText, parseArgs, runCli } from '../src/cli.js';
+import {
+  EXIT_CANNOT_VERIFY,
+  formatDumpReportText,
+  formatExportReportText,
+  parseArgs,
+  runCli,
+} from '../src/cli.js';
 import { verifyDump } from '../src/dump-verifier.js';
 import type { VerifyExportResult } from '@agledger/verify-core';
 import { buildHappyDump, cloneDump } from './fixtures.js';
@@ -158,9 +164,9 @@ describe('runCli (dump-dir end-to-end)', () => {
     expect(result.stdout).toContain('Usage:');
   });
 
-  it('exits 1 with a usage message when target is missing', () => {
+  it('exits 2 (could not verify) with a usage message when target is missing', () => {
     const result = runCli([]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(EXIT_CANNOT_VERIFY);
     expect(result.stderr).toContain('Missing <target>');
   });
 
@@ -253,7 +259,7 @@ describe('runCli key-policy flags (verify#8, conformance corpus)', () => {
     writeFileSync(badPath, JSON.stringify([null]));
     try {
       const result = runCli([validExport, '--keys', badPath]);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(EXIT_CANNOT_VERIFY);
       expect(result.stderr).toContain('--keys file must be');
     } finally {
       rmSync(badPath, { force: true });
@@ -262,7 +268,7 @@ describe('runCli key-policy flags (verify#8, conformance corpus)', () => {
 
   it('rejects key-policy flags on a dump directory', () => {
     const result = runCli([CONFORMANCE, '--keys', oobKeys]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(EXIT_CANNOT_VERIFY);
     expect(result.stderr).toContain('/audit-export files only');
   });
 });

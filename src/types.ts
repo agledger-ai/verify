@@ -153,11 +153,21 @@ export interface Failure {
   signingKeyId?: string;
 }
 
+/**
+ * `failures` is CAPPED at MAX_REPORTED_FAILURES; `failureCount` is the true
+ * total. A systemic problem on a large vault (a mishandled key rotation, a
+ * truncated table) produces one failure per entry, and a 545k-row vault would
+ * otherwise emit hundreds of megabytes of identical lines. Test the verdict
+ * with `failureCount`, not `failures.length`.
+ */
 export interface VaultChainsReport {
   recordCount: number;
   entryCount: number;
   checkpointCount: number;
+  /** Capped sample, oldest first. See MAX_REPORTED_FAILURES. */
   failures: Failure[];
+  /** Total failures found, including any beyond the cap. */
+  failureCount: number;
 }
 
 export interface TenantAdminReadsReport {
@@ -165,7 +175,10 @@ export interface TenantAdminReadsReport {
   leafCount: number;
   checkpointCount: number;
   witnessCosignedCheckpoints: Array<{ checkpointId: string; witnessKeyId: string }>;
+  /** Capped sample, oldest first. See MAX_REPORTED_FAILURES. */
   failures: Failure[];
+  /** Total failures found, including any beyond the cap. */
+  failureCount: number;
 }
 
 export interface VerifyReport {

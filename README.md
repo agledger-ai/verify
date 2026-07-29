@@ -32,13 +32,36 @@ agledger-verify <target> [--report-format text|json] [--keys <file>]
 `<target>` is auto-detected:
 
 - a **directory** is treated as a full-vault NDJSON dump and verified with the
-  dump verifier (`loadDump` + `verifyDump`).
+  streaming dump verifier (`verifyDumpStreaming`).
 - a **file** is parsed as JSON; if it carries `exportMetadata` + `entries` it is
   a single `/audit-export` document and verified with the per-record export
   verifier (`verifyAuditExport` from `@agledger/verify-core`).
 
-Exits `0` on a fully verified target, nonzero on any verification failure or
-input error. `--report-format json` emits a single JSON object (not NDJSON).
+`--report-format json` emits a single JSON object (not NDJSON), including for
+input errors, so a machine consumer always gets something parseable.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Verified. No failures. |
+| `1` | Verification FAILED. The chain or log does not hold up. |
+| `2` | Could NOT verify. The input was missing, unreadable, or malformed; no verdict was reached. |
+
+`1` and `2` mean opposite things, so treat only `1` as evidence of tampering.
+An audit gate wired to "nonzero means the chain is broken" will otherwise raise
+a tamper alarm over a mistyped path.
+
+### Vault size
+
+`audit_vault.ndjson` is streamed and verified one chain at a time, so a dump is
+bounded by disk rather than by memory. Peak memory is the largest single chain,
+not the vault. There is no size ceiling to work around.
+
+Failure lists are capped at `MAX_REPORTED_FAILURES` entries per section, with
+the true total in `failureCount` and a `... and N more not shown` line in the
+text report. A systemic problem on a large vault produces one failure per
+entry, and burying the finding under a million identical lines helps nobody.
 
 ### Independent verification of an export
 
@@ -68,15 +91,19 @@ signed key history (`vault_signing_keys.ndjson`) and rejects them.
 ## Library
 
 ```ts
-import { loadDump, verifyDump } from '@agledger/verify';
+import { verifyDumpStreaming } from '@agledger/verify';
 
-const dump = loadDump('/path/to/dump');
-const report = verifyDump(dump);
+const report = verifyDumpStreaming('/path/to/dump');
 if (!report.ok) {
   console.error(JSON.stringify(report, null, 2));
   process.exit(1);
 }
 ```
+
+`verifyDumpStreaming` is the one to reach for: it streams `audit_vault.ndjson`
+instead of materializing it. `loadDump` + `verifyDump` still exist and produce
+the same report, but they hold every row, so keep them for dumps small enough
+to fit in heap.
 
 The shared core's per-record export path and the low-level primitives
 (`verifyAuditExport`, `verifyChain`, `merkleRoot`, `verifyCoseSign1`, …) are

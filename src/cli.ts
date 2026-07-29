@@ -7,8 +7,20 @@
  *   - a file       -> parse JSON; if it carries `exportMetadata` it is a single
  *                     `/audit-export` document -> verifyAuditExport (verify-core)
  *
- * Exit 0 on pass, nonzero on any failure or input error. Text by default;
- * `--report-format json` emits a single JSON object (not NDJSON).
+ * Exit codes distinguish the two ways this can end badly, because they mean
+ * opposite things to an audit gate (verify#14):
+ *
+ *   0  verified, no failures
+ *   1  VERIFICATION FAILED, the chain or log does not hold up
+ *   2  COULD NOT VERIFY, the input could not be read or parsed at all
+ *
+ * Collapsing those into a single nonzero code is what made an oversized vault
+ * look like a tamper alarm. A gate wired to "nonzero means the chain is broken"
+ * must be able to tell "the evidence is bad" from "I never saw the evidence".
+ *
+ * Text by default; `--report-format json` emits a single JSON object (not
+ * NDJSON), including for input errors, so a machine consumer always gets
+ * parseable output.
  */
 import { readFileSync, statSync } from 'node:fs';
 import {
@@ -17,9 +29,24 @@ import {
   type RecordAuditExportInput,
   type VerifyExportResult,
 } from '@agledger/verify-core';
-import { loadDump } from './loader.js';
-import { verifyDump } from './dump-verifier.js';
-import type { VerifyReport } from './types.js';
+import { DumpReadError } from './loader.js';
+import { verifyDumpStreaming } from './verify-dir.js';
+import type { Failure, VerifyReport } from './types.js';
+
+/** Verified, no failures. */
+export const EXIT_OK = 0;
+/** The target was read and verified, and it does not hold up. */
+export const EXIT_VERIFICATION_FAILED = 1;
+/** The target could not be read, parsed, or addressed at all. No verdict was
+ *  reached, which is NOT the same as a failed verdict. */
+export const EXIT_CANNOT_VERIFY = 2;
+
+/** Machine-readable shape emitted under `--report-format json` when no verdict
+ *  could be reached. Distinguishable from a VerifyReport by the `error` key. */
+export interface CannotVerifyReport {
+  ok: false;
+  error: { kind: 'input'; message: string };
+}
 
 export interface ParsedArgs {
   target: string | null;
@@ -135,8 +162,29 @@ A dump directory must contain:
   org_admin_reads.ndjson
   org_admin_reads_checkpoints.ndjson
 
-Exits 0 on a fully verified target, nonzero on any verification failure or input error.
+audit_vault.ndjson is streamed, so vault size is bounded by disk, not memory.
+
+Exit codes:
+  0  verified, no failures
+  1  verification FAILED (the chain or log does not hold up)
+  2  could NOT verify (input missing, unreadable, or malformed; no verdict)
+
+Codes 1 and 2 mean opposite things. Treat only 1 as evidence of tampering.
 `;
+
+/**
+ * List a report section's failures, noting how many were withheld. A systemic
+ * problem on a large vault produces one failure per entry, so printing them all
+ * buries the finding under megabytes of the same line.
+ */
+function failureLines(failures: readonly Failure[], failureCount: number, indent: string): string[] {
+  const lines = failures.map((f) => `${indent}[${f.code}] ${f.message}`);
+  const withheld = failureCount - failures.length;
+  if (withheld > 0) {
+    lines.push(`${indent}... and ${withheld} more not shown (${failureCount} total)`);
+  }
+  return lines;
+}
 
 export function formatDumpReportText(report: VerifyReport): string {
   const lines: string[] = [];
@@ -147,10 +195,8 @@ export function formatDumpReportText(report: VerifyReport): string {
   lines.push(`  records     : ${report.vault.recordCount}`);
   lines.push(`  entries     : ${report.vault.entryCount}`);
   lines.push(`  checkpoints : ${report.vault.checkpointCount}`);
-  lines.push(`  failures    : ${report.vault.failures.length}`);
-  for (const f of report.vault.failures) {
-    lines.push(`    [${f.code}] ${f.message}`);
-  }
+  lines.push(`  failures    : ${report.vault.failureCount}`);
+  lines.push(...failureLines(report.vault.failures, report.vault.failureCount, '    '));
   lines.push('');
   lines.push('org_admin_reads chain');
   lines.push(`  orgs             : ${report.orgAdminReads.orgCount}`);
@@ -160,10 +206,10 @@ export function formatDumpReportText(report: VerifyReport): string {
   for (const w of report.orgAdminReads.witnessCosignedCheckpoints) {
     lines.push(`    checkpoint=${w.checkpointId} witnessKeyId=${w.witnessKeyId} (signature recorded, not verified)`);
   }
-  lines.push(`  failures         : ${report.orgAdminReads.failures.length}`);
-  for (const f of report.orgAdminReads.failures) {
-    lines.push(`    [${f.code}] ${f.message}`);
-  }
+  lines.push(`  failures         : ${report.orgAdminReads.failureCount}`);
+  lines.push(
+    ...failureLines(report.orgAdminReads.failures, report.orgAdminReads.failureCount, '    '),
+  );
   return lines.join('\n');
 }
 
@@ -225,18 +271,37 @@ function looksLikeAuditExport(value: unknown): value is RecordAuditExportInput {
   );
 }
 
+/**
+ * Report "no verdict was reached" in whichever format the caller asked for.
+ * Under `--report-format json` the message still has to arrive as JSON: a
+ * machine consumer that gets a bare line of prose cannot tell an unreadable
+ * dump from a broken chain, which is the whole point of exit code 2.
+ */
+function cannotVerify(message: string, format: ParsedArgs['reportFormat']): CliResult {
+  if (format === 'json') {
+    const body: CannotVerifyReport = { ok: false, error: { kind: 'input', message } };
+    return { exitCode: EXIT_CANNOT_VERIFY, stdout: JSON.stringify(body, null, 2) + '\n', stderr: '' };
+  }
+  return { exitCode: EXIT_CANNOT_VERIFY, stdout: '', stderr: `${message}\n` };
+}
+
 export function runCli(argv: readonly string[]): CliResult {
   let parsed: ParsedArgs;
   try {
     parsed = parseArgs(argv);
   } catch (err) {
-    return { exitCode: 1, stdout: '', stderr: `${(err as Error).message}\n\n${HELP_TEXT}` };
+    // Format is not known yet, so usage errors stay plain text.
+    return {
+      exitCode: EXIT_CANNOT_VERIFY,
+      stdout: '',
+      stderr: `${(err as Error).message}\n\n${HELP_TEXT}`,
+    };
   }
   if (parsed.showHelp) {
-    return { exitCode: 0, stdout: HELP_TEXT, stderr: '' };
+    return { exitCode: EXIT_OK, stdout: HELP_TEXT, stderr: '' };
   }
   if (!parsed.target) {
-    return { exitCode: 1, stdout: '', stderr: `Missing <target>.\n\n${HELP_TEXT}` };
+    return { exitCode: EXIT_CANNOT_VERIFY, stdout: '', stderr: `Missing <target>.\n\n${HELP_TEXT}` };
   }
 
   const hasKeyPolicyFlags =
@@ -245,24 +310,31 @@ export function runCli(argv: readonly string[]): CliResult {
   // Directory -> full-vault dump.
   if (isDirectory(parsed.target)) {
     if (hasKeyPolicyFlags) {
-      return {
-        exitCode: 1,
-        stdout: '',
-        stderr:
-          '--keys / --require-key-id / --require-out-of-band-keys apply to /audit-export files only; a dump directory carries its own signed key history (vault_signing_keys.ndjson).\n',
-      };
+      return cannotVerify(
+        '--keys / --require-key-id / --require-out-of-band-keys apply to /audit-export files only; a dump directory carries its own signed key history (vault_signing_keys.ndjson).',
+        parsed.reportFormat,
+      );
     }
     let report: VerifyReport;
     try {
-      report = verifyDump(loadDump(parsed.target));
+      // Streamed, so a multi-GB audit_vault.ndjson is bounded by disk rather
+      // than by Node's max string length (verify#14).
+      report = verifyDumpStreaming(parsed.target);
     } catch (err) {
-      return { exitCode: 1, stdout: '', stderr: `${(err as Error).message}\n` };
+      if (err instanceof DumpReadError) {
+        return cannotVerify(err.message, parsed.reportFormat);
+      }
+      throw err;
     }
     const stdout =
       parsed.reportFormat === 'json'
         ? JSON.stringify(report, null, 2) + '\n'
         : formatDumpReportText(report) + '\n';
-    return { exitCode: report.ok ? 0 : 1, stdout, stderr: '' };
+    return {
+      exitCode: report.ok ? EXIT_OK : EXIT_VERIFICATION_FAILED,
+      stdout,
+      stderr: '',
+    };
   }
 
   // File -> parse JSON, branch on exportMetadata.
@@ -270,17 +342,20 @@ export function runCli(argv: readonly string[]): CliResult {
   try {
     raw = readFileSync(parsed.target, 'utf-8');
   } catch (err) {
-    return { exitCode: 1, stdout: '', stderr: `${(err as Error).message}\n` };
+    return cannotVerify((err as Error).message, parsed.reportFormat);
   }
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(raw);
   } catch (err) {
-    return { exitCode: 1, stdout: '', stderr: `Invalid JSON in ${parsed.target}: ${(err as Error).message}\n` };
+    return cannotVerify(
+      `Invalid JSON in ${parsed.target}: ${(err as Error).message}`,
+      parsed.reportFormat,
+    );
   }
   if (!looksLikeAuditExport(parsedJson)) {
     return {
-      exitCode: 1,
+      exitCode: EXIT_CANNOT_VERIFY,
       stdout: '',
       stderr: `${parsed.target} is neither a dump directory nor an /audit-export JSON document (expected exportMetadata + entries).\n\n${HELP_TEXT}`,
     };
@@ -292,13 +367,16 @@ export function runCli(argv: readonly string[]): CliResult {
     try {
       rawKeys = readFileSync(parsed.keys, 'utf-8');
     } catch (err) {
-      return { exitCode: 1, stdout: '', stderr: `${(err as Error).message}\n` };
+      return cannotVerify((err as Error).message, parsed.reportFormat);
     }
     let parsedKeys: unknown;
     try {
       parsedKeys = JSON.parse(rawKeys);
     } catch (err) {
-      return { exitCode: 1, stdout: '', stderr: `Invalid JSON in ${parsed.keys}: ${(err as Error).message}\n` };
+      return cannotVerify(
+        `Invalid JSON in ${parsed.keys}: ${(err as Error).message}`,
+        parsed.reportFormat,
+      );
     }
     publicKeys = unwrapKeys(parsedKeys);
   }
@@ -315,11 +393,10 @@ export function runCli(argv: readonly string[]): CliResult {
     });
   } catch (err) {
     if (err instanceof TypeError) {
-      return {
-        exitCode: 1,
-        stdout: '',
-        stderr: `${err.message}\nThe --keys file must be a {keyId: SPKI-DER-base64} map or a list of {keyId, publicKey, ...} entries (the .data list from /v1/verification-keys).\n`,
-      };
+      return cannotVerify(
+        `${err.message}\nThe --keys file must be a {keyId: SPKI-DER-base64} map or a list of {keyId, publicKey, ...} entries (the .data list from /v1/verification-keys).`,
+        parsed.reportFormat,
+      );
     }
     throw err;
   }
@@ -327,7 +404,11 @@ export function runCli(argv: readonly string[]): CliResult {
     parsed.reportFormat === 'json'
       ? JSON.stringify(result, null, 2) + '\n'
       : formatExportReportText(result) + '\n';
-  return { exitCode: result.valid ? 0 : 1, stdout, stderr: '' };
+  return {
+    exitCode: result.valid ? EXIT_OK : EXIT_VERIFICATION_FAILED,
+    stdout,
+    stderr: '',
+  };
 }
 
 /**

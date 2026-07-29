@@ -49,6 +49,24 @@ import type {
   VerifyReport,
 } from './types.js';
 
+/**
+ * Upper bound on failures carried in a report. A systemic problem on a large
+ * vault yields one failure per entry, so an uncapped list is both a multi-GB
+ * allocation and an unreadable report. The sink keeps the first
+ * MAX_REPORTED_FAILURES as a sample and counts every one.
+ */
+export const MAX_REPORTED_FAILURES = 1000;
+
+class FailureSink {
+  readonly listed: Failure[] = [];
+  count = 0;
+
+  push(failure: Failure): void {
+    this.count++;
+    if (this.listed.length < MAX_REPORTED_FAILURES) this.listed.push(failure);
+  }
+}
+
 function buildVaultKeyRegistry(keys: readonly SigningKeyDump[]): KeyRegistry {
   const verificationKeys: VerificationKey[] = keys.map((k) => ({
     keyId: k.key_id,
@@ -69,8 +87,7 @@ function indexKeys(keys: readonly SigningKeyDump[]): Map<string, SigningKeyDump>
 }
 
 /**
- * Group entries by their chain identity + sort by chain_position. Two chain
- * shapes exist in `audit_vault`:
+ * The chain identity of one vault row. Two chain shapes exist in `audit_vault`:
  *   - **Per-record** (record_id NOT NULL): the normal lifecycle chain for one
  *     record. Group key = record_id.
  *   - **Per-enterprise schema-event** (record_id IS NULL): SCHEMA_REGISTERED /
@@ -81,22 +98,13 @@ function indexKeys(keys: readonly SigningKeyDump[]): Map<string, SigningKeyDump>
  * column carrying the canonical group identity. Legacy fallback for pre-v0.23.2
  * dumps reconstructs it from record_id + payload.orgId.
  */
-function groupByChain(entries: readonly VaultEntryDump[]): Map<string, VaultEntryDump[]> {
-  const byChain = new Map<string, VaultEntryDump[]>();
-  for (const e of entries) {
-    const key =
-      e.chain_key ??
-      (e.record_id !== null
-        ? e.record_id
-        : `schema:${(e.payload?.['orgId'] as string | undefined) ?? '__platform__'}`);
-    const list = byChain.get(key);
-    if (list) list.push(e);
-    else byChain.set(key, [e]);
-  }
-  for (const list of byChain.values()) {
-    list.sort((a, b) => a.chain_position - b.chain_position);
-  }
-  return byChain;
+function chainKeyOf(e: VaultEntryDump): string {
+  return (
+    e.chain_key ??
+    (e.record_id !== null
+      ? e.record_id
+      : `schema:${(e.payload?.['orgId'] as string | undefined) ?? '__platform__'}`)
+  );
 }
 
 /** Adapt a dump vault row into the verify-core normalized entry shape, carrying
@@ -125,7 +133,7 @@ function toNormalizedEntry(scopeId: string, e: VaultEntryDump): NormalizedEntry 
 
 /** Translate a verify-core ChainResult into this package's flat Failure list,
  *  preserving the canonical code + a dump-flavored message. */
-function collectChainFailures(scopeId: string, result: ChainResult, failures: Failure[]): void {
+function collectChainFailures(scopeId: string, result: ChainResult, failures: FailureSink): void {
   for (const entry of result.entries) {
     if (entry.valid || !entry.failure) continue;
     failures.push({
@@ -138,18 +146,21 @@ function collectChainFailures(scopeId: string, result: ChainResult, failures: Fa
 }
 
 /**
- * Cross-check checkpoints against the live chain. vault_checkpoints survives
- * audit_vault TRUNCATE — a chain shorter than (or hash-mismatched with) its
- * anchor is evidence of out-of-band tampering. Dump-structural; kept local.
+ * Cross-check one chain's checkpoints against its rows. vault_checkpoints
+ * survives audit_vault TRUNCATE, so a chain shorter than (or hash-mismatched
+ * with) its anchor is evidence of out-of-band tampering. Dump-structural, so it
+ * stays local rather than moving into verify-core.
+ *
+ * `chain` must already be sorted by chain_position; the anchor is looked up
+ * positionally.
  */
-function verifyVaultCheckpoints(
-  byChain: Map<string, VaultEntryDump[]>,
+function verifyChainCheckpoints(
+  chain: readonly VaultEntryDump[],
   checkpoints: readonly VaultCheckpointDump[],
   keys: Map<string, SigningKeyDump>,
-  failures: Failure[],
+  failures: FailureSink,
 ): void {
   for (const cp of checkpoints) {
-    const chain = byChain.get(cp.record_id) ?? [];
     const entry = chain[cp.chain_position - 1];
     if (!entry) {
       failures.push({
@@ -197,69 +208,133 @@ function verifyVaultCheckpoints(
   }
 }
 
+/**
+ * Walk every chain in `audit_vault`, verifying and releasing one chain group at
+ * a time.
+ *
+ * Accepts any iterable, so it takes either a materialized array or the
+ * `streamVaultEntries` generator. Given the generator, peak memory is one chain
+ * group rather than the whole vault, which is what makes a multi-GB dump
+ * verifiable at all (verify#14).
+ *
+ * **Grouping relies on the dump's row order**, which the producer guarantees:
+ * `dump-vault.ts` has emitted `ORDER BY record_id, chain_position` since the
+ * format existed, so a record's rows are contiguous and a chain is complete the
+ * moment a different record_id appears. Schema-event chains (record_id IS NULL)
+ * sort together at the end but interleave with each other, so they stay open
+ * until EOF; that set is bounded by schema-registration volume, not by vault
+ * size. A chain_key that reappears after its group was closed means the file is
+ * not in producer order, and the walk refuses rather than verifying a partial
+ * chain and reporting clean.
+ */
 export function verifyVaultChains(
-  entries: readonly VaultEntryDump[],
+  entries: Iterable<VaultEntryDump>,
   checkpoints: readonly VaultCheckpointDump[],
   signingKeys: readonly SigningKeyDump[],
 ): VaultChainsReport {
-  const failures: Failure[] = [];
+  const failures = new FailureSink();
+  const keyRegistry = buildVaultKeyRegistry(signingKeys);
+  const keyIndex = indexKeys(signingKeys);
+
+  const checkpointsByChain = new Map<string, VaultCheckpointDump[]>();
+  for (const cp of checkpoints) {
+    const list = checkpointsByChain.get(cp.record_id);
+    if (list) list.push(cp);
+    else checkpointsByChain.set(cp.record_id, [cp]);
+  }
+
+  const open = new Map<string, VaultEntryDump[]>();
+  const closed = new Set<string>();
+  let entryCount = 0;
+  let chainCount = 0;
+
+  const report = (recordCount: number): VaultChainsReport => ({
+    // Includes per-record chains AND per-enterprise schema-event chains
+    // (different shapes, same chain trust model). The `recordCount` name is
+    // preserved for back-compat with the report consumer.
+    recordCount,
+    entryCount,
+    checkpointCount: checkpoints.length,
+    failures: failures.listed,
+    failureCount: failures.count,
+  });
+
+  const closeChain = (chainKey: string): void => {
+    const chain = open.get(chainKey);
+    if (!chain) return;
+    open.delete(chainKey);
+    closed.add(chainKey);
+    chainCount++;
+    chain.sort((a, b) => a.chain_position - b.chain_position);
+    const normalized = chain.map((e) => toNormalizedEntry(chainKey, e));
+    collectChainFailures(chainKey, verifyChain(normalized, keyRegistry, {}), failures);
+    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keyIndex, failures);
+    checkpointsByChain.delete(chainKey);
+  };
+
+  // `undefined` means "no row seen yet"; `null` is a real value (schema chains).
+  let previousRecordId: string | null | undefined;
+
+  for (const e of entries) {
+    entryCount++;
+
+    // Format gate: format 2.0 requires the canonical COSE_Sign1 envelope on
+    // every vault row. A row lacking it is a pre-cutover shape, so fail closed
+    // rather than parse best-effort. Stops the walk: one such row means the
+    // whole dump came from a pre-cutover engine.
+    if (!e.cose_sign1) {
+      failures.push({
+        code: 'UNSUPPORTED_FORMAT',
+        message: `audit_vault row ${e.id} lacks cose_sign1, a pre-2.0 dump shape. This verifier reads exportFormatVersion 2.0 / RFC8949-CDE; re-export from a current AGLedger instance.`,
+        scopeId: e.record_id ?? undefined,
+        position: e.chain_position,
+      });
+      return report(0);
+    }
+
+    if (previousRecordId !== undefined && previousRecordId !== null && e.record_id !== previousRecordId) {
+      closeChain(previousRecordId);
+    }
+    previousRecordId = e.record_id;
+
+    const chainKey = chainKeyOf(e);
+    if (closed.has(chainKey)) {
+      failures.push({
+        code: 'UNSUPPORTED_FORMAT',
+        message: `audit_vault is not in producer order: rows for chain ${chainKey} reappear after the chain was closed (row ${e.id}, position ${e.chain_position}). Chains must be contiguous, as emitted by the shipped dump tool; re-export rather than reordering the file.`,
+        scopeId: e.record_id ?? undefined,
+        position: e.chain_position,
+      });
+      return report(chainCount);
+    }
+    const chain = open.get(chainKey);
+    if (chain) chain.push(e);
+    else open.set(chainKey, [e]);
+  }
 
   // Empty-vault fail-closed: a dump with zero vault entries must NOT verify
   // clean. (verifyChain returns CHAIN_EMPTY per chain group; this guards the
   // dump level where there are no groups to walk at all.)
-  if (entries.length === 0) {
+  if (entryCount === 0) {
     failures.push({
       code: 'CHAIN_EMPTY',
-      message: 'audit_vault contains zero entries — empty or truncated vault, refusing to report clean.',
+      message: 'audit_vault contains zero entries, an empty or truncated vault. Refusing to report clean.',
     });
-    return {
-      recordCount: 0,
-      entryCount: 0,
-      checkpointCount: checkpoints.length,
-      failures,
-    };
+    return report(0);
   }
 
-  // Format gate: format 2.0 requires the canonical COSE_Sign1 envelope on every
-  // vault row. A row lacking it is a pre-cutover shape — fail closed rather than
-  // parse best-effort.
-  const preCutover = entries.filter((e) => !e.cose_sign1);
-  if (preCutover.length > 0) {
-    const first = preCutover[0]!;
-    failures.push({
-      code: 'UNSUPPORTED_FORMAT',
-      message: `audit_vault row ${first.id} lacks cose_sign1 — pre-2.0 dump shape. This verifier reads exportFormatVersion 2.0 / RFC8949-CDE; re-export from a current AGLedger instance.`,
-      scopeId: first.record_id ?? undefined,
-      position: first.chain_position,
-    });
-    return {
-      recordCount: 0,
-      entryCount: entries.length,
-      checkpointCount: checkpoints.length,
-      failures,
-    };
+  for (const chainKey of [...open.keys()]) {
+    closeChain(chainKey);
   }
 
-  const keyRegistry = buildVaultKeyRegistry(signingKeys);
-  const keyIndex = indexKeys(signingKeys);
-  const byChain = groupByChain(entries);
-
-  for (const [chainKey, chain] of byChain) {
-    const normalized = chain.map((e) => toNormalizedEntry(chainKey, e));
-    const result = verifyChain(normalized, keyRegistry, {});
-    collectChainFailures(chainKey, result, failures);
+  // Anything left anchors a chain the dump does not contain at all. Reported
+  // with the same code as a short chain, since both mean the anchor outlived
+  // its rows.
+  for (const orphaned of checkpointsByChain.values()) {
+    verifyChainCheckpoints([], orphaned, keyIndex, failures);
   }
-  verifyVaultCheckpoints(byChain, checkpoints, keyIndex, failures);
 
-  return {
-    // Includes per-record chains AND per-enterprise schema-event chains
-    // (different shapes, same chain trust model). The `recordCount` name is
-    // preserved for back-compat with the report consumer.
-    recordCount: byChain.size,
-    entryCount: entries.length,
-    checkpointCount: checkpoints.length,
-    failures,
-  };
+  return report(chainCount);
 }
 
 function groupByOrg<T extends { org_id: string }>(rows: readonly T[]): Map<string, T[]> {
@@ -274,7 +349,7 @@ function groupByOrg<T extends { org_id: string }>(rows: readonly T[]): Map<strin
 
 function detectCheckpointForks(
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
-  failures: Failure[],
+  failures: FailureSink,
 ): void {
   const byKey = new Map<string, OrgAdminReadsCheckpointDump>();
   for (const cp of checkpoints) {
@@ -298,7 +373,7 @@ function verifyOneOrgAdminReadsLog(
   leaves: OrgAdminReadDump[],
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
   keys: Map<string, SigningKeyDump>,
-  failures: Failure[],
+  failures: FailureSink,
 ): void {
   leaves.sort((a, b) => a.leaf_index - b.leaf_index);
 
@@ -383,7 +458,7 @@ export function verifyOrgAdminReadsChains(
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
   signingKeys: readonly SigningKeyDump[],
 ): TenantAdminReadsReport {
-  const failures: Failure[] = [];
+  const failures = new FailureSink();
   const keys = indexKeys(signingKeys);
   const leavesByOrg = groupByOrg(reads);
   const checkpointsByOrg = groupByOrg(checkpoints);
@@ -417,20 +492,27 @@ export function verifyOrgAdminReadsChains(
     leafCount: reads.length,
     checkpointCount: checkpoints.length,
     witnessCosignedCheckpoints,
-    failures,
+    failures: failures.listed,
+    failureCount: failures.count,
+  };
+}
+
+/** Combine the two halves into the report shape, including the `ok` verdict.
+ *  Shared with the streaming directory entry point in `verify-dir.ts`. */
+export function assembleReport(
+  vault: VaultChainsReport,
+  orgAdminReads: TenantAdminReadsReport,
+): VerifyReport {
+  return {
+    ok: vault.failureCount === 0 && orgAdminReads.failureCount === 0,
+    vault,
+    orgAdminReads,
   };
 }
 
 export function verifyDump(dump: Dump): VerifyReport {
-  const vault = verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, dump.signingKeys);
-  const orgAdminReads = verifyOrgAdminReadsChains(
-    dump.orgAdminReads,
-    dump.orgAdminReadsCheckpoints,
-    dump.signingKeys,
+  return assembleReport(
+    verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, dump.signingKeys),
+    verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, dump.signingKeys),
   );
-  return {
-    ok: vault.failures.length === 0 && orgAdminReads.failures.length === 0,
-    vault,
-    orgAdminReads,
-  };
 }
