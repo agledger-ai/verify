@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { runCli } from '../src/cli.js';
+import { EXIT_CANNOT_VERIFY, runCli } from '../src/cli.js';
 import {
   verifyAuditExport,
   type RecordAuditExportInput,
@@ -239,7 +239,7 @@ describe('CLI auto-detect — export-file path branches to verify-core', () => {
       const file = join(dir, 'random.json');
       writeFileSync(file, JSON.stringify({ hello: 'world' }));
       const result = runCli([file]);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(EXIT_CANNOT_VERIFY);
       expect(result.stderr).toContain('neither a dump directory nor an /audit-export');
     } finally {
       rmSync(dir, { recursive: true, force: true });
