@@ -18,3 +18,11 @@ updates:
     groups:
       npm-minor-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # @types/node tracks the runtime we ship to, not the newest Node. This
+      # package declares engines.node >=24, and typing against a newer
+      # @types/node lets tsc accept APIs that do not exist on the runtime
+      # customers actually run. Take the major when the fleet target moves off
+      # Node 24, not before.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
