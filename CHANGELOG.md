@@ -4,6 +4,29 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-08-01
+
+A full-installation dump could not be verified at all. The loader read each NDJSON file into a single string, so any vault past Node's ~512 MB string cap died in about a second with a raw `Cannot create a string longer than 0x1fffffe8 characters`. Small demo vaults verified fine, which is why this survived a shipped release: the first deployment large enough to need the tool for a real audit is the one that finds it. Testbed F-811 hit it with 545k `audit_vault` rows (1.18 GB NDJSON), roughly a quarter of realistic operation for one mid-size org.
+
+### Fixed
+
+- **Reading is chunked**, so file size is bounded by disk rather than by the string cap. Verification streams too, one chain group at a time, because materializing 1.18 GB of NDJSON as objects only trades a clean error for an OOM. Peak memory is now the largest single chain instead of the whole vault.
+- Streaming depends on the producer's `ORDER BY record_id, chain_position`, which has held since the format existed. That assumption is checked rather than trusted: a `chain_key` that reappears after its group closed is reported as `UNSUPPORTED_FORMAT` with an instruction to re-export, instead of silently verifying a partial chain and reporting clean.
+
+### Changed
+
+- **Exit codes split.** `1` is verification FAILED, `2` is could NOT verify. Both were `1`, so a missing or oversized dump was indistinguishable from a broken chain to any gate wired to "nonzero means tampering". `--report-format json` now emits JSON for input errors as well, instead of a bare line of prose. A script asserting `exitCode === 1` on a bad path will now see `2`.
+- **Failure lists are capped**, with the true total in a new `failureCount` field on `VaultChainsReport` and `TenantAdminReadsReport`. Reaching large vaults made a second problem reachable with them: a systemic fault yields one failure per entry, and the 621 MB reproduction produced 462,002 failures and 51 MB of stdout. That report is now 114 KB. A consumer reading `failures.length` as the count under-reports above 1000 failures.
+
+### Notes
+
+- `runCli` and `loadDump` keep their signatures. The read path stayed synchronous specifically so lifting the size ceiling would not force an async breaking change.
+- `loadDump` + `verifyDump` still work and produce the same report. `verifyDumpStreaming` is the new preferred entry point and is what the CLI uses.
+- `Dump`, `VaultEntryDump`, and the companion wire types are unchanged. No dump-format change, so no coordination with the dump tool or the conformance corpus.
+- Tests cover chunk-boundary reassembly, multi-byte characters split across a boundary, report-for-report equivalence with the in-memory path across all nine conformance dump vectors, the re-ordered-dump refusal, and the exit-code split. The size case itself is opt-in via `AGLEDGER_VERIFY_LARGE_FILE_TEST=1`, since it wants about 1 GB of disk.
+
+Closes #14. Refs cross-repo agledger-agents#102.
+
 ## [1.1.1] - 2026-07-16
 
 Docs and tooling. No verification or wire-format change.
