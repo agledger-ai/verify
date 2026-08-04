@@ -72,7 +72,7 @@ jobs:
         run: echo "tarball=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Attest CycloneDX SBOM (signed, verifiable)
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.1.0 (attest-sbom is deprecated)
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1 (attest-sbom is deprecated)
         with:
           subject-path: ${{ steps.pack.outputs.tarball }}
           predicate-type: 'https://cyclonedx.org/bom'
