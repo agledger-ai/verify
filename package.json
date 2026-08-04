@@ -31,6 +31,8 @@
     "clean": "rm -rf dist *.tsbuildinfo",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "deps:lag": "node scripts/dep-lag.mjs",
+    "deps:refresh": "npm update && node scripts/dep-lag.mjs",
     "lint:pkg": "publint --strict && attw --pack . --ignore-rules cjs-resolves-to-esm no-resolution",
     "prepublishOnly": "npm run build && npm run lint:pkg"
   },
