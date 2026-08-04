@@ -72,7 +72,10 @@ jobs:
         run: echo "tarball=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Attest CycloneDX SBOM (signed, verifiable)
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1 (attest-sbom is deprecated)
+        # actions/attest-sbom is deprecated; actions/attest takes its place.
+        # Keep the version comment bare: trailing prose stops both dependabot
+        # and zizmor ref-version-mismatch from reading it.
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: ${{ steps.pack.outputs.tarball }}
           predicate-type: 'https://cyclonedx.org/bom'
