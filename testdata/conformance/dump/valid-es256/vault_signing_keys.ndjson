@@ -1,0 +1,2 @@
+{"key_id":"15d63684b387235c","public_key":"MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI=","algorithm":"Ed25519","status":"retired","activated_at":"2026-08-05T22:03:31.745Z","retired_at":"2026-08-05T22:03:32.038Z","retired_by":"system-bootstrap"}
+{"key_id":"9158bd72882ef02d","public_key":"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE3vPkiPRMvRWNZC2za4eptjxQyNn3VTu/hDdC7ebXt15/tl9CTI90tIumt42kbBBPYegL2xxBhR0f/VwtYUYT7w==","algorithm":"ES256","status":"active","activated_at":"2026-08-05T22:03:32.039Z","retired_at":null,"retired_by":null}
