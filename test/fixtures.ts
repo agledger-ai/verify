@@ -153,7 +153,6 @@ const SHARED_ACTOR: Actor = {
   role: 'agent',
   owner_id: '22222222-2222-2222-2222-222222222222',
 };
-const KID_HEX = '1234567890abcdef1234567890abcdef';
 const ISS = 'https://api.example.test';
 
 function recordSubjectFor(recordId: string): Array<{ name: string; digest: { sha256: string } }> {
@@ -186,7 +185,7 @@ export function buildVaultEntry(args: BuildVaultEntryArgs): Dump['vaultEntries']
   const envelope = buildCoseSign1(
     {
       kind: 'record-state',
-      kidHex: KID_HEX,
+      kidHex: args.key.keyId,
       iss: ISS,
       sub: recordUuid,
       iat: 1747574400 + args.position,
@@ -233,7 +232,7 @@ export function buildVaultCheckpoint(
   const envelope = buildCoseSign1(
     {
       kind: 'vault-checkpoint',
-      kidHex: KID_HEX,
+      kidHex: key.keyId,
       iss: ISS,
       sub: recordUuid,
       iat: 1747574500,
@@ -276,7 +275,7 @@ export function buildOrgAdminRead(args: BuildLeafArgs): Dump['orgAdminReads'][nu
   const envelope = buildCoseSign1(
     {
       kind: 'org-read',
-      kidHex: KID_HEX,
+      kidHex: args.key.keyId,
       iss: ISS,
       sub: recordUuid,
       iat: 1747574000 + args.leafIndex,
@@ -334,7 +333,7 @@ export function buildOrgAdminReadsCheckpoint(
   const envelope = buildCoseSign1(
     {
       kind: 'vault-checkpoint',
-      kidHex: KID_HEX,
+      kidHex: key.keyId,
       iss: ISS,
       sub: orgId,
       iat: 1747574999,

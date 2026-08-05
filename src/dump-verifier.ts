@@ -71,6 +71,10 @@ function buildVaultKeyRegistry(keys: readonly SigningKeyDump[]): KeyRegistry {
   const verificationKeys: VerificationKey[] = keys.map((k) => ({
     keyId: k.key_id,
     spkiBase64: k.public_key,
+    // The registry row's DECLARED algorithm. verify-core cross-checks it
+    // against what the SPKI key material actually commits to; a row that lies
+    // about its own key fails CHAIN_ALG_MISMATCH.
+    algorithm: k.algorithm,
     source: 'embedded',
     activatedAt: k.activated_at,
     retiredAt: k.retired_at ?? null,
@@ -194,10 +198,17 @@ function verifyChainCheckpoints(
       } else {
         const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
         const outcome = verifyCoseSign1(coseSign1Bytes, key.public_key);
-        if (outcome === 'invalid' || outcome === 'decode-fail') {
+        // Fail closed on ANY non-ok outcome. 'unsigned' (an all-zero signature
+        // on a checkpoint that CLAIMS a signing key) is tampering, not benign:
+        // the engine never writes a signing_key_id it did not sign with. An
+        // unsupported key algorithm is an upgrade signal, never a pass.
+        if (outcome !== 'ok') {
           failures.push({
-            code: 'CHECKPOINT_SIGNATURE_INVALID',
-            message: `RecordRow ${cp.record_id} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify`,
+            code:
+              outcome === 'unsupported-key-algorithm'
+                ? 'CHAIN_UNSUPPORTED_ALGORITHM'
+                : 'CHECKPOINT_SIGNATURE_INVALID',
+            message: `RecordRow ${cp.record_id} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
             scopeId: cp.record_id,
             position: cp.chain_position,
             signingKeyId: cp.signing_key_id,
@@ -439,10 +450,14 @@ function verifyOneOrgAdminReadsLog(
       } else {
         const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
         const outcome = verifyCoseSign1(coseSign1Bytes, key.public_key);
-        if (outcome === 'invalid' || outcome === 'decode-fail') {
+        // Fail closed on ANY non-ok outcome; see the vault-checkpoint site.
+        if (outcome !== 'ok') {
           failures.push({
-            code: 'TENANT_CHECKPOINT_SIGNATURE_INVALID',
-            message: `Org ${orgId}: checkpoint ${cp.id} COSE_Sign1 signature does not verify`,
+            code:
+              outcome === 'unsupported-key-algorithm'
+                ? 'CHAIN_UNSUPPORTED_ALGORITHM'
+                : 'TENANT_CHECKPOINT_SIGNATURE_INVALID',
+            message: `Org ${orgId}: checkpoint ${cp.id} COSE_Sign1 signature does not verify (${outcome})`,
             scopeId: orgId,
             treeSize: cp.tree_size,
             signingKeyId: cp.signing_key_id,

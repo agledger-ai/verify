@@ -2,11 +2,11 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-06-02T15:46:23.649Z",
+  "generatedAt": "2026-08-05T17:34:02.050Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "54891bac",
-    "apiVersion": "0.26.5",
+    "apiGitSha": "8dc346a9",
+    "apiVersion": "1.3.4",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -139,7 +139,7 @@
       "file": "export/key-substitution.json",
       "kind": "export",
       "expect": "pass",
-      "note": "Entry 2 re-signed with the attacker key (identical predicate, pure key swap) and embedded in signingPublicKeys. With no options it PASSES — documenting that embedded keys are trusted by default. The requireOutOfBandKeys vector below is the same fixture failing closed."
+      "note": "Entry 2 re-signed with the attacker key (identical predicate, consistent kid+column swap) and embedded in signingPublicKeys. With no options it PASSES, documenting that embedded keys are trusted by default. The requireOutOfBandKeys vector below is the same fixture failing closed."
     },
     {
       "file": "export/key-substitution.json",
@@ -151,7 +151,15 @@
         "keysFile": "export/keys-oob.json",
         "requireOutOfBandKeys": true
       },
-      "note": "Same pure-key-swap fixture under requireOutOfBandKeys: entry 2 attacker key is embedded-only, so it fails closed. The vault key is supplied out of band, so entries 1 and 3 pass; the policy break surfaces at position 2."
+      "note": "Same consistent-key-swap fixture under requireOutOfBandKeys: entry 2 attacker key is embedded-only, so it fails closed. The vault key is supplied out of band, so entries 1 and 3 pass; the policy break surfaces at position 2."
+    },
+    {
+      "file": "export/key-substitution-kid-drift.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_SIGNING_KEY_DRIFT",
+      "brokenAt": 2,
+      "note": "Entry 2 re-signed with the attacker key but the signature-covered kid still names the vault key; the row signingKeyId column points at the attacker key. The kid binding (engine signing_key_drift mirror, #893) fails it with no options."
     },
     {
       "file": "export/payload-binding-mismatch.json",
@@ -163,6 +171,20 @@
         "keysFile": "export/keys-oob.json"
       },
       "note": "Entry 2 denormalised payload rewritten while coseSign1 carries the original predicate — binding-integrity failure caught before any content evaluation."
+    },
+    {
+      "file": "export/valid-record-updated.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 2,
+        "unsigned": 0,
+        "skipped": 0
+      },
+      "note": "DRAFT-stage PATCH /v1/records/{id} edit: RECORD_CREATED then RECORD_UPDATED (the #732 entry type). verify-core projects RECORD_UPDATED through the generic record-state path; this vector pins the wire shape verifies green against out-of-band keys."
     },
     {
       "file": "export/unsigned.json",

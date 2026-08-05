@@ -4,6 +4,17 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-08-05
+
+The verifier forward-compatibility floor (with `@agledger/verify-core` 1.1.0). Legitimate Ed25519 dumps verify identically; what changes is fail-closed classification of tampered and non-Ed25519 inputs.
+
+### Changed
+
+- **Takes `@agledger/verify-core` `^1.1.0`**, inheriting the key-bound algorithm dispatch, the tamper-class `CHAIN_ALG_MISMATCH`, the fail-closed `CHAIN_UNSUPPORTED_ALGORITHM`, the signed-kid binding (`CHAIN_SIGNING_KEY_DRIFT`), untagged-COSE_Sign1 rejection, and the key-length-derived unsigned sentinel. See that package's 1.1.0 changelog for the full contract.
+- **Checkpoint signature checks fail closed on every non-ok outcome.** Both the vault-checkpoint and the org-admin-reads signed-tree-head sites previously passed an all-zero signature on a checkpoint that claims a `signing_key_id` (the `'unsigned'` outcome slipped between the two handled failure cases). Any non-ok outcome now fails: `CHECKPOINT_SIGNATURE_INVALID` / `TENANT_CHECKPOINT_SIGNATURE_INVALID`, or `CHAIN_UNSUPPORTED_ALGORITHM` when the key's algorithm is beyond this build.
+- **`vault_signing_keys.algorithm` is now plumbed into verification.** The dump's declared algorithm is cross-checked against the key material itself; a registry row that lies about its own key fails `CHAIN_ALG_MISMATCH`. The declared string never selects the code path.
+- Conformance corpus refreshed from engine 1.3.4, including the new `chain-signing-key-drift` and `chain-alg-registry-lie` dump vectors.
+
 ## [1.2.0] - 2026-08-01
 
 A full-installation dump could not be verified at all. The loader read each NDJSON file into a single string, so any vault past Node's ~512 MB string cap died in about a second with a raw `Cannot create a string longer than 0x1fffffe8 characters`. Small demo vaults verified fine, which is why this survived a shipped release: the first deployment large enough to need the tool for a real audit is the one that finds it. Testbed F-811 hit it with 545k `audit_vault` rows (1.18 GB NDJSON), roughly a quarter of realistic operation for one mid-size org.
