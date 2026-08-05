@@ -162,8 +162,26 @@ describe('fail-closed on a dump that is not in producer order', () => {
     const rows = readFileSync(join(VALID_DUMP, DEFAULT_FILENAMES.vaultEntries), 'utf8')
       .split('\n')
       .filter((l) => l.trim().length > 0);
-    // rows 0..2 are one chain; move a later chain's row into the middle of it.
-    const reordered = [rows[0]!, rows[1]!, rows[3]!, rows[2]!, rows[4]!];
+    // Build the violation structurally rather than by row index: which record
+    // sorts first varies per corpus generation (ORDER BY record_id over random
+    // ids), so fixed indices silently stop producing a reorder. Pick a chain
+    // with 2+ rows, emit all its rows but the last, then every other chain,
+    // then the held-back row: its group has closed by then, so the walk must
+    // refuse.
+    const chainOf = (l: string): string => {
+      const r = JSON.parse(l) as { chain_key?: string; record_id?: string | null };
+      return r.chain_key ?? r.record_id ?? '__schema__';
+    };
+    const byChain = new Map<string, string[]>();
+    for (const l of rows) {
+      const k = chainOf(l);
+      byChain.set(k, [...(byChain.get(k) ?? []), l]);
+    }
+    const multi = [...byChain.entries()].find(([, ls]) => ls.length >= 2);
+    if (!multi || byChain.size < 2) throw new Error('corpus dump needs 2+ chains, one with 2+ rows');
+    const [splitKey, splitRows] = multi;
+    const others = [...byChain.entries()].filter(([k]) => k !== splitKey).flatMap(([, ls]) => ls);
+    const reordered = [...splitRows.slice(0, -1), ...others, splitRows[splitRows.length - 1]!];
     const staged = stageDump(VALID_DUMP, {
       [DEFAULT_FILENAMES.vaultEntries]: reordered.join('\n') + '\n',
     });
