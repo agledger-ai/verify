@@ -39,6 +39,35 @@ function relPath(file: string): string {
   return relative(ROOT, file);
 }
 
+describe('no truthiness tests on signing-key ids', () => {
+  // null is the system-wide unsigned-mode marker for these fields. A
+  // truthiness test treats a tampered "" like null and skips the signature
+  // check (fail-open); the empty string must instead fall through to key
+  // resolution and fail as an unknown key. Six instances of this class
+  // shipped in the verifier wave before the sweep; this pins it at zero.
+  // Legal spellings: `=== null`, `!== null`, and `??`.
+  const TRUTHY_PATTERNS = [
+    /if \((?:[\w.]+\.)?(?:signingKeyId|signing_key_id)\)/,
+    /if \(!(?:[\w.]+\.)?(?:signingKeyId|signing_key_id)\)/,
+    /(?:[\w.]+\.)?(?:signingKeyId|signing_key_id)\s*(?:\?\s|&&|\|\|(?!\|))/,
+    /!(?:[\w.]+\.)?(?:signingKeyId|signing_key_id)\b/,
+  ];
+
+  it('src compares signing-key ids against null explicitly', () => {
+    const offenders: string[] = [];
+    for (const file of allTsFiles()) {
+      const lines = readFileSync(file, 'utf8').split('\n');
+      lines.forEach((line, i) => {
+        if (line.includes('!== null') || line.includes('=== null')) return;
+        if (TRUTHY_PATTERNS.some(re => re.test(line))) {
+          offenders.push(`${relPath(file)}:${i + 1}: ${line.trim()}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('no emoji in source files', () => {
   const emojiPattern =
     /[\u{1F300}-\u{1F9FF}\u{2700}-\u{27BF}\u{2600}-\u{26FF}\u{2300}-\u{23FF}\u{2B50}\u{2B55}\u{2705}\u{274C}\u{274E}\u{2728}\u{2734}\u{2744}\u{2747}\u{2757}\u{2763}\u{2764}\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]|[✓✅⚡⏳📋📊❌⚠️✨🔥💡🚀🎉]/gu;
