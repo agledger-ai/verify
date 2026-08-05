@@ -144,6 +144,20 @@ describe('verifyVaultChains — adversarial cases via verify-core', () => {
     expect(report.failures.some((f) => f.code === 'CHAIN_SIGNATURE_INVALID')).toBe(true);
   });
 
+  it('CHECKPOINT_SIGNATURE_INVALID when a checkpoint claiming a key carries an all-zero signature', () => {
+    // The engine never writes a signing_key_id it did not sign with, so a
+    // zeroed signature slot on a key-claiming checkpoint is tampering. This
+    // pins the closed fail-open: the 'unsigned' outcome must not pass here.
+    const { dump } = buildHappyDump();
+    const tampered = cloneDump(dump);
+    const cp = tampered.vaultCheckpoints[0]!;
+    const buf = Buffer.from(cp.cose_sign1, 'base64');
+    buf.fill(0, buf.length - 64);
+    cp.cose_sign1 = buf.toString('base64');
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    expect(report.failures.some((f) => f.code === 'CHECKPOINT_SIGNATURE_INVALID')).toBe(true);
+  });
+
   it('CHAIN_SIGNATURE_MISSING_KEY when registry omits the signing key', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
@@ -242,6 +256,23 @@ describe('verifyOrgAdminReadsChains — adversarial cases', () => {
       tampered.orgAdminReadsCheckpoints[0]!.cose_sign1,
       -1,
     );
+    const report = verifyOrgAdminReadsChains(
+      tampered.orgAdminReads,
+      tampered.orgAdminReadsCheckpoints,
+      tampered.signingKeys,
+    );
+    expect(report.failures.some((f) => f.code === 'TENANT_CHECKPOINT_SIGNATURE_INVALID')).toBe(true);
+  });
+
+  it('TENANT_CHECKPOINT_SIGNATURE_INVALID when a key-claiming STH carries an all-zero signature', () => {
+    // Closed fail-open pin, tenant side: an 'unsigned' outcome on a signed
+    // tree head that claims a signing key must fail, not silently pass.
+    const { dump } = buildHappyDump();
+    const tampered = cloneDump(dump);
+    const sth = tampered.orgAdminReadsCheckpoints[0]!;
+    const buf = Buffer.from(sth.cose_sign1, 'base64');
+    buf.fill(0, buf.length - 64);
+    sth.cose_sign1 = buf.toString('base64');
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
