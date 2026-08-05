@@ -185,7 +185,9 @@ function verifyChainCheckpoints(
       continue;
     }
 
-    if (cp.signing_key_id) {
+    // Only null/undefined means unsigned; "" must resolve in the registry and
+    // fail as a missing key rather than silently skip the signature check.
+    if (cp.signing_key_id != null) {
       const key = keys.get(cp.signing_key_id);
       if (!key) {
         failures.push({
@@ -437,7 +439,9 @@ function verifyOneOrgAdminReadsLog(
       continue;
     }
 
-    if (cp.signing_key_id) {
+    // Only null/undefined means unsigned; "" must resolve in the registry and
+    // fail as a missing key rather than silently skip the signature check.
+    if (cp.signing_key_id != null) {
       const key = keys.get(cp.signing_key_id);
       if (!key) {
         failures.push({

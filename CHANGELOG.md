@@ -4,6 +4,12 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-08-05
+
+### Fixed
+
+- **An empty-string `signing_key_id` is no longer treated as unsigned.** Takes `@agledger/verify-core` 1.1.1 for the chain walk, and applies the same rule at both local checkpoint sites (vault checkpoints and org-admin-reads signed tree heads): only null/undefined means unsigned, so a tampered `signing_key_id: ""` now fails `CHAIN_SIGNATURE_MISSING_KEY` instead of silently skipping the signature check.
+
 ## [1.3.0] - 2026-08-05
 
 The verifier forward-compatibility floor (with `@agledger/verify-core` 1.1.0). Legitimate Ed25519 dumps verify identically; what changes is fail-closed classification of tampered and non-Ed25519 inputs.

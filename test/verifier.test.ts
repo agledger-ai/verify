@@ -158,6 +158,16 @@ describe('verifyVaultChains — adversarial cases via verify-core', () => {
     expect(report.failures.some((f) => f.code === 'CHECKPOINT_SIGNATURE_INVALID')).toBe(true);
   });
 
+  it('CHAIN_SIGNATURE_MISSING_KEY when a checkpoint carries signing_key_id ""', () => {
+    // Only null means unsigned. A tampered checkpoint with an empty-string key
+    // id must not slip past the signature check on a truthiness shortcut.
+    const { dump } = buildHappyDump();
+    const tampered = cloneDump(dump);
+    tampered.vaultCheckpoints[0]!.signing_key_id = '';
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    expect(report.failures.some((f) => f.code === 'CHAIN_SIGNATURE_MISSING_KEY')).toBe(true);
+  });
+
   it('CHAIN_SIGNATURE_MISSING_KEY when registry omits the signing key', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
