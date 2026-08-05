@@ -2,10 +2,10 @@
   "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of five NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-08-05T17:34:02.165Z",
+  "generatedAt": "2026-08-05T22:03:32.133Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "8dc346a9",
+    "apiGitSha": "ed3369ab",
     "apiVersion": "1.3.4",
     "formatVersion": "2.0"
   },
@@ -85,6 +85,15 @@
       "expect": "fail",
       "failureCode": "TENANT_CHECKPOINT_FORK",
       "note": "Two signed tree heads at the same tree_size carry different roots for the same org — engine fork or signing-key compromise."
+    },
+    {
+      "file": "dump/valid-es256",
+      "kind": "dump",
+      "expect": "pass",
+      "requiresAlgorithms": [
+        "ES256"
+      ],
+      "note": "Record chain, vault checkpoint, and org-admin-reads tree head all signed under the ES256 vault key (registry row algorithm=ES256). Requires an ES256-capable verifier (wave 2); earlier verifiers fail it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
     }
   ]
 }

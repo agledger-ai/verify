@@ -13,7 +13,8 @@ org-admin-reads STH + fork detection) and the full-vault loader.
 
 ## Why
 
-The engine signs every state transition with Ed25519. A customer's auditor
+The engine signs every state transition (Ed25519 by default, ES256 behind
+the server-side opt-in). A customer's auditor
 needs an independent verifier that does not trust the engine. If the engine
 were compromised, an in-engine "everything is fine" report would be worth
 nothing. This package is that escape hatch: it lives outside the engine and
@@ -113,7 +114,8 @@ re-exported so a caller need not add a second dependency.
 
 - **`audit_vault` per-record chain** (via `verify-core`): chain_position
   monotonicity, payload_hash = sha256(cose_sign1), previous_hash linkage, the
-  signed COSE protected-header chain-claim cross-check, the Ed25519 signature,
+  signed COSE protected-header chain-claim cross-check, the envelope
+  signature (Ed25519 or ES256, dispatched from the trusted key material),
   plus the dump-only input-gated checks: binding-integrity
   (`CHAIN_PAYLOAD_BINDING_MISMATCH`), OIDC-actor cross-check
   (`CHAIN_OIDC_ACTOR_MISMATCH`), and temporal key-validity

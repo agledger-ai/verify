@@ -4,6 +4,18 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-08-05
+
+Signing-agility wave 2: verifies ES256 chains end to end (chain walk, vault checkpoints, org-admin-reads signed tree heads) via `@agledger/verify-core` 1.2.0. Ed25519 chains verify byte-identically to 1.3.1.
+
+### Added
+
+- **ES256 verification** across every surface this package checks, dispatched from the trusted key's SPKI, never the envelope header. Algorithms past this build (ES384, ES512, ES256K) still fail closed as `CHAIN_UNSUPPORTED_ALGORITHM`.
+
+### Changed
+
+- **Conformance corpus regenerated from engine 1.3.4 @ `ed3369ab`** (the api R2 signing-agility build) and re-pinned via `CORPUS-LOCK.json`. Both slices gain the ES256 wave: `export/valid-es256` + `dump/valid-es256` (real ES256 engine output, must pass), `es256-signature-invalid`, and `es256-header-alg-mismatch` (a valid ES256 signature under an EdDSA header reads as `CHAIN_ALG_MISMATCH`, tamper class).
+
 ## [1.3.1] - 2026-08-05
 
 ### Fixed

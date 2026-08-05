@@ -2,10 +2,10 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-08-05T17:34:02.050Z",
+  "generatedAt": "2026-08-05T22:03:32.133Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "8dc346a9",
+    "apiGitSha": "ed3369ab",
     "apiVersion": "1.3.4",
     "formatVersion": "2.0"
   },
@@ -199,6 +199,51 @@
         "skipped": 3
       },
       "note": "Engine booted without a signing key: every row has signing_key_id=NULL and an all-zero signature slot. Chain integrity holds via hash links; the signature check is skipped (no key), never folded into a cryptographically-signed verdict."
+    },
+    {
+      "file": "export/valid-es256.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob-es256.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 3,
+        "unsigned": 0,
+        "skipped": 0
+      },
+      "requiresAlgorithms": [
+        "ES256"
+      ],
+      "note": "Clean 3-entry chain signed under ES256 (COSE -7, P1363 low-S) by an engine booted with a P-256 vault key behind AGLEDGER_ALLOW_NON_DEFAULT_SIGNING_ALG. Requires an ES256-capable verifier (wave 2); earlier verifiers fail it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
+    },
+    {
+      "file": "export/es256-signature-invalid.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_SIGNATURE_INVALID",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob-es256.json"
+      },
+      "requiresAlgorithms": [
+        "ES256"
+      ],
+      "note": "ES256 entry 2 signature byte flipped; the envelope still decodes and the chain claim matches, so ES256 signature verification is what fails."
+    },
+    {
+      "file": "export/es256-header-alg-mismatch.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_ALG_MISMATCH",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob-es256.json"
+      },
+      "requiresAlgorithms": [
+        "ES256"
+      ],
+      "note": "ES256 entry 2 carries a cryptographically valid ES256 signature under a protected header claiming EdDSA (-8). The header alg must be asserted EQUAL to the resolved key algorithm, never used for dispatch and never softened to an upgrade notice."
     }
   ]
 }
