@@ -21,6 +21,11 @@ concurrency:
 
 jobs:
   publish:
+    # Human approval gate. A tag is reversible; an npm publish is not, so the
+    # hold belongs here rather than on tag creation. The run pauses at "Waiting
+    # for review" until a required reviewer on the `release` environment
+    # approves, and nothing reaches the registry before that.
+    environment: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
