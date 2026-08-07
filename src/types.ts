@@ -108,7 +108,8 @@ export interface SigningKeyDump {
   public_key: string;
   algorithm: string;
   status: 'active' | 'retired';
-  /** Temporal-validity window. Fed into verifyChain for CHAIN_KEY_EXPIRED. */
+  /** Temporal-validity window. Fed into verifyChain for CHAIN_KEY_NOT_YET_ACTIVE
+   *  (written before activation) and CHAIN_KEY_EXPIRED (written after retirement). */
   activated_at?: string;
   retired_at?: string | null;
   retired_by?: string | null;

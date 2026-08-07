@@ -4,6 +4,17 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-08-07
+
+### Fixed
+
+- **Vault checkpoints join on `chain_key`, so a healthy schema chain no longer fails the whole dump.** A schema chain's checkpoint carries a derived UUIDv8 in `record_id`, because the engine needs a non-null uuid for a chain whose rows have none. Grouping checkpoints by that column stranded them: a stock Compose install, untouched, returned `[FAIL]` and exit 1 with `CHECKPOINT_ROW_MISSING`, which is a tamper alarm for any audit gate wired to the exit code. Checkpoints now group on the producer's `chain_key`, falling back to `record_id` so dumps taken before the producer emitted it verify exactly as they did before (agents#103).
+- **Failures name a schema chain by its chain key.** The message said `RecordRow <uuidv8>`, sending an auditor to `/v1/records/{id}` for a 404 with no explanation. It now reads `Chain schema:<orgId>` (agents#103).
+
+### Changed (widened union, via `@agledger/verify-core` 1.3.0)
+
+- **`CHAIN_KEY_NOT_YET_ACTIVE`** is reported for an entry written BEFORE its signing key's activation; `CHAIN_KEY_EXPIRED` now means the retirement side only. Previously both directions reported "expired", sending a consumer to investigate rotation when the real condition is a backdated entry or clock skew. Verdicts are unchanged (agents#112).
+
 ## [1.4.0] - 2026-08-05
 
 Signing-agility wave 2: verifies ES256 chains end to end (chain walk, vault checkpoints, org-admin-reads signed tree heads) via `@agledger/verify-core` 1.2.0. Ed25519 chains verify byte-identically to 1.3.1.
