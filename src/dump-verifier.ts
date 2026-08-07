@@ -10,7 +10,8 @@
  * payload, the OIDC-actor columns, and the per-entry write time. The signing
  * key registry is built from the dump's `vault_signing_keys` with their
  * temporal windows, so binding-integrity, OIDC-actor cross-check, AND
- * temporal key-validity (CHAIN_KEY_EXPIRED) all come from the core for free.
+ * temporal key-validity (CHAIN_KEY_NOT_YET_ACTIVE / CHAIN_KEY_EXPIRED) all come
+ * from the core for free.
  *
  * What stays LOCAL to this package is the dump-structural work the core does
  * not model: the vault-checkpoint cross-check against the live chain, and the
