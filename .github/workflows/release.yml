@@ -21,10 +21,14 @@ concurrency:
 
 jobs:
   publish:
-    # Human approval gate. A tag is reversible; an npm publish is not, so the
-    # hold belongs here rather than on tag creation. The run pauses at "Waiting
-    # for review" until a required reviewer on the `release` environment
-    # approves, and nothing reaches the registry before that.
+    # NOT an approval gate, despite the name. This environment exists but
+    # carries `protection_rules: []` on every one of the six repos, so the job
+    # resolves it and publishes straight through with no human in the loop
+    # (verified 2026-08-07; the comment here previously claimed the opposite).
+    # It stays declared because it is the hook point: adding a required
+    # reviewer to the `release` environment in GitHub is what would turn this
+    # into the pause it describes. Until someone does that, a `v*` tag push IS
+    # the publish.
     environment: release
     runs-on: ubuntu-latest
     steps:
