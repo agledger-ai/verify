@@ -239,7 +239,7 @@ function verifyChainCheckpoints(
                 : 'CHECKPOINT_SIGNATURE_INVALID',
             message:
               outcome === 'unsupported-key-algorithm'
-                ? `${label} pos ${cp.chain_position}: checkpoint signature could NOT BE CHECKED. ${describeUnsupportedAlgorithm(key.public_key)}`
+                ? `${label} pos ${cp.chain_position}: this checkpoint's signature could NOT BE CHECKED. Its signing key ${cp.signing_key_id} ${describeUnsupportedAlgorithm(key.public_key)}`
                 : `${label} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
             scopeId: chainKey,
             position: cp.chain_position,
@@ -494,7 +494,7 @@ function verifyOneOrgAdminReadsLog(
                 : 'TENANT_CHECKPOINT_SIGNATURE_INVALID',
             message:
               outcome === 'unsupported-key-algorithm'
-                ? `Org ${orgId}: checkpoint ${cp.id} signature could NOT BE CHECKED. ${describeUnsupportedAlgorithm(key.public_key)}`
+                ? `Org ${orgId}: checkpoint ${cp.id}'s signature could NOT BE CHECKED. Its signing key ${cp.signing_key_id} ${describeUnsupportedAlgorithm(key.public_key)}`
                 : `Org ${orgId}: checkpoint ${cp.id} COSE_Sign1 signature does not verify (${outcome})`,
             scopeId: orgId,
             treeSize: cp.tree_size,
