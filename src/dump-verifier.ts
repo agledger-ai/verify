@@ -111,6 +111,29 @@ function chainKeyOf(e: VaultEntryDump): string {
   );
 }
 
+/**
+ * The chain identity of one checkpoint, which is NOT always its `record_id`.
+ * A schema chain's checkpoint carries a derived UUIDv8 in `record_id` (the
+ * engine needs a non-null uuid for a chain whose rows have none), so joining on
+ * that column strands the checkpoint and reports CHECKPOINT_ROW_MISSING against
+ * a perfectly healthy vault. The producer emits `chain_key` to carry the real
+ * identity; fall back to `record_id` for dumps taken before it did, which is
+ * correct for every chain except schema chains (agents#103).
+ */
+function checkpointChainKeyOf(cp: VaultCheckpointDump): string {
+  return cp.chain_key ?? cp.record_id;
+}
+
+/**
+ * How a chain is named in failure messages. A per-record chain key IS a record
+ * id, so "RecordRow <uuid>" is a lookup an auditor can act on. A schema chain
+ * key is not: labelling it that way sent auditors to /v1/records/{id} for a 404
+ * (agents#103), so it is named as the chain it actually is.
+ */
+function chainLabel(chainKey: string): string {
+  return chainKey.startsWith('schema:') ? `Chain ${chainKey}` : `RecordRow ${chainKey}`;
+}
+
 /** Adapt a dump vault row into the verify-core normalized entry shape, carrying
  *  the dump-only inputs (binding, oidcActor, createdAt). */
 function toNormalizedEntry(scopeId: string, e: VaultEntryDump): NormalizedEntry {
@@ -165,12 +188,14 @@ function verifyChainCheckpoints(
   failures: FailureSink,
 ): void {
   for (const cp of checkpoints) {
+    const chainKey = checkpointChainKeyOf(cp);
+    const label = chainLabel(chainKey);
     const entry = chain[cp.chain_position - 1];
     if (!entry) {
       failures.push({
         code: 'CHECKPOINT_ROW_MISSING',
-        message: `RecordRow ${cp.record_id}: checkpoint at position ${cp.chain_position} has no matching audit_vault row (chain length ${chain.length})`,
-        scopeId: cp.record_id,
+        message: `${label}: checkpoint at position ${cp.chain_position} has no matching audit_vault row (chain length ${chain.length})`,
+        scopeId: chainKey,
         position: cp.chain_position,
       });
       continue;
@@ -178,8 +203,8 @@ function verifyChainCheckpoints(
     if (entry.payload_hash !== cp.payload_hash) {
       failures.push({
         code: 'CHECKPOINT_HASH_MISMATCH',
-        message: `RecordRow ${cp.record_id} pos ${cp.chain_position}: checkpoint payload_hash does not match audit_vault row`,
-        scopeId: cp.record_id,
+        message: `${label} pos ${cp.chain_position}: checkpoint payload_hash does not match audit_vault row`,
+        scopeId: chainKey,
         position: cp.chain_position,
       });
       continue;
@@ -192,8 +217,8 @@ function verifyChainCheckpoints(
       if (!key) {
         failures.push({
           code: 'CHAIN_SIGNATURE_MISSING_KEY',
-          message: `RecordRow ${cp.record_id} pos ${cp.chain_position}: checkpoint signing_key_id "${cp.signing_key_id}" not in dumped key registry`,
-          scopeId: cp.record_id,
+          message: `${label} pos ${cp.chain_position}: checkpoint signing_key_id "${cp.signing_key_id}" not in dumped key registry`,
+          scopeId: chainKey,
           position: cp.chain_position,
           signingKeyId: cp.signing_key_id,
         });
@@ -210,8 +235,8 @@ function verifyChainCheckpoints(
               outcome === 'unsupported-key-algorithm'
                 ? 'CHAIN_UNSUPPORTED_ALGORITHM'
                 : 'CHECKPOINT_SIGNATURE_INVALID',
-            message: `RecordRow ${cp.record_id} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
-            scopeId: cp.record_id,
+            message: `${label} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
+            scopeId: chainKey,
             position: cp.chain_position,
             signingKeyId: cp.signing_key_id,
           });
@@ -251,9 +276,10 @@ export function verifyVaultChains(
 
   const checkpointsByChain = new Map<string, VaultCheckpointDump[]>();
   for (const cp of checkpoints) {
-    const list = checkpointsByChain.get(cp.record_id);
+    const key = checkpointChainKeyOf(cp);
+    const list = checkpointsByChain.get(key);
     if (list) list.push(cp);
-    else checkpointsByChain.set(cp.record_id, [cp]);
+    else checkpointsByChain.set(key, [cp]);
   }
 
   const open = new Map<string, VaultEntryDump[]>();

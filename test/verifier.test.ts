@@ -218,6 +218,50 @@ describe('verifyVaultChains — adversarial cases via verify-core', () => {
     const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
     expect(report.failures.some((f) => f.code === 'CHECKPOINT_ROW_MISSING')).toBe(true);
   });
+
+  // agents#103. A schema chain's checkpoint carries a derived UUIDv8 in
+  // record_id, which matches no audit_vault row by inspection. Joining on that
+  // column stranded the checkpoint and failed a healthy vault.
+  const asSchemaChain = (dump: ReturnType<typeof cloneDump>, chainKey: string) => {
+    const cp = dump.vaultCheckpoints[0]!;
+    for (const e of dump.vaultEntries) {
+      if (e.record_id === cp.record_id) e.chain_key = chainKey;
+    }
+    cp.chain_key = chainKey;
+    // The derived v8 the engine writes: deliberately matches nothing.
+    cp.record_id = '019a0000-0000-8000-8000-0000000000ff';
+    return dump;
+  };
+
+  it('joins checkpoints on chain_key, so a healthy schema chain passes', () => {
+    const { dump } = buildHappyDump();
+    const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    expect(report.failures).toEqual([]);
+  });
+
+  it('still catches a truncated schema chain, and names it by chain_key not record id', () => {
+    const { dump } = buildHappyDump();
+    const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
+    // Drop the row the checkpoint anchors: real tampering must still fail.
+    const anchored = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
+    d.vaultEntries = d.vaultEntries.filter((e) => e !== anchored[anchored.length - 1]);
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    const missing = report.failures.find((f) => f.code === 'CHECKPOINT_ROW_MISSING');
+    expect(missing).toBeDefined();
+    expect(missing!.scopeId).toBe('schema:org-1');
+    expect(missing!.message).toContain('Chain schema:org-1');
+    expect(missing!.message).not.toContain('RecordRow');
+  });
+
+  it('falls back to record_id when a pre-producer dump carries no chain_key', () => {
+    const { dump } = buildHappyDump();
+    const d = cloneDump(dump);
+    for (const e of d.vaultEntries) delete e.chain_key;
+    delete d.vaultCheckpoints[0]!.chain_key;
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    expect(report.failures).toEqual([]);
+  });
 });
 
 describe('verifyOrgAdminReadsChains — adversarial cases', () => {
