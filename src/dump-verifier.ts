@@ -28,6 +28,7 @@
  */
 import {
   buildKeyRegistry,
+  describeUnsupportedAlgorithm,
   merkleRoot,
   sha256Hex,
   verifyChain,
@@ -236,7 +237,10 @@ function verifyChainCheckpoints(
               outcome === 'unsupported-key-algorithm'
                 ? 'CHAIN_UNSUPPORTED_ALGORITHM'
                 : 'CHECKPOINT_SIGNATURE_INVALID',
-            message: `${label} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
+            message:
+              outcome === 'unsupported-key-algorithm'
+                ? `${label} pos ${cp.chain_position}: checkpoint signature could NOT BE CHECKED. ${describeUnsupportedAlgorithm(key.public_key)}`
+                : `${label} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
             scopeId: chainKey,
             position: cp.chain_position,
             signingKeyId: cp.signing_key_id,
@@ -488,7 +492,10 @@ function verifyOneOrgAdminReadsLog(
               outcome === 'unsupported-key-algorithm'
                 ? 'CHAIN_UNSUPPORTED_ALGORITHM'
                 : 'TENANT_CHECKPOINT_SIGNATURE_INVALID',
-            message: `Org ${orgId}: checkpoint ${cp.id} COSE_Sign1 signature does not verify (${outcome})`,
+            message:
+              outcome === 'unsupported-key-algorithm'
+                ? `Org ${orgId}: checkpoint ${cp.id} signature could NOT BE CHECKED. ${describeUnsupportedAlgorithm(key.public_key)}`
+                : `Org ${orgId}: checkpoint ${cp.id} COSE_Sign1 signature does not verify (${outcome})`,
             scopeId: orgId,
             treeSize: cp.tree_size,
             signingKeyId: cp.signing_key_id,
