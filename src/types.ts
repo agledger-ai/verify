@@ -78,7 +78,21 @@ export interface VaultEntryDump {
 /** One line of vault_checkpoints.ndjson. */
 export interface VaultCheckpointDump {
   id?: string;
+  /**
+   * The engine requires a non-null uuid here even for chains whose rows carry
+   * no record id, so a schema chain's checkpoint holds a *derived UUIDv8* hash
+   * of the org id. That value matches no `audit_vault` row by inspection, which
+   * is why the join must go through `chain_key` and not this column.
+   */
   record_id: string;
+  /**
+   * Explicit chain identity, matching the `chain_key` on the covered
+   * `audit_vault` rows. Equals `record_id` for per-record and platform-ops
+   * chains; `schema:${orgId ?? '__platform__'}` for schema chains. Optional:
+   * dumps produced before the producer emitted it fall back to `record_id`,
+   * which is correct for every chain except schema chains (agents#103).
+   */
+  chain_key?: string;
   chain_position: number;
   payload_hash: string;
   /** Base64-encoded canonical COSE_Sign1 envelope. The signature is inside. */
