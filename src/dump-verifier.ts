@@ -402,7 +402,7 @@ function detectCheckpointForks(
     if (prior && prior.root_hash !== cp.root_hash) {
       failures.push({
         code: 'TENANT_CHECKPOINT_FORK',
-        message: `Org ${cp.org_id}: two checkpoints at tree_size ${cp.tree_size} carry different root_hash (${prior.id} vs ${cp.id}) — engine fork or key compromise`,
+        message: `Org ${cp.org_id}: two checkpoints at tree_size ${cp.tree_size} carry different root_hash (${prior.id} vs ${cp.id}): engine fork or key compromise`,
         scopeId: cp.org_id,
         treeSize: cp.tree_size,
       });

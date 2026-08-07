@@ -1,6 +1,6 @@
 {
   "name": "@agledger/verify",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Standalone offline verifier for a full AGLedger audit-vault + org-admin-reads NDJSON dump. No engine, database, or network dependency.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
@@ -20,6 +20,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "bin",
     "LICENSE",
     "README.md"
@@ -50,6 +51,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agledger-ai/verify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/agledger-ai/verify/issues"
   },
   "publishConfig": {
     "access": "public"

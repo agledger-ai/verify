@@ -4,12 +4,21 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.1] - 2026-08-07
 
 ### Fixed
 
 - **A FIPS-locked host no longer reports an intact Ed25519 dump as tamper**, via `@agledger/verify-core`. The FIPS provider carries no EdDSA, so the runtime refused to compute the signature and the refusal was reported as `CHAIN_SIGNATURE_INVALID` on every entry. It now reports `CHAIN_UNSUPPORTED_ALGORITHM`, naming the provider as the cause and pointing at an unrestricted host. Still `[FAIL]` and exit 1, because an unverified chain is not a verified one, but no longer grounds for a tamper investigation (agents#113).
 - **Checkpoint failure messages stop asserting a signature failed when it was never checked.** The `CHAIN_UNSUPPORTED_ALGORITHM` code was already routed correctly at both checkpoint sites, but the message read "COSE_Sign1 signature does not verify (unsupported-key-algorithm)", which says the opposite of what the code means. It now reads "signature could NOT BE CHECKED" plus the reason and the remedy.
+
+### Changed
+
+- **Report text no longer uses em-dashes**, in the help header, the unsigned-projection note, and the tree-head fork message. Wording only; every verdict, code, and exit status is unchanged.
+
+### Packaging
+
+- **Source maps are no longer published.** `dist/**/*.map` shipped with `sources` pointing at `../src/*.ts` and no `sourcesContent`, and `src/` is not in the tarball, so they resolved to nothing.
+- **`bugs` added to package.json.**
 
 ## [1.5.0] - 2026-08-07
 

@@ -115,7 +115,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   return out;
 }
 
-export const HELP_TEXT = `agledger-verify — offline verifier for AGLedger audit chains
+export const HELP_TEXT = `agledger-verify: offline verifier for AGLedger audit chains
 
 Usage:
   agledger-verify <target> [--report-format text|json] [--keys <file>]
@@ -242,7 +242,7 @@ export function formatExportReportText(result: VerifyExportResult): string {
   // (e.g. actorDisplayName). Signed attribution is the actorOwnerId/actorId UUID.
   if (result.unsignedProjectionFields.length > 0) {
     lines.push(
-      `  note              : ${result.unsignedProjectionFields.length} unsigned display projection field(s) (${result.unsignedProjectionFields.join(', ')}) are NOT signature-covered — attribution is the signed actorOwnerId/actorId UUID, not these labels.`,
+      `  note              : ${result.unsignedProjectionFields.length} unsigned display projection field(s) (${result.unsignedProjectionFields.join(', ')}) are NOT signature-covered. Attribution is the signed actorOwnerId/actorId UUID, not these labels.`,
     );
   }
   return lines.join('\n');
