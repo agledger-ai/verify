@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { verifyDump, verifyOrgAdminReadsChains, verifyVaultChains } from '../src/dump-verifier.js';
 import {
   buildHappyDump,
@@ -142,6 +142,36 @@ describe('verifyVaultChains — adversarial cases via verify-core', () => {
     target.payload_hash = createHash('sha256').update(buf).digest('hex');
     const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
     expect(report.failures.some((f) => f.code === 'CHAIN_SIGNATURE_INVALID')).toBe(true);
+  });
+
+  it('CHAIN_UNSUPPORTED_ALGORITHM says the signature was not checked, never that it failed', () => {
+    // An uncheckable checkpoint must not be reported in the language of a
+    // failed signature: those lead an auditor to opposite conclusions, and
+    // only one of them is grounds for a tamper investigation (agents#113).
+    // Driven here by a key type this build cannot compute, which reaches the
+    // same outcome as a host that refuses an algorithm it does implement.
+    const { dump } = buildHappyDump();
+    const tampered = cloneDump(dump);
+    const cp = tampered.vaultCheckpoints[0]!;
+    const key = tampered.signingKeys.find((k) => k.key_id === cp.signing_key_id)!;
+    // X25519 has no COSE signature registration, so it resolves as
+    // unrecognized and reaches the unsupported outcome without first
+    // tripping the header-alg comparison.
+    key.public_key = (
+      generateKeyPairSync('x25519').publicKey.export({ type: 'spki', format: 'der' }) as Buffer
+    ).toString('base64');
+
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    // The entry walk reports the same code first; this asserts the checkpoint site.
+    const failure = report.failures.find(
+      (f) => f.code === 'CHAIN_UNSUPPORTED_ALGORITHM' && f.message.includes('checkpoint'),
+    );
+    expect(failure).toBeDefined();
+    expect(failure!.message).toContain('could NOT BE CHECKED');
+    // The fragment needs a subject in front of it or the sentence is
+    // subjectless, in the one output whose whole job is to be unambiguous.
+    expect(failure!.message).toContain(`Its signing key ${cp.signing_key_id} commits to`);
+    expect(failure!.message).not.toContain('does not verify');
   });
 
   it('CHECKPOINT_SIGNATURE_INVALID when a checkpoint claiming a key carries an all-zero signature', () => {
