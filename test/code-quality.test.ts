@@ -203,3 +203,30 @@ describe('bounded em-dash density in shipped markdown', () => {
     ).toHaveLength(0);
   });
 });
+
+describe('published tarball carries no dangling source-map references', () => {
+  // `files` excludes dist/**/*.map because the maps point at ../src/*.ts with no
+  // sourcesContent and src/ is not in the tarball, so they resolve to nothing.
+  // Excluding the file is only half the change: tsc still appends a
+  // `//# sourceMappingURL=` comment to every .js and .d.ts, which then points at
+  // a map the tarball does not contain (agents#114). Turn the emit off instead.
+  it('does not emit maps that "files" excludes', () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+      files?: string[];
+    };
+    const excludesMaps = (pkg.files ?? []).some((f) => f.startsWith('!') && f.endsWith('.map'));
+
+    const tsconfig = JSON.parse(readFileSync(join(ROOT, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions?: { sourceMap?: boolean; declarationMap?: boolean };
+    };
+    const opts = tsconfig.compilerOptions ?? {};
+    const emitting = (['sourceMap', 'declarationMap'] as const).filter((k) => opts[k] === true);
+
+    expect(
+      excludesMaps ? emitting : [],
+      `tsconfig turns on ${emitting.join(' + ')} while package.json "files" excludes *.map, ` +
+        'so every emitted file would reference a map that never ships. ' +
+        'Either drop the "files" exclusion or turn the emit off.',
+    ).toHaveLength(0);
+  });
+});
