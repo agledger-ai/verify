@@ -112,7 +112,7 @@ describe('formatDumpReportText', () => {
   });
 });
 
-describe('formatExportReportText: unsigned-projection note (api#769)', () => {
+describe('formatExportReportText: unsigned-projection note', () => {
   it('warns that a PASS does not vouch for unsigned display projections', () => {
     const text = formatExportReportText(
       exportResult({ unsignedProjectionFields: ['actorDisplayName', 'actorOwnerType', 'humanReadableLabel'] }),

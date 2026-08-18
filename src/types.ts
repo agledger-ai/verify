@@ -9,7 +9,7 @@
  *
  * Timestamps are always ISO-8601 strings.
  *
- * **Format version: 2.0 (post COSE_Sign1 cutover, #482).** Pre-2.0 dumps
+ * **Format version: 2.0 (post COSE_Sign1 cutover).** Pre-2.0 dumps
  * carried `canonical_payload`, `hash_alg`, `signature`, `signature_alg`
  * fields. Post-2.0, those are replaced by a single `cose_sign1` field
  * carrying the base64-encoded canonical COSE_Sign1 envelope (RFC 9052) over
@@ -55,21 +55,21 @@ export interface VaultEntryDump {
   actor_key_id: string;
   actor_role: string;
   actor_owner_id: string;
-  /** OIDC issuer URI when the request authenticated via an admin OIDC bearer
-   *  (#550). NULL on API-key paths + every pre-#550 dump. Paired with
+  /** OIDC issuer URI when the request authenticated via an admin OIDC bearer.
+   *  NULL on API-key paths + every older dump. Paired with
    *  `actor_oidc_sub` + `actor_oidc_synthesized` at the DB layer via
    *  `chk_audit_vault_actor_oidc_synthesized_paired`. Optional in the dump
-   *  JSON for back-compat: dumps produced before #550 omit the columns. */
+   *  JSON for back-compat: older dumps omit the columns. */
   actor_oidc_iss?: string | null;
   actor_oidc_sub?: string | null;
   /** TRUE iff the engine itself populated the column pair AND wrote the
-   *  same identity into the signed `predicate.on_behalf_of.oidc` (#555).
+   *  same identity into the signed `predicate.on_behalf_of.oidc`.
    *  Drives the row-vs-signed cross-check (CHAIN_OIDC_ACTOR_MISMATCH); when
    *  TRUE the verifier requires row columns to equal the signed predicate,
    *  so column-DELETION tamper (DBA NULLs the columns on a synthesized row)
    *  surfaces as drift. FALSE on API-key paths and on caller-supplied RFC
-   *  8693 delegation. Optional in the dump JSON for back-compat: dumps
-   *  produced before #555 lack the field and the verifier falls back to the
+   *  8693 delegation. Optional in the dump JSON for back-compat: older
+   *  dumps lack the field and the verifier falls back to the
    *  older column-nullness guard. */
   actor_oidc_synthesized?: boolean;
   created_at: string;
@@ -90,7 +90,7 @@ export interface VaultCheckpointDump {
    * `audit_vault` rows. Equals `record_id` for per-record and platform-ops
    * chains; `schema:${orgId ?? '__platform__'}` for schema chains. Optional:
    * dumps produced before the producer emitted it fall back to `record_id`,
-   * which is correct for every chain except schema chains (agents#103).
+   * which is correct for every chain except schema chains.
    */
   chain_key?: string;
   chain_position: number;

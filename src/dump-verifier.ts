@@ -120,7 +120,7 @@ function chainKeyOf(e: VaultEntryDump): string {
  * that column strands the checkpoint and reports CHECKPOINT_ROW_MISSING against
  * a perfectly healthy vault. The producer emits `chain_key` to carry the real
  * identity; fall back to `record_id` for dumps taken before it did, which is
- * correct for every chain except schema chains (agents#103).
+ * correct for every chain except schema chains.
  */
 function checkpointChainKeyOf(cp: VaultCheckpointDump): string {
   return cp.chain_key ?? cp.record_id;
@@ -129,8 +129,8 @@ function checkpointChainKeyOf(cp: VaultCheckpointDump): string {
 /**
  * How a chain is named in failure messages. A per-record chain key IS a record
  * id, so "RecordRow <uuid>" is a lookup an auditor can act on. A schema chain
- * key is not: labelling it that way sent auditors to /v1/records/{id} for a 404
- * (agents#103), so it is named as the chain it actually is.
+ * key is not: labelling it that way sent auditors to /v1/records/{id} for a
+ * 404, so it is named as the chain it actually is.
  */
 function chainLabel(chainKey: string): string {
   return chainKey.startsWith('schema:') ? `Chain ${chainKey}` : `RecordRow ${chainKey}`;
