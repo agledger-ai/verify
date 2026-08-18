@@ -1,5 +1,5 @@
 /**
- * CLI entrypoint — parsed and tested separately from main() so the unit test
+ * CLI entrypoint, parsed and tested separately from main() so the unit test
  * can exercise the formatting paths without spawning a child process.
  *
  * Auto-detects the input kind from the single positional argument:
@@ -227,7 +227,7 @@ export function formatExportReportText(result: VerifyExportResult): string {
     `  key provenance    : out-of-band=${result.keyProvenance.outOfBand} embedded=${result.keyProvenance.embedded}`,
   );
   // verify#8: a PASS earned only against keys the export itself carries is not
-  // an independent verification — a full re-sign + key-swap would also pass.
+  // an independent verification; a full re-sign + key-swap would also pass.
   // Say so next to the headline instead of leaving it encoded in the
   // provenance counters.
   if (result.valid && result.keyProvenance.outOfBand === 0 && result.keyProvenance.embedded > 0) {
@@ -414,7 +414,7 @@ export function runCli(argv: readonly string[]): CliResult {
 /**
  * Accept the raw `GET /v1/verification-keys` response shape. That endpoint
  * returns an envelope `{ data: [{ keyId, publicKey, ... }], ... }`, not the
- * bare array its consumers expect — unwrap `.data` so a file saved straight
+ * bare array its consumers expect, so unwrap `.data` so a file saved straight
  * from the endpoint verifies without hand-editing (same behavior as
  * `agledger verify --keys`, F-732). A bare `[{keyId, publicKey}]` list or a
  * `{keyId: base64}` map passes through untouched; verify-core then validates
