@@ -147,7 +147,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
   it('CHAIN_UNSUPPORTED_ALGORITHM says the signature was not checked, never that it failed', () => {
     // An uncheckable checkpoint must not be reported in the language of a
     // failed signature: those lead an auditor to opposite conclusions, and
-    // only one of them is grounds for a tamper investigation (agents#113).
+    // only one of them is grounds for a tamper investigation.
     // Driven here by a key type this build cannot compute, which reaches the
     // same outcome as a host that refuses an algorithm it does implement.
     const { dump } = buildHappyDump();
@@ -249,7 +249,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     expect(report.failures.some((f) => f.code === 'CHECKPOINT_ROW_MISSING')).toBe(true);
   });
 
-  // agents#103. A schema chain's checkpoint carries a derived UUIDv8 in
+  // A schema chain's checkpoint carries a derived UUIDv8 in
   // record_id, which matches no audit_vault row by inspection. Joining on that
   // column stranded the checkpoint and failed a healthy vault.
   const asSchemaChain = (dump: ReturnType<typeof cloneDump>, chainKey: string) => {

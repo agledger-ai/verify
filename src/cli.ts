@@ -238,7 +238,7 @@ export function formatExportReportText(result: VerifyExportResult): string {
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
   }
-  // api#769: a PASS must not be read as vouching for unsigned display projections
+  // a PASS must not be read as vouching for unsigned display projections
   // (e.g. actorDisplayName). Signed attribution is the actorOwnerId/actorId UUID.
   if (result.unsignedProjectionFields.length > 0) {
     lines.push(
@@ -416,7 +416,7 @@ export function runCli(argv: readonly string[]): CliResult {
  * returns an envelope `{ data: [{ keyId, publicKey, ... }], ... }`, not the
  * bare array its consumers expect, so unwrap `.data` so a file saved straight
  * from the endpoint verifies without hand-editing (same behavior as
- * `agledger verify --keys`, F-732). A bare `[{keyId, publicKey}]` list or a
+ * `agledger verify --keys`). A bare `[{keyId, publicKey}]` list or a
  * `{keyId: base64}` map passes through untouched; verify-core then validates
  * the shape and throws on anything else.
  */
