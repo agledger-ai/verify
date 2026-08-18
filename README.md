@@ -23,6 +23,24 @@ For a fully independent audit, supply
 the vault verification keys out of band rather than trusting any keys carried in
 the dump.
 
+## Install
+
+The package provides the `agledger-verify` binary. An auditor running a one-off
+check does not need to install anything:
+
+```bash
+npx @agledger/verify <target>
+```
+
+For repeated use, or to call it from your own code:
+
+```bash
+npm install -g @agledger/verify   # binary on your PATH
+npm install @agledger/verify      # library, see "Library" below
+```
+
+Node 24 or newer.
+
 ## CLI
 
 ```bash
