@@ -204,7 +204,7 @@ describe('EXPORT conformance corpus (manifest-export.json)', () => {
   });
 });
 
-describe('CLI auto-detect — export-file path branches to verify-core', () => {
+describe('CLI auto-detect: export-file path branches to verify-core', () => {
   let dir: string;
 
   it('detects an /audit-export JSON file and runs the export verifier', () => {
@@ -212,7 +212,7 @@ describe('CLI auto-detect — export-file path branches to verify-core', () => {
     try {
       // A minimal export with an unsupported format version forces a
       // deterministic FAIL through the export path without needing signed
-      // bytes — the point here is that the file-detection branch fired.
+      // bytes; the point here is that the file-detection branch fired.
       const exportDoc = {
         exportMetadata: {
           recordId: 'rec-1',

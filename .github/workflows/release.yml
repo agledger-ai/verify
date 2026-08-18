@@ -73,7 +73,7 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: npx --yes @cyclonedx/cyclonedx-npm@4.2.1 --output-format JSON --output-file sbom.cdx.json
 
-      # Deterministic npm tarball — the SBOM-attestation subject. npm tarballs are
+      # Deterministic npm tarball, the SBOM-attestation subject. npm tarballs are
       # reproducible, so this digest matches the artifact `npm publish` uploads
       # below; we still publish from the directory so prepublishOnly gates run.
       - name: Pack tarball (SBOM attestation subject)

@@ -1,6 +1,6 @@
 name: Workflow security (zizmor)
 
-# Static analysis of our own GitHub Actions workflows — catches credential
+# Static analysis of our own GitHub Actions workflows. Catches credential
 # persistence, excessive permissions, template injection, and cache poisoning
 # in the CI/release pipeline (the OIDC publish path is the crown-jewel risk).
 # Findings surface in the Security tab as SARIF.

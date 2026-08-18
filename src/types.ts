@@ -13,7 +13,7 @@
  * carried `canonical_payload`, `hash_alg`, `signature`, `signature_alg`
  * fields. Post-2.0, those are replaced by a single `cose_sign1` field
  * carrying the base64-encoded canonical COSE_Sign1 envelope (RFC 9052) over
- * an in-toto v1 Statement payload — the chain trust root. A vault entry that
+ * an in-toto v1 Statement payload, the chain trust root. A vault entry that
  * lacks `cose_sign1` is a pre-2.0 shape this verifier refuses to parse
  * best-effort (UNSUPPORTED_FORMAT).
  */
@@ -26,7 +26,7 @@ export interface VaultEntryDump {
   id: string;
   /**
    * Null for schema-event entries (SCHEMA_REGISTERED / SCHEMA_IMPORTED /
-   * SCHEMA_DIGEST_MISMATCH) — those write to a per-enterprise chain keyed
+   * SCHEMA_DIGEST_MISMATCH); those write to a per-enterprise chain keyed
    * by `payload.orgId`, not by record_id. Non-null for every other
    * entry type.
    */
@@ -35,12 +35,12 @@ export interface VaultEntryDump {
    * Explicit chain identity emitted by the dump tool. Equals `record_id` for
    * per-record chains; `schema:${orgId ?? '__platform__'}` for schema-
    * event chains. Optional for backward compatibility with dumps produced
-   * before v0.23.2 — older dumps lack `chain_key` and the verifier falls back
+   * before v0.23.2; older dumps lack `chain_key` and the verifier falls back
    * to reconstructing it from `record_id` + `payload.orgId`.
    */
   chain_key?: string;
   entry_type: string;
-  /** Denormalized JSONB payload — convenience view, NOT the signed canonical
+  /** Denormalized JSONB payload: convenience view, NOT the signed canonical
    *  form. The signed canonical form is `cose_sign1`. */
   payload: Record<string, unknown>;
   /** sha256 of the cose_sign1 envelope bytes. Chain linkage value. */
@@ -64,7 +64,7 @@ export interface VaultEntryDump {
   actor_oidc_sub?: string | null;
   /** TRUE iff the engine itself populated the column pair AND wrote the
    *  same identity into the signed `predicate.on_behalf_of.oidc` (#555).
-   *  Drives the row-vs-signed cross-check (CHAIN_OIDC_ACTOR_MISMATCH) — when
+   *  Drives the row-vs-signed cross-check (CHAIN_OIDC_ACTOR_MISMATCH); when
    *  TRUE the verifier requires row columns to equal the signed predicate,
    *  so column-DELETION tamper (DBA NULLs the columns on a synthesized row)
    *  surfaces as drift. FALSE on API-key paths and on caller-supplied RFC

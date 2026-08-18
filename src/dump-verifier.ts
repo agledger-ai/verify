@@ -3,7 +3,7 @@
  * global state.
  *
  * The per-record (and per-org schema-event) hash-chain walk is delegated
- * wholesale to `@agledger/verify-core`'s `verifyChain` — the single body of
+ * wholesale to `@agledger/verify-core`'s `verifyChain`, the single body of
  * logic the SDK /verify subpath, the CLI, and the MCP server all run. Each
  * grouped chain's rows are adapted into the core's `NormalizedEntry` shape,
  * carrying the dump-only inputs the export wire cannot: the binding-integrity
@@ -518,7 +518,7 @@ export function verifyOrgAdminReadsChains(
 
   detectCheckpointForks(checkpoints, failures);
 
-  // Walk every org that has either leaves OR checkpoints — a checkpoint for an
+  // Walk every org that has either leaves OR checkpoints; a checkpoint for an
   // empty leaf set would otherwise slip through silently.
   const orgIds = new Set<string>([...leavesByOrg.keys(), ...checkpointsByOrg.keys()]);
   for (const orgId of orgIds) {
@@ -531,7 +531,7 @@ export function verifyOrgAdminReadsChains(
     );
   }
 
-  // Witness cosignatures are reported, not verified — the engine cannot verify
+  // Witness cosignatures are reported, not verified; the engine cannot verify
   // customer-chosen witness keys because their algorithm is untyped.
   const witnessCosignedCheckpoints = checkpoints
     .filter(

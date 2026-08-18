@@ -4,7 +4,7 @@
  * tests and the conformance generator mutate a clone of this baseline.
  *
  * The producer here mirrors the engine encoder (audit-vault/encoders/
- * cose-sign1.ts) — same protected header labels, same CWT layout, same
+ * cose-sign1.ts): same protected header labels, same CWT layout, same
  * payload-as-in-toto-v1-Statement shape, same RFC 8949 §4.2.1 deterministic
  * encoding via cborg.rfc8949EncodeOptions.
  *
@@ -371,7 +371,7 @@ export interface HappyDumpResult {
 
 /**
  * Two records of three entries each, plus a checkpoint on the second record at
- * position 3. Two orgs in org_admin_reads — one with three leaves and a signed
+ * position 3. Two orgs in org_admin_reads, one with three leaves and a signed
  * checkpoint, one with no checkpoint yet (matches a fresh org where the 6h
  * sweep hasn't fired).
  */
@@ -442,7 +442,7 @@ export function cloneDump(dump: Dump): Dump {
 }
 
 /**
- * Stable UUID derived from an arbitrary string — needed because record_id in
+ * Stable UUID derived from an arbitrary string, needed because record_id in
  * the in-toto subject digest and the predicate must be UUID-shaped. We don't
  * lean on randomUUID() because the same string must yield the same UUID across
  * builders (entry vs. checkpoint subject).

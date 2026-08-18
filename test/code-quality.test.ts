@@ -1,5 +1,5 @@
 /**
- * Code quality lint tests — catches AI-generated code patterns.
+ * Source hygiene checks over this package's own code.
  *
  * Repo-scoped copy (@agledger/verify is its own source-of-truth repo). Mirrors
  * the checks the AGLedger monorepo enforced, narrowed to this package's `src`.
@@ -138,7 +138,7 @@ describe('publishable package cleans dist before building', () => {
 describe('offline verifier makes no network access', () => {
   // The verifier's entire value is producing a correct verdict even if the
   // engine that produced the records is compromised. A verifier that can reach
-  // the network could be steered to "phone home" for a verdict — so this package
+  // the network could be steered to "phone home" for a verdict, so this package
   // must import nothing network-capable and never call fetch.
   const networkImport =
     /\b(?:import|require)\b[^\n]*['"](?:node:)?(?:http2?|https|net|tls|dgram|dns)['"]/;
@@ -163,44 +163,65 @@ describe('offline verifier makes no network access', () => {
   });
 });
 
-describe('bounded em-dash density in shipped markdown', () => {
-  // Heavy em-dash usage reads as machine-generated. Cap the density in every
-  // shipped Markdown doc so prose stays at a natural human level.
-  const MAX_EM_DASHES = 4;
+describe('no em dashes', () => {
+  // House style is plain punctuation, and it applies to shipped prose rather
+  // than just to docs: `dist/*.d.ts` is what a consumer's editor renders on
+  // hover, and a published tarball cannot be edited afterwards. Written as an
+  // escape so the pattern does not match its own source.
+  const EM_DASH = /\u2014/;
 
-  function collectMarkdown(dir: string): string[] {
+  // `dist`/`build`/`coverage` are output and `CHANGELOG.md` is history.
+  // `testdata` is generated upstream and digest-pinned by CORPUS-LOCK.json,
+  // so changes there have to be made at the generator.
+  const SKIP = new Set([
+    'node_modules',
+    'dist',
+    'build',
+    'coverage',
+    '.git',
+    '.claude',
+    'testdata',
+  ]);
+
+  function walk(dir: string, keep: (entry: string) => boolean): string[] {
     const results: string[] = [];
     for (const entry of readdirSync(dir)) {
-      if (
-        entry === 'node_modules' ||
-        entry === 'dist' ||
-        entry === 'build' ||
-        entry === '.git'
-      ) {
-        continue;
-      }
+      if (SKIP.has(entry)) continue;
       const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        results.push(...collectMarkdown(full));
-      } else if (extname(full) === '.md' && entry !== 'CHANGELOG.md') {
-        results.push(full);
-      }
+      if (statSync(full).isDirectory()) results.push(...walk(full, keep));
+      else if (keep(entry)) results.push(full);
     }
     return results;
   }
 
-  it(`has at most ${MAX_EM_DASHES} em-dashes (U+2014) per file`, () => {
-    const violations: string[] = [];
-    for (const file of collectMarkdown(ROOT)) {
-      const count = (readFileSync(file, 'utf8').match(/—/g) ?? []).length;
-      if (count > MAX_EM_DASHES) {
-        violations.push(`${relPath(file)}  ${count} em-dashes (max ${MAX_EM_DASHES})`);
-      }
+  function offenders(files: string[]): string[] {
+    const found: string[] = [];
+    for (const file of files) {
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((line, i) => {
+          if (EM_DASH.test(line)) found.push(`${relPath(file)}:${i + 1}  ${line.trim()}`);
+        });
     }
-    expect(
-      violations,
-      `Markdown files exceeding the em-dash cap:\n${violations.join('\n')}`,
-    ).toHaveLength(0);
+    return found;
+  }
+
+  it('markdown, workflows and config carry none', () => {
+    // `.github/workflows` and `package.json` ship in the repo and the tarball
+    // respectively, and both carried dashes the markdown-only gate never saw.
+    const PROSE_EXT = new Set(['.md', '.yml', '.yaml']);
+    const found = offenders(
+      walk(ROOT, e => (PROSE_EXT.has(extname(e)) || e === 'package.json') && e !== 'CHANGELOG.md'),
+    );
+    expect(found, `Em dashes in markdown/workflows/config:\n${found.join('\n')}`).toHaveLength(0);
+  });
+
+  it('source and tests carry none', () => {
+    // Broader than SOURCE_DIRS: `collectFiles` skips `__tests__`, and a test
+    // file's comments are source we ship in the repo just the same.
+    const dirs = readdirSync(ROOT).filter(e => e === 'src' || e === 'test' || e === 'tests');
+    const found = offenders(dirs.flatMap(d => walk(join(ROOT, d), e => extname(e) === '.ts')));
+    expect(found, `Em dashes in source:\n${found.join('\n')}`).toHaveLength(0);
   });
 });
 

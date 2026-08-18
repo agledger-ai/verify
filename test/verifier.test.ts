@@ -19,7 +19,7 @@ function mutateBase64Byte(base64: string, offset: number): string {
   return buf.toString('base64');
 }
 
-describe('verifyDump — happy path', () => {
+describe('verifyDump: happy path', () => {
   it('reports ok=true and surfaces no failures on a clean dump', () => {
     const { dump } = buildHappyDump();
     const report = verifyDump(dump);
@@ -49,7 +49,7 @@ describe('verifyDump — happy path', () => {
   });
 });
 
-describe('verifyVaultChains — fail-closed fixes (security review)', () => {
+describe('verifyVaultChains: fail-closed fixes (security review)', () => {
   it('CHAIN_EMPTY when the vault has zero entries (empty/truncated)', () => {
     const report = verifyVaultChains([], [], []);
     expect(report.failures.some((f) => f.code === 'CHAIN_EMPTY')).toBe(true);
@@ -98,7 +98,7 @@ describe('verifyVaultChains — fail-closed fixes (security review)', () => {
   });
 });
 
-describe('verifyVaultChains — adversarial cases via verify-core', () => {
+describe('verifyVaultChains: adversarial cases via verify-core', () => {
   it('CHAIN_HASH_MISMATCH when payload_hash is rewritten', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
@@ -294,7 +294,7 @@ describe('verifyVaultChains — adversarial cases via verify-core', () => {
   });
 });
 
-describe('verifyOrgAdminReadsChains — adversarial cases', () => {
+describe('verifyOrgAdminReadsChains: adversarial cases', () => {
   it('TENANT_READ_LEAF_HASH_MISMATCH when cose_sign1 bytes are mutated', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
