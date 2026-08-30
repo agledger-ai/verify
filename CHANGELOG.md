@@ -4,6 +4,18 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] - 2026-08-30
+
+Documentation only. Verification behaviour is identical to 1.5.1.
+
+### Added
+
+- The README documents how to install the package.
+
+### Changed
+
+- Comments and documentation no longer point at resources outside this repository.
+
 ## [1.5.1] - 2026-08-07
 
 ### Fixed
