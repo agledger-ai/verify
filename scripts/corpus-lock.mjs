@@ -23,7 +23,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const CORPUS_DIR = join(HERE, '..', 'testdata', 'conformance');
 const LOCK_PATH = join(CORPUS_DIR, 'CORPUS-LOCK.json');
 // Repo-side documentation, not engine output; SPEC.md survives regenerations.
-const EXCLUDED = new Set(['CORPUS-LOCK.json']);
+const EXCLUDED = new Set(['CORPUS-LOCK.json', 'SPEC.md']);
 
 function walk(dir) {
   const out = [];
