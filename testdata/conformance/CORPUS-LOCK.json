@@ -6,7 +6,6 @@
     "formatVersion": "2.0"
   },
   "files": {
-    "SPEC.md": "7ade58b4f066ec44cf18c2b8b71ddbcc85aa17c67efbd9d5f10aae5f7c9d2f8b",
     "dump/chain-alg-registry-lie/audit_vault.ndjson": "760bd6580ef47f6124f647eb91df8875166ca9d50ae828e7d77b3c1af4f5d00b",
     "dump/chain-alg-registry-lie/org_admin_reads.ndjson": "1d12e2b9846889a207df51edc21bafc7182a9ccc5fae0adef29a7dc0a7367244",
     "dump/chain-alg-registry-lie/org_admin_reads_checkpoints.ndjson": "e03525fdae3280aa127249eb5afc12a908a43fb2696a5245431229f60789d0d9",

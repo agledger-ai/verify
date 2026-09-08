@@ -19,9 +19,9 @@ provide a remediation timeline.
 
 ## Supported Versions
 
-AGLedger is pre-1.0. The **latest published minor** of each package receives
-security fixes; older minors are patched at our discretion. Please upgrade to
-the latest release before reporting.
+Security fixes target the current and the previous minor release of each
+package. Older releases are patched at our discretion. Please upgrade to a
+supported release before reporting.
 
 ## Disclosure Policy
 

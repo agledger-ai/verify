@@ -82,7 +82,7 @@ Defined in `packages/verify-core/src/failures.ts`. SCREAMING_SNAKE, namespaced:
   `CHAIN_COSE_DECODE_FAILED`, `CHAIN_COSE_HEADER_MISMATCH`,
   `CHAIN_PAYLOAD_BINDING_MISMATCH`, `CHAIN_OIDC_ACTOR_MISMATCH`,
   `CHAIN_SIGNATURE_INVALID`, `CHAIN_SIGNATURE_MISSING_KEY`,
-  `CHAIN_KEY_POLICY_VIOLATION`, `CHAIN_KEY_EXPIRED`
+  `CHAIN_KEY_POLICY_VIOLATION`, `CHAIN_KEY_EXPIRED`, `CHAIN_KEY_NOT_YET_ACTIVE`
 - checkpoints: `CHECKPOINT_ROW_MISSING`, `CHECKPOINT_HASH_MISMATCH`,
   `CHECKPOINT_SIGNATURE_INVALID`
 - org_admin_reads: `TENANT_READ_LEAF_HASH_MISMATCH`,
@@ -109,8 +109,9 @@ const r = verifyAuditExport(exportJson, { publicKeys?, requireKeyId?, requireOut
 `NormalizedEntry` optional fields drive the input-gated checks:
 `binding{recordId,entryType,payload}` -> CHAIN_PAYLOAD_BINDING_MISMATCH;
 `oidcActor{iss,sub,synthesized}` -> CHAIN_OIDC_ACTOR_MISMATCH;
-`createdAt` + key `activatedAt/retiredAt` -> CHAIN_KEY_EXPIRED. Absent inputs =>
-the check reports `skipped_no_input` (never a silent pass).
+`createdAt` + key `activatedAt/retiredAt` -> CHAIN_KEY_EXPIRED or
+CHAIN_KEY_NOT_YET_ACTIVE (entry written before the key's own activation).
+Absent inputs => the check reports `skipped_no_input` (never a silent pass).
 
 ## Required vectors (minimum)
 
@@ -133,4 +134,7 @@ hash-chain-only, never as cryptographically signed).
 the fail-closed fix); `CHECKPOINT_ROW_MISSING`; `CHECKPOINT_HASH_MISMATCH`;
 `CHAIN_PAYLOAD_BINDING_MISMATCH`; `CHAIN_OIDC_ACTOR_MISMATCH`; `CHAIN_KEY_EXPIRED`
 (entry signed outside the key's activated..retired window, the retired-key
-fail-open fix); `TENANT_CHECKPOINT_ROOT_MISMATCH`; `TENANT_CHECKPOINT_FORK`.
+fail-open fix); `CHAIN_KEY_NOT_YET_ACTIVE` (entry signed before the key's
+activation, backdating or clock skew) plus a matched pass vector at the exact
+activation instant (the window is inclusive at both ends);
+`TENANT_CHECKPOINT_ROOT_MISMATCH`; `TENANT_CHECKPOINT_FORK`.
