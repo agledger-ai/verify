@@ -2,11 +2,11 @@
   "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of five NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-08-05T22:03:32.133Z",
+  "generatedAt": "2026-09-11T01:09:15.558Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "ed3369ab",
-    "apiVersion": "1.3.4",
+    "apiGitSha": "e8725efe",
+    "apiVersion": "1.7.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -56,7 +56,20 @@
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_KEY_EXPIRED",
-      "note": "The signing key was retired one hour before the first entry was written — a retired key produced this entry (the retired-key fail-open fix)."
+      "note": "The signing key was retired one hour before the earliest entry was written — a retired key produced this entry (the retired-key fail-open fix)."
+    },
+    {
+      "file": "dump/valid-rotation-boundary",
+      "kind": "dump",
+      "expect": "pass",
+      "note": "The signing key activated at exactly the instant the earliest entry was written — the boundary every key rotation produces, since the KEY_ROTATED entry and the key row share one transaction_timestamp(). The temporal window is inclusive at both ends; this must verify clean."
+    },
+    {
+      "file": "dump/chain-key-not-yet-active",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_KEY_NOT_YET_ACTIVE",
+      "note": "The signing key activates one hour after the earliest entry was written — an entry signed before its key existed, which is backdating or clock skew rather than a retention question."
     },
     {
       "file": "dump/chain-signing-key-drift",
