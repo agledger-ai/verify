@@ -14,7 +14,7 @@ it responsibly through either channel:
 - **Email**: security@agledger.ai
 
 Please include a description, steps to reproduce, the potential impact, and a
-suggested fix if you have one. We acknowledge receipt within 48 hours and will
+suggested fix if you have one. We acknowledge receipt promptly and will
 provide a remediation timeline.
 
 ## Supported Versions

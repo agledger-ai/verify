@@ -84,8 +84,9 @@ cause of action accrues, to the maximum extent permitted by applicable law.
 
 6. EXPORT COMPLIANCE
 
-The Software may include cryptographic functionality (including Ed25519, AES-
-256-GCM, SHA-256, and X25519). AGLedger LLC classifies the Software under
+The Software may include cryptographic functionality, including Ed25519
+(EdDSA), ECDSA using curve P-256 with SHA-256, HMAC-SHA-256, AES-256-GCM,
+HKDF-SHA-256, and SHA-256. AGLedger LLC classifies the Software under
 ECCN 5D002 in good faith. To the extent AGLedger LLC makes the source code of
 the Software publicly available through a public repository, that source code
 is subject to the treatment afforded under 15 CFR § 742.15(b) of the U.S.
