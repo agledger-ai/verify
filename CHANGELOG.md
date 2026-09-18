@@ -4,6 +4,13 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- The conformance corpus is regenerated at API 1.8.0, dump slice included. Same vectors and expected codes as the 1.7.0 corpus, and all pass.
+- Verified against a full vault dump from a live API 1.8.0 instance: record-lifecycle entries that sign the internal state (`state`, `previousState`, `newState`) beside the display status, the new `AUTH_KEY_ROTATED` entry on the platform-ops chain, and cert-signed and delegated creates all pass, and a rewritten `AUTH_KEY_ROTATED` payload or internal state fails `CHAIN_PAYLOAD_BINDING_MISMATCH`. No verification change was needed for them.
+
 ## [1.5.3] - 2026-09-10
 
 ### Changed
