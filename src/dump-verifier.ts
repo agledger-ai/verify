@@ -19,6 +19,9 @@
  * use verify-core primitives (merkleRoot, verifyCoseSign1, sha256Hex) and emit
  * the canonical CHECKPOINT_* / TENANT_* codes.
  *
+ * The agent-signature check needs the cert public keys, which the dump does
+ * not carry, so it runs only when the caller passes `agentKeys`.
+ *
  * Fail-closed posture (security review):
  *   - A dump with zero vault entries is CHAIN_EMPTY, never a silent pass.
  *   - A vault entry lacking `cose_sign1` is a pre-2.0 shape -> UNSUPPORTED_FORMAT;
@@ -27,15 +30,19 @@
  *     each key's activated_at/retired_at into verifyChain.
  */
 import {
+  buildAgentKeyRegistry,
   buildKeyRegistry,
   describeUnsupportedAlgorithm,
   merkleRoot,
   sha256Hex,
   verifyChain,
   verifyCoseSign1,
+  type AgentPublicKeyJwk,
   type ChainResult,
+  type CheckApplicability,
   type KeyRegistry,
   type NormalizedEntry,
+  type OptionalCheck,
   type VerificationKey,
 } from '@agledger/verify-core';
 import type {
@@ -50,6 +57,22 @@ import type {
   VaultEntryDump,
   VerifyReport,
 } from './types.js';
+
+/** Options for the vault-chain walk. */
+export interface VerifyDumpOptions {
+  /**
+   * Ed25519 public keys of agent ephemeral certs, as JWKs: the `publicKeyJwk`
+   * an agent sent to `POST /v1/auth/oidc/cert`, also the `cnf.jwk` claim inside
+   * the `certJws`. The dump does not carry them. Where an entry's signed
+   * payload carries an engine-validated `predicate.on_behalf_of.agent_signature`
+   * whose sealed cert thumbprint matches one of these keys, the signature is
+   * re-verified offline; one that does not verify fails
+   * `CHAIN_AGENT_SIGNATURE_INVALID`. A key is matched only through the
+   * thumbprint the entry signed, so a key for another cert matches nothing.
+   * Anything that is not an Ed25519 JWK throws `TypeError`.
+   */
+  agentKeys?: ReadonlyArray<AgentPublicKeyJwk>;
+}
 
 /**
  * Upper bound on failures carried in a report. A systemic problem on a large
@@ -274,10 +297,22 @@ export function verifyVaultChains(
   entries: Iterable<VaultEntryDump>,
   checkpoints: readonly VaultCheckpointDump[],
   signingKeys: readonly SigningKeyDump[],
+  options: VerifyDumpOptions = {},
 ): VaultChainsReport {
   const failures = new FailureSink();
   const keyRegistry = buildVaultKeyRegistry(signingKeys);
   const keyIndex = indexKeys(signingKeys);
+  const agentKeys =
+    options.agentKeys !== undefined ? buildAgentKeyRegistry(options.agentKeys) : undefined;
+  // Each input-gated check is reported `applied` once it ran on any chain, so
+  // "not checked anywhere" never reads as "passed".
+  const optionalChecks: Record<OptionalCheck, CheckApplicability> = {
+    payload_binding: 'skipped_no_input',
+    oidc_actor: 'skipped_no_input',
+    key_temporal: 'skipped_no_input',
+    agent_signature: 'skipped_no_input',
+  };
+  const agentSignatures = { present: 0, verified: 0 };
 
   const checkpointsByChain = new Map<string, VaultCheckpointDump[]>();
   for (const cp of checkpoints) {
@@ -301,6 +336,8 @@ export function verifyVaultChains(
     checkpointCount: checkpoints.length,
     failures: failures.listed,
     failureCount: failures.count,
+    optionalChecks,
+    agentSignatures,
   });
 
   const closeChain = (chainKey: string): void => {
@@ -311,7 +348,13 @@ export function verifyVaultChains(
     chainCount++;
     chain.sort((a, b) => a.chain_position - b.chain_position);
     const normalized = chain.map((e) => toNormalizedEntry(chainKey, e));
-    collectChainFailures(chainKey, verifyChain(normalized, keyRegistry, {}), failures);
+    const result = verifyChain(normalized, keyRegistry, { agentKeys });
+    for (const check of Object.keys(optionalChecks) as OptionalCheck[]) {
+      if (result.optionalChecks[check] === 'applied') optionalChecks[check] = 'applied';
+    }
+    agentSignatures.present += result.agentSignatures.present;
+    agentSignatures.verified += result.agentSignatures.verified;
+    collectChainFailures(chainKey, result, failures);
     verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keyIndex, failures);
     checkpointsByChain.delete(chainKey);
   };
@@ -563,9 +606,9 @@ export function assembleReport(
   };
 }
 
-export function verifyDump(dump: Dump): VerifyReport {
+export function verifyDump(dump: Dump, options: VerifyDumpOptions = {}): VerifyReport {
   return assembleReport(
-    verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, dump.signingKeys),
+    verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, dump.signingKeys, options),
     verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, dump.signingKeys),
   );
 }

@@ -17,7 +17,7 @@
  * lacks `cose_sign1` is a pre-2.0 shape this verifier refuses to parse
  * best-effort (UNSUPPORTED_FORMAT).
  */
-import type { FailureCode } from '@agledger/verify-core';
+import type { CheckApplicability, FailureCode, OptionalCheck } from '@agledger/verify-core';
 
 export type { FailureCode };
 
@@ -183,6 +183,21 @@ export interface VaultChainsReport {
   failures: Failure[];
   /** Total failures found, including any beyond the cap. */
   failureCount: number;
+  /**
+   * Which input-gated checks ran. A check is `applied` when it ran on at least
+   * one chain. `agent_signature` needs cert keys the dump does not carry, so it
+   * stays `skipped_no_input` unless `agentKeys` supplied the key for at least
+   * one engine-validated agent signature.
+   */
+  optionalChecks: Record<OptionalCheck, CheckApplicability>;
+  /**
+   * Agent signatures on the vault: `present` counts entries whose signed
+   * payload carries `predicate.on_behalf_of.agent_signature`, `verified` those
+   * re-checked against a supplied cert key and found good. `present > verified`
+   * on a passing report means some were not checked (no key supplied, or a
+   * caller-asserted identity), never that they failed.
+   */
+  agentSignatures: { present: number; verified: number };
 }
 
 export interface TenantAdminReadsReport {

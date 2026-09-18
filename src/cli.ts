@@ -24,7 +24,10 @@
  */
 import { readFileSync, statSync } from 'node:fs';
 import {
+  buildAgentKeyRegistry,
   verifyAuditExport,
+  type AgentPublicKeyJwk,
+  type CheckApplicability,
   type OutOfBandKeyEntry,
   type RecordAuditExportInput,
   type VerifyExportResult,
@@ -55,6 +58,7 @@ export interface ParsedArgs {
   keys: string | null;
   requireKeyId: string | null;
   requireOutOfBandKeys: boolean;
+  agentKeys: string | null;
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -65,6 +69,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     keys: null,
     requireKeyId: null,
     requireOutOfBandKeys: false,
+    agentKeys: null,
   };
   const takeValue = (flag: string, next: string | undefined): string => {
     if (next === undefined || next.startsWith('-')) {
@@ -102,6 +107,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     } else if (arg.startsWith('--require-key-id=')) {
       out.requireKeyId = arg.slice('--require-key-id='.length);
       if (!out.requireKeyId) throw new Error('--require-key-id requires a value');
+    } else if (arg === '--agent-keys') {
+      out.agentKeys = takeValue('--agent-keys', argv[i + 1]);
+      i++;
+    } else if (arg.startsWith('--agent-keys=')) {
+      out.agentKeys = arg.slice('--agent-keys='.length);
+      if (!out.agentKeys) throw new Error('--agent-keys requires a value');
     } else if (arg === '--require-out-of-band-keys') {
       out.requireOutOfBandKeys = true;
     } else if (arg.startsWith('-')) {
@@ -118,8 +129,9 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 export const HELP_TEXT = `agledger-verify: offline verifier for AGLedger audit chains
 
 Usage:
-  agledger-verify <target> [--report-format text|json] [--keys <file>]
-                  [--require-key-id <id>] [--require-out-of-band-keys]
+  agledger-verify <target> [--report-format text|json] [--agent-keys <file>]
+                  [--keys <file>] [--require-key-id <id>]
+                  [--require-out-of-band-keys]
 
 <target> is auto-detected:
   - a directory: a full-vault NDJSON dump (audit_vault.ndjson + the four
@@ -129,6 +141,17 @@ Usage:
 
 Options:
   --report-format, -f         Output format. Default: text.
+  --agent-keys                Path to a JSON file holding the Ed25519 public
+                              keys of agent certs: a JWK, a list of JWKs, or a
+                              {keys:[...]} JWK Set. An entry may wrap its key
+                              as {publicKeyJwk:{...}}. Each is the
+                              publicKeyJwk an agent sent at cert exchange (also
+                              the cnf.jwk claim in its certJws). An entry whose
+                              sealed agent signature names one of them by
+                              thumbprint has that signature re-verified
+                              offline, and fails CHAIN_AGENT_SIGNATURE_INVALID
+                              if it does not verify. Applies to a dump
+                              directory and to an /audit-export file.
   --keys, -k                  Path to a JSON file holding out-of-band public
                               keys, for an /audit-export file. Accepts a
                               {keyId: SPKI-DER-base64} map, a
@@ -152,8 +175,12 @@ attacker who re-signs the chain with their own embedded key still passes.
 For an independent audit, fetch the keys separately (e.g. save
 GET /v1/verification-keys) and pass --keys with --require-out-of-band-keys.
 
-The key-policy flags apply to /audit-export files only; a dump directory
-carries its own signed key history and rejects these flags.
+The key-policy flags (--keys, --require-key-id, --require-out-of-band-keys)
+apply to /audit-export files only; a dump directory carries its own signed key
+history and rejects them.
+
+Neither a dump nor an export carries agent cert keys, so without --agent-keys
+the agent-signature check reports "not checked" and changes no verdict.
 
 A dump directory must contain:
   audit_vault.ndjson
@@ -186,7 +213,38 @@ function failureLines(failures: readonly Failure[], failureCount: number, indent
   return lines;
 }
 
-export function formatDumpReportText(report: VerifyReport): string {
+/** What the text formatters need to know beyond the report itself. */
+export interface TextReportOptions {
+  /** Whether the caller passed `--agent-keys` (agent cert keys). Default false. */
+  agentKeysSupplied?: boolean;
+}
+
+/**
+ * One line on the agent-signature check, worded by case so a PASS never reads
+ * as covering signatures that were not re-verified. `present > verified` on a
+ * passing report means some were not checked (no key supplied for their cert,
+ * or a caller-asserted identity), never that they failed; on a failing report
+ * the failure is also listed.
+ */
+function agentSignatureSummary(
+  counts: { present: number; verified: number },
+  check: CheckApplicability,
+  keysSupplied: boolean,
+): string {
+  const base = `present=${counts.present} verified=${counts.verified}`;
+  if (counts.present === 0) return `${base} (none on the chain)`;
+  const unverified = counts.present - counts.verified;
+  if (check === 'applied') {
+    return unverified === 0
+      ? `${base} (all re-verified against the supplied keys)`
+      : `${base} (${unverified} NOT verified: no key supplied for their cert, a caller-asserted identity, or a failure listed in this report)`;
+  }
+  return keysSupplied
+    ? `${base} (NOT verified: none of the supplied keys matches the cert thumbprint sealed with an engine-validated agent signature)`
+    : `${base} (NOT verified: pass --agent-keys with the agent cert keys to re-verify them)`;
+}
+
+export function formatDumpReportText(report: VerifyReport, options: TextReportOptions = {}): string {
   const lines: string[] = [];
   const status = report.ok ? 'PASS' : 'FAIL';
   lines.push(`[${status}] AGLedger offline verification (dump)`);
@@ -195,6 +253,9 @@ export function formatDumpReportText(report: VerifyReport): string {
   lines.push(`  records     : ${report.vault.recordCount}`);
   lines.push(`  entries     : ${report.vault.entryCount}`);
   lines.push(`  checkpoints : ${report.vault.checkpointCount}`);
+  lines.push(
+    `  agent sigs  : ${agentSignatureSummary(report.vault.agentSignatures, report.vault.optionalChecks.agent_signature, options.agentKeysSupplied ?? false)}`,
+  );
   lines.push(`  failures    : ${report.vault.failureCount}`);
   lines.push(...failureLines(report.vault.failures, report.vault.failureCount, '    '));
   lines.push('');
@@ -213,7 +274,10 @@ export function formatDumpReportText(report: VerifyReport): string {
   return lines.join('\n');
 }
 
-export function formatExportReportText(result: VerifyExportResult): string {
+export function formatExportReportText(
+  result: VerifyExportResult,
+  options: TextReportOptions = {},
+): string {
   const lines: string[] = [];
   const status = result.valid ? 'PASS' : 'FAIL';
   lines.push(`[${status}] AGLedger offline verification (audit-export)`);
@@ -235,6 +299,9 @@ export function formatExportReportText(result: VerifyExportResult): string {
       '  WARNING           : verified only against keys embedded in the export itself. This proves internal consistency, not independence; supply --keys (and --require-out-of-band-keys) with keys obtained out of band.',
     );
   }
+  lines.push(
+    `  agent signatures  : ${agentSignatureSummary(result.agentSignatures, result.optionalChecks.agent_signature, options.agentKeysSupplied ?? false)}`,
+  );
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
   }
@@ -307,6 +374,13 @@ export function runCli(argv: readonly string[]): CliResult {
   const hasKeyPolicyFlags =
     parsed.keys !== null || parsed.requireKeyId !== null || parsed.requireOutOfBandKeys;
 
+  let agentKeys: AgentPublicKeyJwk[] | undefined;
+  if (parsed.agentKeys !== null) {
+    const loaded = loadAgentKeys(parsed.agentKeys);
+    if (typeof loaded === 'string') return cannotVerify(loaded, parsed.reportFormat);
+    agentKeys = loaded;
+  }
+
   // Directory -> full-vault dump.
   if (isDirectory(parsed.target)) {
     if (hasKeyPolicyFlags) {
@@ -319,7 +393,7 @@ export function runCli(argv: readonly string[]): CliResult {
     try {
       // Streamed, so a multi-GB audit_vault.ndjson is bounded by disk rather
       // than by Node's max string length (verify#14).
-      report = verifyDumpStreaming(parsed.target);
+      report = verifyDumpStreaming(parsed.target, undefined, { agentKeys });
     } catch (err) {
       if (err instanceof DumpReadError) {
         return cannotVerify(err.message, parsed.reportFormat);
@@ -329,7 +403,7 @@ export function runCli(argv: readonly string[]): CliResult {
     const stdout =
       parsed.reportFormat === 'json'
         ? JSON.stringify(report, null, 2) + '\n'
-        : formatDumpReportText(report) + '\n';
+        : formatDumpReportText(report, { agentKeysSupplied: agentKeys !== undefined }) + '\n';
     return {
       exitCode: report.ok ? EXIT_OK : EXIT_VERIFICATION_FAILED,
       stdout,
@@ -390,6 +464,7 @@ export function runCli(argv: readonly string[]): CliResult {
       publicKeys,
       requireKeyId: parsed.requireKeyId ?? undefined,
       requireOutOfBandKeys: parsed.requireOutOfBandKeys,
+      agentKeys,
     });
   } catch (err) {
     if (err instanceof TypeError) {
@@ -403,7 +478,7 @@ export function runCli(argv: readonly string[]): CliResult {
   const stdout =
     parsed.reportFormat === 'json'
       ? JSON.stringify(result, null, 2) + '\n'
-      : formatExportReportText(result) + '\n';
+      : formatExportReportText(result, { agentKeysSupplied: agentKeys !== undefined }) + '\n';
   return {
     exitCode: result.valid ? EXIT_OK : EXIT_VERIFICATION_FAILED,
     stdout,
@@ -430,4 +505,47 @@ function unwrapKeys(raw: unknown): Record<string, string> | ReadonlyArray<OutOfB
     return (raw as { data: ReadonlyArray<OutOfBandKeyEntry> }).data;
   }
   return raw as Record<string, string> | ReadonlyArray<OutOfBandKeyEntry>;
+}
+
+const AGENT_KEYS_SHAPE =
+  'The --agent-keys file must hold Ed25519 public-key JWKs ({"kty":"OKP","crv":"Ed25519","x":"<base64url>"}): one JWK, a list of them, or a {"keys":[...]} JWK Set, where an entry may wrap its key as {"publicKeyJwk":{...}}.';
+
+/**
+ * Read an `--agent-keys` file into a list of JWKs, or return the usage-error
+ * message. Accepts the same shapes as `agledger verify --agent-keys`: a single
+ * JWK, a list of JWKs, or a `{keys: [...]}` JWK Set, where an entry that wraps
+ * its key as `{ publicKeyJwk: {...} }` (how an agent records the key it sent at
+ * cert exchange) is unwrapped. Every key is validated here, before any
+ * verification runs, so a bad file is reported as a bad file in both modes
+ * rather than as a verdict.
+ */
+export function loadAgentKeys(path: string): AgentPublicKeyJwk[] | string {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (err) {
+    return `Cannot read --agent-keys file ${path}: ${(err as Error).message}`;
+  }
+  const list: unknown[] = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object' && Array.isArray((raw as { keys?: unknown }).keys)
+      ? (raw as { keys: unknown[] }).keys
+      : [raw];
+  if (list.length === 0) {
+    return `The --agent-keys file ${path} holds no keys. ${AGENT_KEYS_SHAPE}`;
+  }
+  const jwks = list.map((entry) =>
+    entry && typeof entry === 'object' && 'publicKeyJwk' in entry
+      ? (entry as { publicKeyJwk: unknown }).publicKeyJwk
+      : entry,
+  ) as AgentPublicKeyJwk[];
+  try {
+    buildAgentKeyRegistry(jwks);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      return `Invalid --agent-keys file ${path}: ${err.message.replace(/^agentKeys\[(\d+)\]/, 'entry $1')}\n${AGENT_KEYS_SHAPE}`;
+    }
+    throw err;
+  }
+  return jwks;
 }

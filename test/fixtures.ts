@@ -170,6 +170,9 @@ interface BuildVaultEntryArgs {
   /** When set, the signed predicate carries on_behalf_of.oidc and the row gets
    *  matching actor_oidc_* columns with actor_oidc_synthesized=true. */
   oidc?: { iss: string; sub: string };
+  /** Extra members signed into predicate.on_behalf_of (e.g. a sealed cert and
+   *  agent_signature). The row payload is left as given. */
+  onBehalfOf?: Record<string, unknown>;
 }
 
 export function buildVaultEntry(args: BuildVaultEntryArgs): Dump['vaultEntries'][number] {
@@ -179,8 +182,11 @@ export function buildVaultEntry(args: BuildVaultEntryArgs): Dump['vaultEntries']
     entry_type: args.entryType,
     payload: args.payload,
   };
-  if (args.oidc) {
-    predicate['on_behalf_of'] = { oidc: { iss: args.oidc.iss, sub: args.oidc.sub } };
+  if (args.oidc || args.onBehalfOf) {
+    predicate['on_behalf_of'] = {
+      ...(args.oidc ? { oidc: { iss: args.oidc.iss, sub: args.oidc.sub } } : {}),
+      ...args.onBehalfOf,
+    };
   }
   const envelope = buildCoseSign1(
     {
