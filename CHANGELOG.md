@@ -4,7 +4,7 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [1.6.0] - 2026-09-18
 
 ### Added
 
@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
+- `LICENSE` follows SDK License Template 1.9: section 1 says AGLedger LLC does not receive, inspect or use the data you process through your deployment and collects no product usage information from it; section 7 names AGLedger and Settlement Signal as trademarks of AGLedger LLC; section 8 refers to issued or pending U.S. patents.
 - Requires `@agledger/verify-core` 1.5.0, which adds the agent-signature check and holds a row copy of `on_behalf_of` or `traceparent` to the value the entry signed: a rewritten or added row copy now fails `CHAIN_PAYLOAD_BINDING_MISMATCH` instead of verifying, in a dump and in an export.
 
 - The conformance corpus is regenerated at API 1.8.0, dump slice included. Same vectors and expected codes as the 1.7.0 corpus, and all pass.
