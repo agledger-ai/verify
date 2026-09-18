@@ -17,16 +17,13 @@ Licensor grants you a limited, non-exclusive, non-transferable, revocable
 license to install and use the Software solely for the purpose of integrating
 with a self-hosted AGLedger deployment operated by you or your organization, or
 by a third party on your behalf with your authorization. The Software is not
-designed for, and is not licensed for use with, any AGLedger-hosted service.
-AGLedger operates the AGLedger software on a self-hosted model; there is no
-hosted AGLedger API.
+licensed for use with any AGLedger-hosted service.
 
-AGLedger LLC operates no service in your data path. AGLedger LLC does not
-receive, access, inspect, or judge the records, completions, or deliverable
-content you process through your self-hosted deployment, and does not use any
-such data to train, fine-tune, evaluate, or benchmark any machine-learning or
-artificial-intelligence model, or to develop any product or service. AGLedger
-LLC receives no usage data or other data from your self-hosted deployment.
+AGLedger LLC does not receive, access, inspect, or judge the data you process
+through your self-hosted deployment, and does not use any such data to train,
+fine-tune, evaluate, or benchmark any machine-learning or artificial-
+intelligence model, or to develop any product or service. AGLedger LLC does not
+collect product usage information from your self-hosted deployment.
 
 2. RESTRICTIONS
 
@@ -103,14 +100,13 @@ or trade-control laws.
 
 7. TRADEMARKS
 
-AGLedger is a trademark of AGLedger LLC, and Settlement Signal is a pending
-trademark of AGLedger LLC. All other trademarks are the property of their
-respective owners.
+AGLedger and Settlement Signal are trademarks of AGLedger LLC. All other
+trademarks are the property of their respective owners.
 
 8. PATENTS
 
-The Software is covered by one or more U.S. patent applications pending before
-the U.S. Patent and Trademark Office in AGLedger LLC's patent portfolio.
+The Software is covered by one or more issued or pending U.S. patents in
+AGLedger LLC's patent portfolio.
 
 9. RELATIONSHIP TO OTHER AGLEDGER AGREEMENTS
 
