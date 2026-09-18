@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## Unreleased
 
+### Added
+
+- **`agledger-verify --agent-keys <file>`** re-verifies, offline, the agent signatures sealed in chain entries, on a dump directory and on an `/audit-export` file. The file holds the Ed25519 public keys of agent ephemeral certs (the `publicKeyJwk` an agent sent at cert exchange, also the `cnf.jwk` claim in its `certJws`) as one JWK, a list of JWKs, or a `{keys: [...]}` JWK Set, where an entry may wrap its key as `{publicKeyJwk: {...}}`: the same shapes `agledger verify --agent-keys` takes. An entry whose sealed cert thumbprint names one of the keys has its `predicate.on_behalf_of.agent_signature` checked, and one that does not verify fails `CHAIN_AGENT_SIGNATURE_INVALID`. A file with no keys, or with anything that is not an Ed25519 JWK, is exit 2 with a message saying what is wrong with it.
+- Both reports say whether the check ran and count agent signatures present and verified: a new `agent sigs` / `agent signatures` line in text, and in JSON `optionalChecks.agent_signature` plus `agentSignatures` (on the dump report, under `vault`). Without `--agent-keys` the check is reported as not run and no verdict changes. The text line says `all re-verified` only when every agent signature was; otherwise it says how many were NOT verified, and when keys were supplied but none matches a sealed cert thumbprint it says that instead of asking for `--agent-keys`.
+- The dump report's `vault` gains `optionalChecks`, saying which input-gated checks (payload binding, OIDC actor, key validity window, agent signature) ran on at least one chain.
+- `verifyDumpStreaming`, `verifyDump` and `verifyVaultChains` take an options argument with `agentKeys`. `buildAgentKeyRegistry` and the `AgentPublicKeyJwk`, `AgentKeyRegistry`, `OptionalCheck`, `CheckApplicability` and `VerifyDumpOptions` types are exported.
+
 ### Changed
+
+- Requires `@agledger/verify-core` 1.5.0, which adds the agent-signature check and holds a row copy of `on_behalf_of` or `traceparent` to the value the entry signed: a rewritten or added row copy now fails `CHAIN_PAYLOAD_BINDING_MISMATCH` instead of verifying, in a dump and in an export.
 
 - The conformance corpus is regenerated at API 1.8.0, dump slice included. Same vectors and expected codes as the 1.7.0 corpus, and all pass.
 - Verified against a full vault dump from a live API 1.8.0 instance: record-lifecycle entries that sign the internal state (`state`, `previousState`, `newState`) beside the display status, the new `AUTH_KEY_ROTATED` entry on the platform-ops chain, and cert-signed and delegated creates all pass, and a rewritten `AUTH_KEY_ROTATED` payload or internal state fails `CHAIN_PAYLOAD_BINDING_MISMATCH`. No verification change was needed for them.

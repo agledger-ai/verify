@@ -44,8 +44,9 @@ Node 24 or newer.
 ## CLI
 
 ```bash
-agledger-verify <target> [--report-format text|json] [--keys <file>]
-                [--require-key-id <id>] [--require-out-of-band-keys]
+agledger-verify <target> [--report-format text|json] [--agent-keys <file>]
+                [--keys <file>] [--require-key-id <id>]
+                [--require-out-of-band-keys]
 ```
 
 `<target>` is auto-detected:
@@ -107,6 +108,45 @@ otherwise-valid export signed by a retired or unexpected key. The key-policy
 flags apply to `/audit-export` files only; a dump directory carries its own
 signed key history (`vault_signing_keys.ndjson`) and rejects them.
 
+### Agent signatures
+
+An agent that authenticates with an ephemeral cert can sign each request body
+it sends. The Server checks that signature, then seals it into the chain entry
+as `predicate.on_behalf_of.agent_signature`, beside the RFC 7638 thumbprint of
+the cert's public key. The envelope signature proves the Server wrote that. To
+prove the agent itself signed, without taking the Server's word for it, pass
+the cert's public key and the signature is re-verified offline:
+
+```bash
+agledger-verify ./dump --agent-keys agent-keys.json
+agledger-verify export.json --agent-keys agent-keys.json
+```
+
+Neither a dump nor an export carries cert public keys, so they come from the
+agent: the `publicKeyJwk` it sent to `POST /v1/auth/oidc/cert`, which is also
+the `cnf.jwk` claim inside the `certJws` it got back. The file holds one
+Ed25519 JWK, a list of them, or a `{"keys": [...]}` JWK Set, and any entry may
+wrap its key as `{"publicKeyJwk": {...}}`:
+
+```json
+[{ "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519", "x": "BKOgK3KibE8BZH8SXTX9dmAXcwgocTMHIv-R_eRB2lo" } }]
+```
+
+A key is matched to an entry only through the thumbprint that entry signed, so
+a key for some other cert matches nothing, and where the file came from needs
+no trust. The report gives `present` (entries carrying an agent signature) and
+`verified` (those re-checked and found good), and says whether the check ran at
+all: in the text report on the `agent sigs` / `agent signatures` line, in JSON
+as `optionalChecks.agent_signature` and `agentSignatures` (under `vault` for a
+dump). `present > verified` on a passing report means some signatures name a
+cert whose key you did not supply, never that they failed. One that does not
+verify fails `CHAIN_AGENT_SIGNATURE_INVALID`. Without `--agent-keys` the check
+is reported as not run and no verdict changes. The text line reads `all
+re-verified` only when every agent signature on the chain was; otherwise it
+says how many were NOT verified and why, including when none of the supplied
+keys matches a sealed cert thumbprint. A file that holds no keys, or
+anything that is not an Ed25519 JWK, is exit `2`.
+
 ## Library
 
 ```ts
@@ -117,6 +157,18 @@ if (!report.ok) {
   console.error(JSON.stringify(report, null, 2));
   process.exit(1);
 }
+```
+
+To re-verify agent signatures, pass the cert keys as the third argument:
+
+```ts
+import { verifyDumpStreaming } from '@agledger/verify';
+
+const agentKey = { kty: 'OKP', crv: 'Ed25519', x: 'BKOgK3KibE8BZH8SXTX9dmAXcwgocTMHIv-R_eRB2lo' } as const;
+const report = verifyDumpStreaming('/path/to/dump', undefined, { agentKeys: [agentKey] });
+
+console.log(report.vault.optionalChecks.agent_signature); // 'applied' once a key matched
+console.log(report.vault.agentSignatures); // e.g. { present: 12, verified: 6 }
 ```
 
 `verifyDumpStreaming` is the one to reach for: it streams `audit_vault.ndjson`
@@ -134,10 +186,12 @@ re-exported so a caller need not add a second dependency.
   monotonicity, payload_hash = sha256(cose_sign1), previous_hash linkage, the
   signed COSE protected-header chain-claim cross-check, the envelope
   signature (Ed25519 or ES256, dispatched from the trusted key material),
-  plus the dump-only input-gated checks: binding-integrity
-  (`CHAIN_PAYLOAD_BINDING_MISMATCH`), OIDC-actor cross-check
-  (`CHAIN_OIDC_ACTOR_MISMATCH`), and temporal key-validity
-  (`CHAIN_KEY_EXPIRED`).
+  plus the input-gated checks: binding-integrity
+  (`CHAIN_PAYLOAD_BINDING_MISMATCH`, which also holds a row copy of
+  `on_behalf_of` or `traceparent` to the value the entry signed), OIDC-actor
+  cross-check (`CHAIN_OIDC_ACTOR_MISMATCH`), temporal key-validity
+  (`CHAIN_KEY_EXPIRED`), and, with `--agent-keys`, the agent signatures
+  (`CHAIN_AGENT_SIGNATURE_INVALID`).
 - **Vault checkpoints**: the anchor row matches the live entry at its position
   and its signature verifies. A checkpoint without a matching `audit_vault` row
   is evidence of out-of-band TRUNCATE/DELETE (`CHECKPOINT_ROW_MISSING`).

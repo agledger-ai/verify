@@ -5,7 +5,12 @@
  * Kept separate so `dump-verifier.ts` stays I/O-free and unit-testable against
  * in-memory fixtures.
  */
-import { verifyOrgAdminReadsChains, verifyVaultChains, assembleReport } from './dump-verifier.js';
+import {
+  verifyOrgAdminReadsChains,
+  verifyVaultChains,
+  assembleReport,
+  type VerifyDumpOptions,
+} from './dump-verifier.js';
 import { DEFAULT_FILENAMES, loadCompanions, streamVaultEntries, type DumpFiles } from './loader.js';
 import type { VerifyReport } from './types.js';
 
@@ -20,10 +25,14 @@ import type { VerifyReport } from './types.js';
  * The companion files are still loaded whole: the checkpoint cross-check and
  * the org_admin_reads Merkle recomputation each need their full set, and each
  * is bounded by something far smaller than the vault.
+ *
+ * `options.agentKeys` enables the offline agent-signature check (see
+ * `VerifyDumpOptions`).
  */
 export function verifyDumpStreaming(
   dumpDir: string,
   filenames: DumpFiles = DEFAULT_FILENAMES,
+  options: VerifyDumpOptions = {},
 ): VerifyReport {
   const companions = loadCompanions(dumpDir, filenames);
   return assembleReport(
@@ -31,6 +40,7 @@ export function verifyDumpStreaming(
       streamVaultEntries(dumpDir, filenames),
       companions.vaultCheckpoints,
       companions.signingKeys,
+      options,
     ),
     verifyOrgAdminReadsChains(
       companions.orgAdminReads,

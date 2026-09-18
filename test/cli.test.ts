@@ -25,15 +25,21 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
     entries: [],
     recordId: 'rec-1',
     signatureCoverage: { signed: 10, unsigned: 0, skipped: 0, total: 10 },
-    optionalChecks: { payload_binding: 'applied', oidc_actor: 'applied', key_temporal: 'applied' },
+    optionalChecks: {
+      payload_binding: 'applied',
+      oidc_actor: 'applied',
+      key_temporal: 'applied',
+      agent_signature: 'skipped_no_input',
+    },
     keyProvenance: { outOfBand: 10, embedded: 0 },
     unsignedProjectionFields: [],
+    agentSignatures: { present: 0, verified: 0 },
     ...overrides,
   };
 }
 
 describe('parseArgs', () => {
-  const parsedDefaults = { keys: null, requireKeyId: null, requireOutOfBandKeys: false };
+  const parsedDefaults = { keys: null, requireKeyId: null, requireOutOfBandKeys: false, agentKeys: null };
 
   it('captures target and defaults to text report format', () => {
     expect(parseArgs(['/tmp/dump'])).toEqual({
@@ -84,6 +90,7 @@ describe('parseArgs', () => {
       keys: 'keys.json',
       requireKeyId: 'abc',
       requireOutOfBandKeys: true,
+      agentKeys: null,
     });
   });
 

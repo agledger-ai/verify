@@ -13,6 +13,7 @@ export {
   verifyOrgAdminReadsChains,
   assembleReport,
 } from './dump-verifier.js';
+export type { VerifyDumpOptions } from './dump-verifier.js';
 // Streams audit_vault.ndjson instead of materializing it. Prefer this over
 // verifyDump(loadDump(dir)) for anything larger than a demo vault.
 export { verifyDumpStreaming } from './verify-dir.js';
@@ -39,7 +40,7 @@ export {
   EXIT_VERIFICATION_FAILED,
   EXIT_CANNOT_VERIFY,
 } from './cli.js';
-export type { CliResult, ParsedArgs, CannotVerifyReport } from './cli.js';
+export type { CliResult, ParsedArgs, CannotVerifyReport, TextReportOptions } from './cli.js';
 
 // Re-export the shared core so a caller that wants the per-record export path
 // or the low-level primitives need not add a second dependency.
@@ -47,6 +48,7 @@ export {
   verifyAuditExport,
   verifyChain,
   buildKeyRegistry,
+  buildAgentKeyRegistry,
   sha256Hex,
   decodeCoseSign1,
   verifyCoseSign1,
@@ -58,6 +60,10 @@ export type {
   KeyRegistry,
   NormalizedEntry,
   ChainResult,
+  AgentPublicKeyJwk,
+  AgentKeyRegistry,
+  OptionalCheck,
+  CheckApplicability,
   OutOfBandKeyEntry,
   RecordAuditExportInput,
   VerifyExportResult,
