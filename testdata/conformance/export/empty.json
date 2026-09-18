@@ -1,5 +1,5 @@
 {
-  "recordId": "ad9a4fbd-56aa-4504-88ab-da45c07a37da",
+  "recordId": "669b38e0-00c4-4ee4-981c-cb8c9ac5623c",
   "chainIntegrity": true,
   "chainIntegrityReason": null,
   "chainIntegrityDetail": null,
@@ -22,9 +22,9 @@
       "For each entry: re-derive sha256 over `integrity.coseSign1` (base64-decode first) and confirm it equals `integrity.payloadHash`. Confirm `integrity.previousHash` equals the previous entry's `integrity.payloadHash` (or null at chainPosition=1).",
       "For each signed entry: decode the COSE_Sign1 envelope, look up the signing key by `integrity.signingKeyId` in `signingPublicKeys`, and verify the signature over the canonical Sig_structure under that key's algorithm (from /v1/verification-keys; Ed25519 raw bytes by default, P1363 r||s for an ES256-opted Server) (`[\"Signature1\", protected, \"\", payload]`).",
       "Re-build the predicate from the entry's `payload` jsonb using the same builder the writer used; deep-equal against the decoded predicate from `coseSign1`. Divergence indicates privileged-DBA tamper of the denormalized view (also surfaced as `chainIntegrityReason: payload_drift`).",
-      "Cross-check the chain length against `exportMetadata.expectedEntries` (the latest signed checkpoint position). A shorter chain means audit_vault was truncated out-of-band even though the visible chain is locally consistent. `expectedEntries: null` is EXPECTED on a fresh install — no signed checkpoint exists until the first checkpoint sweep fires (every 6 hours); skip this cross-check until then, it is not a defect.",
+      "Cross-check the chain length against `exportMetadata.expectedEntries` (the latest signed checkpoint position). A shorter chain means audit_vault was truncated out-of-band even though the visible chain is locally consistent. `expectedEntries: null` is EXPECTED on a fresh install — no signed checkpoint exists until the first checkpoint sweep fires (cadence set by VAULT_ANCHOR_INTERVAL_MINUTES, default 360); skip this cross-check until then, it is not a defect.",
       "Attribution is the SIGNED `actorId` / `actorOwnerId` (UUIDs), never the display labels. The per-entry fields in `unsignedFields` (`actorDisplayName`, `actorOwnerType`, `humanReadableLabel`) are convenience projections resolved from the current roster at export time — they are NOT signature-covered, are NOT re-checked by step 4 (which covers only `payload`), and an offline verifier reports PASS even if one was altered. To answer \"who performed this step,\" resolve the signed `actorOwnerId` UUID against your own agent/org roster; treat the display labels as decoration only.",
-      "On-behalf-of provenance: when an entry's `predicate.on_behalf_of` is present, read its `validated` field before trusting the delegated identity. `validated: true` is an ENGINE-VALIDATED delegation — the server checked an IdP-issued RFC 8693 token (signature/iss/aud/exp) against a trusted issuer and sealed the `act` chain + a `bound`/`unbound` binding. `validated: false` (equivalently `provenance: \"asserted\"`) is a CALLER ASSERTION supplied via `metadata.actContext` — a faithful, signature-covered record of what the authenticated caller CLAIMED, never checked against any IdP. Both are tamper-evident (sealed in the COSE payload), but only `validated: true` is the engine vouching for the delegation; treat an asserted `on_behalf_of` as self-reported."
+      "On-behalf-of provenance: when an entry's `predicate.on_behalf_of` is present, read its `validated` field before trusting the delegated identity. `validated: true` is an ENGINE-VALIDATED delegation — the server checked an IdP-issued RFC 8693 token (signature/iss/aud/exp) against a trusted issuer and sealed the `act` chain + a `bound`/`unbound` binding. `validated: false` (equivalently `provenance: \"asserted\"`) is a CALLER ASSERTION supplied via `metadata.actContext` — a faithful, signature-covered record of what the authenticated caller CLAIMED, never checked against any IdP. Both are tamper-evident (sealed in the COSE payload), but only `validated: true` is the engine vouching for the delegation; treat an asserted `on_behalf_of` as self-reported. `validated` and `provenance` describe the IDENTITY only. The `cert` and `agent_signature` siblings beside it are written by the engine from the request itself (the ephemeral cert it authenticated, and an Ed25519 signature it re-checked at intake against that cert's bound public key) and never by the caller: a request that sets either inside `metadata.actContext` is refused. Where the engine sealed them, it also re-checks them: `chainIntegrity: true` additionally means the cert named in `cert.id` still exists, still holds the thumbprint the entry names, still carries the expiry instant the entry sealed, covered the entry's `cwt.iat` in its validity window, and that `agent_signature` re-verified against that cert's bound public key; a failure localizes as `cert_missing`, `cert_actor_drift`, `cert_window_drift`, `cert_expired` or `agent_signature_invalid`. That re-check is the SERVER attesting, not something this export lets you reproduce: it reads the `ephemeral_certs` row, which is not exported. It covers every entry the engine synthesized from its own OIDC identity, every entry carrying `validated: true`, and every `validated: false` entry a Server sealed the siblings onto rather than passing them through from the caller. Older `validated: false` entries are the gap: their `cert` and `agent_signature` are caller passthrough, nothing re-checks them, and the marker that tells a sealed entry from a passed-through one is a row column this export does not publish, so read the two siblings on a historical asserted entry as part of the assertion."
     ],
     "unsignedFields": [
       "actorDisplayName",
@@ -37,11 +37,11 @@
     "offlineVerifier": "Turnkey offline verifier: `@agledger/verify` on npm (v1.0.1+). Drive `agledger-verify <dump-dir>` against a `./scripts/vault-dump.sh` output for full chain + signature + checkpoint cross-check with zero AGLedger code in the dependency tree. Pure node:crypto."
   },
   "exportMetadata": {
-    "recordId": "ad9a4fbd-56aa-4504-88ab-da45c07a37da",
-    "orgId": "cb1efb73-77f5-4fbd-aa6d-9541c81ed76d",
+    "recordId": "669b38e0-00c4-4ee4-981c-cb8c9ac5623c",
+    "orgId": "41085322-3757-4186-a9fb-609b3de0564f",
     "type": "test-generic-v1",
     "operatingMode": "cleartext",
-    "exportDate": "2026-09-11T01:09:15.295Z",
+    "exportDate": "2026-09-18T06:41:15.214Z",
     "totalEntries": 0,
     "expectedEntries": null,
     "chainIntegrity": true,
@@ -61,7 +61,7 @@
     },
     "signingKeyWindows": {
       "15d63684b387235c": {
-        "activatedAt": "2026-09-11T01:09:15.211Z",
+        "activatedAt": "2026-09-18T06:41:15.072Z",
         "retiredAt": null
       }
     }

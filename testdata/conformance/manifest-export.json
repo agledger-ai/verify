@@ -2,11 +2,11 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-09-11T01:09:15.558Z",
+  "generatedAt": "2026-09-18T06:41:15.701Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "e8725efe",
-    "apiVersion": "1.7.0",
+    "apiGitSha": "6fe63c36",
+    "apiVersion": "1.8.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -159,7 +159,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_SIGNING_KEY_DRIFT",
       "brokenAt": 2,
-      "note": "Entry 2 re-signed with the attacker key but the signature-covered kid still names the vault key; the row signingKeyId column points at the attacker key. The kid binding (engine signing_key_drift mirror, #893) fails it with no options."
+      "note": "Entry 2 re-signed with the attacker key but the signature-covered kid still names the vault key; the row signingKeyId column points at the attacker key. The kid binding (engine signing_key_drift mirror) fails it with no options."
     },
     {
       "file": "export/payload-binding-mismatch.json",
@@ -184,7 +184,7 @@
         "unsigned": 0,
         "skipped": 0
       },
-      "note": "DRAFT-stage PATCH /v1/records/{id} edit: RECORD_CREATED then RECORD_UPDATED (the #732 entry type). verify-core projects RECORD_UPDATED through the generic record-state path; this vector pins the wire shape verifies green against out-of-band keys."
+      "note": "DRAFT-stage PATCH /v1/records/{id} edit: RECORD_CREATED then RECORD_UPDATED. verify-core projects RECORD_UPDATED through the generic record-state path; this vector pins the wire shape verifies green against out-of-band keys."
     },
     {
       "file": "export/unsigned.json",
