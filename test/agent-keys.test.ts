@@ -219,6 +219,7 @@ describe('--agent-keys on a dump directory', () => {
     expect(report.vault.optionalChecks).toEqual({
       payload_binding: 'applied',
       oidc_actor: 'applied',
+      actor_attribution: 'applied',
       key_temporal: 'applied',
       agent_signature: 'applied',
     });
