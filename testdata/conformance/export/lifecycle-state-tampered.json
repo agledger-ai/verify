@@ -1,0 +1,169 @@
+{
+  "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+  "chainIntegrity": true,
+  "chainIntegrityReason": null,
+  "chainIntegrityDetail": null,
+  "signingPublicKey": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI=",
+  "signingPublicKeys": {
+    "15d63684b387235c": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI="
+  },
+  "signatureCoverage": {
+    "signed": 3,
+    "unsigned": 0,
+    "total": 3
+  },
+  "integrityLevel": "hash_chain_and_signatures",
+  "exportFormatVersion": "2.0",
+  "canonicalization": "RFC8949-CDE",
+  "verificationGuide": {
+    "summary": "Each entry carries a canonical COSE_Sign1 envelope (RFC 9052) over an in-toto v1 Statement payload. The chain links via sha256 of each envelope; when VAULT_SIGNING_KEY is configured, each envelope is signed under the key's published algorithm (Ed25519 by default) and verifiable offline against the published verification keys. Verify the chain independently of this server before relying on it.",
+    "steps": [
+      "Read `integrityLevel` and `signatureCoverage`. `hash_chain_only` means no signatures — only the chain links are verifiable. `hash_chain_and_signatures` means every entry is signed.",
+      "For each entry: re-derive sha256 over `integrity.coseSign1` (base64-decode first) and confirm it equals `integrity.payloadHash`. Confirm `integrity.previousHash` equals the previous entry's `integrity.payloadHash` (or null at chainPosition=1).",
+      "For each signed entry: decode the COSE_Sign1 envelope, look up the signing key by `integrity.signingKeyId` in `signingPublicKeys`, and verify the signature over the canonical Sig_structure under that key's algorithm (from /v1/verification-keys; Ed25519 raw bytes by default, P1363 r||s for an ES256-opted Server) (`[\"Signature1\", protected, \"\", payload]`).",
+      "Re-build the predicate from the entry's `payload` jsonb using the same builder the writer used; deep-equal against the decoded predicate from `coseSign1`. Divergence indicates privileged-DBA tamper of the denormalized view (also surfaced as `chainIntegrityReason: payload_drift`).",
+      "Cross-check the chain length against `exportMetadata.expectedEntries` (the latest signed checkpoint position). A shorter chain means audit_vault was truncated out-of-band even though the visible chain is locally consistent. `expectedEntries: null` is EXPECTED on a fresh install — no signed checkpoint exists until the first checkpoint sweep fires (cadence set by VAULT_ANCHOR_INTERVAL_MINUTES, default 360); skip this cross-check until then, it is not a defect.",
+      "Attribution is the SIGNED `actorId` / `actorOwnerId` (UUIDs), never the display labels. The per-entry fields in `unsignedFields` (`actorDisplayName`, `actorOwnerType`, `humanReadableLabel`) are convenience projections resolved from the current roster at export time — they are NOT signature-covered, are NOT re-checked by step 4 (which covers only `payload`), and an offline verifier reports PASS even if one was altered. To answer \"who performed this step,\" resolve the signed `actorOwnerId` UUID against your own agent/org roster; treat the display labels as decoration only.",
+      "On-behalf-of provenance: when an entry's `predicate.on_behalf_of` is present, read its `validated` field before trusting the delegated identity. `validated: true` is an ENGINE-VALIDATED delegation — the server checked an IdP-issued RFC 8693 token (signature/iss/aud/exp) against a trusted issuer and sealed the `act` chain + a `bound`/`unbound` binding. `validated: false` (equivalently `provenance: \"asserted\"`) is a CALLER ASSERTION supplied via `metadata.actContext` — a faithful, signature-covered record of what the authenticated caller CLAIMED, never checked against any IdP. Both are tamper-evident (sealed in the COSE payload), but only `validated: true` is the engine vouching for the delegation; treat an asserted `on_behalf_of` as self-reported. `validated` and `provenance` describe the IDENTITY only. The `cert` and `agent_signature` siblings beside it are written by the engine from the request itself (the ephemeral cert it authenticated, and an Ed25519 signature it re-checked at intake against that cert's bound public key) and never by the caller: a request that sets either inside `metadata.actContext` is refused. Where the engine sealed them, it also re-checks them, and it re-checks each entry's write time against its signing key's published `[activatedAt, retiredAt]` window: `chainIntegrity: true` additionally means every signed entry sits inside its key's window, and that the cert named in `cert.id` still exists, still holds the thumbprint the entry names, still carries the expiry instant the entry sealed, covered the entry's `cwt.iat` in its validity window, and that `agent_signature` re-verified against that cert's bound public key; a failure localizes as `cert_missing`, `cert_actor_drift`, `cert_window_drift`, `cert_expired` or `agent_signature_invalid`. That re-check is the SERVER attesting, not something this export lets you reproduce: it reads the `ephemeral_certs` row, which is not exported. It covers every entry the engine synthesized from its own OIDC identity, every entry carrying `validated: true`, and every `validated: false` entry a Server sealed the siblings onto rather than passing them through from the caller. Older `validated: false` entries are the gap: their `cert` and `agent_signature` are caller passthrough, nothing re-checks them, and the marker that tells a sealed entry from a passed-through one is a row column this export does not publish, so read the two siblings on a historical asserted entry as part of the assertion. The `agent_signature` half is reproducible offline with the cert's public key, which the cert's `EPHEMERAL_CERT_ISSUED` entry on the platform-ops chain signs as `publicKeyJwk` (its RFC 7638 thumbprint, written `sha256:<hex>`, is the sealed `cert.thumbprint`); that chain is in a vault dump not scoped to one org, not in this export."
+    ],
+    "unsignedFields": [
+      "actorDisplayName",
+      "actorOwnerType",
+      "humanReadableLabel"
+    ],
+    "evidenceBinding": "Completion evidence is bound to the chain BY HASH: a COMPLETION_SUBMITTED entry's `payload.evidenceHash` is the SHA-256 hex digest of the evidence JSON canonicalized per RFC 8785 (JCS — keys sorted, no whitespace, JSON.stringify number/string rules). This is a DIFFERENT canonicalization from the chain envelope's `canonicalization: RFC8949-CDE` (deterministic CBOR), which covers only the COSE payload. To re-bind a separately-obtained evidence body offline: canonicalize it per RFC 8785, SHA-256 it, and compare against the signed `evidenceHash` (Python: `hashlib.sha256(json.dumps(evidence, separators=(\",\", \":\"), sort_keys=True).encode()).hexdigest()` matches for evidence without non-BMP key-ordering edge cases). Pass `?evidence=true` on GET /v1/records/{id}/audit-export to inline the evidence bodies at each COMPLETION_SUBMITTED entry's top-level `evidence` field — an unsigned projection (like the fields in `unsignedFields`) whose authority comes from re-binding it to the signed hash, not from its presence in the export. On encrypted-mode records the server never sees cleartext: `evidenceHash` is client-supplied at submission time, so re-bind against the decrypted cleartext using the canonicalization your writer used.",
+    "embeddedKeysHint": "This export embeds the engine's active signing public key(s) at `signingPublicKeys` (keyId → base64). Convenient but trust-on-first-use: an attacker who replaces both the chain AND the embedded key gets a self-consistent forged export.",
+    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from http://localhost:3001/v1/verification-keys (or the cached http://localhost:3001/.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Re-fetch rather than pinning once: keys rotate, no event announces it, and every historical key stays published. Each entry names its key in `integrity.signingKeyId`; resolve that id in the fetched set and check the entry was written inside that key's `activatedAt`/`retiredAt` window (`retiredAt: null` means still active).",
+    "offlineVerifier": "Turnkey offline verifier: `@agledger/verify` on npm, installed at or above the `minVerifierVersion` /v1/verification-keys publishes for each signing key. Run `agledger-verify <dump-dir>` against a vault dump for the full chain, signature and checkpoint cross-check, with no AGLedger code in the dependency tree. Produce the dump with `./scripts/vault-dump.sh <out-dir>` from the install bundle, which runs the dump tool shipped in the image (`dist/scripts/dump-vault.js`), or with `pnpm vault:dump <out-dir>` (`scripts/dump-vault.ts`) from a source checkout. Either takes `--org <id>` to scope the dump to one org, which leaves out the platform-ops chain."
+  },
+  "exportMetadata": {
+    "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+    "orgId": "fa5149cc-895e-401e-b45b-afc797716898",
+    "type": "test-generic-v1",
+    "operatingMode": "cleartext",
+    "exportDate": "2026-09-22T07:00:21.248Z",
+    "totalEntries": 3,
+    "expectedEntries": null,
+    "chainIntegrity": true,
+    "chainIntegrityReason": null,
+    "chainIntegrityDetail": null,
+    "signatureCoverage": {
+      "signed": 3,
+      "unsigned": 0,
+      "total": 3
+    },
+    "integrityLevel": "hash_chain_and_signatures",
+    "exportFormatVersion": "2.0",
+    "canonicalization": "RFC8949-CDE",
+    "signingPublicKey": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI=",
+    "signingPublicKeys": {
+      "15d63684b387235c": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI="
+    },
+    "signingKeyWindows": {
+      "15d63684b387235c": {
+        "activatedAt": "2026-09-22T07:00:18.905Z",
+        "retiredAt": null
+      }
+    }
+  },
+  "entries": [
+    {
+      "chainPosition": 1,
+      "createdAt": "2026-09-22T07:00:21.186Z",
+      "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+      "actorId": "81a28766-a8f7-491c-bbf9-a27e7d93c6d9",
+      "actorRole": "admin",
+      "actorOwnerId": "fa5149cc-895e-401e-b45b-afc797716898",
+      "actorDisplayName": "Org-fa5149cc",
+      "actorOwnerType": "org",
+      "actorOidcIss": null,
+      "actorOidcSub": null,
+      "actorOidcSynthesized": false,
+      "entryType": "RECORD_CREATED",
+      "humanReadableLabel": "Record opened",
+      "payload": {
+        "type": "test-generic-v1",
+        "orgId": "fa5149cc-895e-401e-b45b-afc797716898",
+        "state": "DRAFT",
+        "status": "CREATED",
+        "criteria": {
+          "task": "corpus-lifecycle"
+        },
+        "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+        "changedBy": "fa5149cc-895e-401e-b45b-afc797716898",
+        "chainDepth": 0,
+        "selfPrincipal": true,
+        "parentRecordId": null,
+        "performerAgentId": "9098082e-e7c7-424e-bf89-90e2a19a2b58",
+        "principalAgentId": "9098082e-e7c7-424e-bf89-90e2a19a2b58"
+      },
+      "integrity": {
+        "payloadHash": "bd31b0f1ebc116a5d69820822e4068818c8b0d8e80305e46937136bb549e7679",
+        "previousHash": null,
+        "coseSign1": "0oRYraUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JDAxYTBjN2VhLTYwMzYtNzllNS1hNGFmLTI3NThmMzQzYzY0YgYaarInhToAAQACowFQgaKHZqj3SRy7+aJ+fZPG2QJlYWRtaW4DUPpRScyJXkAetFuvx5dxaJg6AAEAAKIBAQL2oFkCgqRlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCDF9U/HzvO+PaxN9kaM/oA3zuP4DJuqzgD1l2oH+KSMx2lwcmVkaWNhdGWjZ3BheWxvYWSsZHR5cGVvdGVzdC1nZW5lcmljLXYxZW9yZ0lkeCRmYTUxNDljYy04OTVlLTQwMWUtYjQ1Yi1hZmM3OTc3MTY4OThlc3RhdGVlRFJBRlRmc3RhdHVzZ0NSRUFURURoY3JpdGVyaWGhZHRhc2twY29ycHVzLWxpZmVjeWNsZWhyZWNvcmRJZHgkMDFhMGM3ZWEtNjAzNi03OWU1LWE0YWYtMjc1OGYzNDNjNjRiaWNoYW5nZWRCeXgkZmE1MTQ5Y2MtODk1ZS00MDFlLWI0NWItYWZjNzk3NzE2ODk4amNoYWluRGVwdGgAbXNlbGZQcmluY2lwYWz1bnBhcmVudFJlY29yZElk9nBwZXJmb3JtZXJBZ2VudElkeCQ5MDk4MDgyZS1lN2M3LTQyNGUtYmY4OS05MGUyYTE5YTJiNThwcHJpbmNpcGFsQWdlbnRJZHgkOTA5ODA4MmUtZTdjNy00MjRlLWJmODktOTBlMmExOWEyYjU4aXJlY29yZF9pZHgkMDFhMGM3ZWEtNjAzNi03OWU1LWE0YWYtMjc1OGYzNDNjNjRiamVudHJ5X3R5cGVuUkVDT1JEX0NSRUFURURtcHJlZGljYXRlVHlwZXguaHR0cHM6Ly9hZ2xlZGdlci5haS9wcmVkaWNhdGVzL3JlY29yZC1zdGF0ZS92MVhAxvXBVX0Kn+KrqD+TkqNeBTBJumyFtMGuL7RpaSD7UORvqNGXEFKJwx5nrmH276GIzrycK/VJLVa02HDqLcz2Dw==",
+        "signingKeyId": "15d63684b387235c",
+        "valid": true
+      }
+    },
+    {
+      "chainPosition": 2,
+      "createdAt": "2026-09-22T07:00:21.193Z",
+      "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+      "actorId": "81a28766-a8f7-491c-bbf9-a27e7d93c6d9",
+      "actorRole": "admin",
+      "actorOwnerId": "fa5149cc-895e-401e-b45b-afc797716898",
+      "actorDisplayName": "Org-fa5149cc",
+      "actorOwnerType": "org",
+      "actorOidcIss": null,
+      "actorOidcSub": null,
+      "actorOidcSynthesized": false,
+      "entryType": "RECORD_STATE_CHANGE",
+      "humanReadableLabel": "Record state transitioned",
+      "payload": {
+        "version": 2,
+        "newState": "ACTIVE",
+        "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+        "newStatus": "CREATED",
+        "previousState": "DRAFT",
+        "previousStatus": "CREATED"
+      },
+      "integrity": {
+        "payloadHash": "956319b64f080f0b2f2e22478127bde373e49cf7ec1b08cfadfbab145de34073",
+        "previousHash": "bd31b0f1ebc116a5d69820822e4068818c8b0d8e80305e46937136bb549e7679",
+        "coseSign1": "0oRYzqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JDAxYTBjN2VhLTYwMzYtNzllNS1hNGFmLTI3NThmMzQzYzY0YgYaarInhToAAQACowFQgaKHZqj3SRy7+aJ+fZPG2QJlYWRtaW4DUPpRScyJXkAetFuvx5dxaJg6AAEAAKIBAgJYIL0xsPHrwRal1pgggi5AaIGMiw2OgDBeRpNxNrtUnnZ5oFkBnKRlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCDF9U/HzvO+PaxN9kaM/oA3zuP4DJuqzgD1l2oH+KSMx2lwcmVkaWNhdGWjZ3BheWxvYWSmZ3ZlcnNpb24CaG5ld1N0YXRlalJFR0lTVEVSRURocmVjb3JkSWR4JDAxYTBjN2VhLTYwMzYtNzllNS1hNGFmLTI3NThmMzQzYzY0YmluZXdTdGF0dXNnQ1JFQVRFRG1wcmV2aW91c1N0YXRlZURSQUZUbnByZXZpb3VzU3RhdHVzZ0NSRUFURURpcmVjb3JkX2lkeCQwMWEwYzdlYS02MDM2LTc5ZTUtYTRhZi0yNzU4ZjM0M2M2NGJqZW50cnlfdHlwZXNSRUNPUkRfU1RBVEVfQ0hBTkdFbXByZWRpY2F0ZVR5cGV4Lmh0dHBzOi8vYWdsZWRnZXIuYWkvcHJlZGljYXRlcy9yZWNvcmQtc3RhdGUvdjFYQIANEoDAdpqbngLZHUkUGnqf9Uopvk91yQ3xj7jXwrTlF/73cGs0oLLqT99oZN30FsgBECeWQTKSedW4Jk+kgQk=",
+        "signingKeyId": "15d63684b387235c",
+        "valid": true
+      }
+    },
+    {
+      "chainPosition": 3,
+      "createdAt": "2026-09-22T07:00:21.198Z",
+      "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+      "actorId": "81a28766-a8f7-491c-bbf9-a27e7d93c6d9",
+      "actorRole": "admin",
+      "actorOwnerId": "fa5149cc-895e-401e-b45b-afc797716898",
+      "actorDisplayName": "Org-fa5149cc",
+      "actorOwnerType": "org",
+      "actorOidcIss": null,
+      "actorOidcSub": null,
+      "actorOidcSynthesized": false,
+      "entryType": "RECORD_STATE_CHANGE",
+      "humanReadableLabel": "Record state transitioned",
+      "payload": {
+        "version": 3,
+        "newState": "ACTIVE",
+        "recordId": "01a0c7ea-6036-79e5-a4af-2758f343c64b",
+        "newStatus": "ACTIVE",
+        "previousState": "REGISTERED",
+        "previousStatus": "CREATED"
+      },
+      "integrity": {
+        "payloadHash": "bc910cc86851dbea116e48f4dd11521e1f445bd8f361aae3bf1ac847d9123bb5",
+        "previousHash": "956319b64f080f0b2f2e22478127bde373e49cf7ec1b08cfadfbab145de34073",
+        "coseSign1": "0oRYzqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JDAxYTBjN2VhLTYwMzYtNzllNS1hNGFmLTI3NThmMzQzYzY0YgYaarInhToAAQACowFQgaKHZqj3SRy7+aJ+fZPG2QJlYWRtaW4DUPpRScyJXkAetFuvx5dxaJg6AAEAAKIBAwJYIJVjGbZPCA8LLy4iR4EnveNz5Jz37BsIz637qxRd40BzoFkBnKRlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCDF9U/HzvO+PaxN9kaM/oA3zuP4DJuqzgD1l2oH+KSMx2lwcmVkaWNhdGWjZ3BheWxvYWSmZ3ZlcnNpb24DaG5ld1N0YXRlZkFDVElWRWhyZWNvcmRJZHgkMDFhMGM3ZWEtNjAzNi03OWU1LWE0YWYtMjc1OGYzNDNjNjRiaW5ld1N0YXR1c2ZBQ1RJVkVtcHJldmlvdXNTdGF0ZWpSRUdJU1RFUkVEbnByZXZpb3VzU3RhdHVzZ0NSRUFURURpcmVjb3JkX2lkeCQwMWEwYzdlYS02MDM2LTc5ZTUtYTRhZi0yNzU4ZjM0M2M2NGJqZW50cnlfdHlwZXNSRUNPUkRfU1RBVEVfQ0hBTkdFbXByZWRpY2F0ZVR5cGV4Lmh0dHBzOi8vYWdsZWRnZXIuYWkvcHJlZGljYXRlcy9yZWNvcmQtc3RhdGUvdjFYQIkzZ27gWBPLuXawRAV2vJ4op2KGGZRC6MXIcEKQlcjcoFbhwMpyXTg+ubXSNiJQgjkFLfPH9R+ZDUcVha9QzAU=",
+        "signingKeyId": "15d63684b387235c",
+        "valid": true
+      }
+    }
+  ]
+}

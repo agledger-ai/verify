@@ -2,10 +2,10 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-09-18T06:41:15.701Z",
+  "generatedAt": "2026-09-22T07:00:21.906Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "6fe63c36",
+    "apiGitSha": "3948cc68",
     "apiVersion": "1.8.0",
     "formatVersion": "2.0"
   },
@@ -173,6 +173,17 @@
       "note": "Entry 2 denormalised payload rewritten while coseSign1 carries the original predicate — binding-integrity failure caught before any content evaluation."
     },
     {
+      "file": "export/actor-attribution-mismatch.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_ACTOR_ATTRIBUTION_MISMATCH",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "Entry 2 actorOwnerId rewritten to an owner the chain never signed, with nothing else touched — the action re-attributed to another actor after export. Must fail even under out-of-band keys, where every signature still verifies."
+    },
+    {
       "file": "export/valid-record-updated.json",
       "kind": "export",
       "expect": "pass",
@@ -185,6 +196,103 @@
         "skipped": 0
       },
       "note": "DRAFT-stage PATCH /v1/records/{id} edit: RECORD_CREATED then RECORD_UPDATED. verify-core projects RECORD_UPDATED through the generic record-state path; this vector pins the wire shape verifies green against out-of-band keys."
+    },
+    {
+      "file": "export/valid-lifecycle-states.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 3,
+        "unsigned": 0,
+        "skipped": 0
+      },
+      "note": "POST /v1/records with autoActivate: RECORD_CREATED signs status and state, then two RECORD_STATE_CHANGE entries sign previousStatus/newStatus beside previousState/newState. The DRAFT to REGISTERED hop reads CREATED to CREATED on the display pair, so only the internal pair says what moved."
+    },
+    {
+      "file": "export/lifecycle-state-tampered.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "Entry 2 row newState rewritten from REGISTERED to ACTIVE while the display pair still reads CREATED to CREATED. The internal state is in the signed payload, so the rewrite fails the payload binding."
+    },
+    {
+      "file": "export/valid-cert-agent-signature.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json",
+        "agentKeysFile": "export/keys-agent.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 1,
+        "unsigned": 0,
+        "skipped": 0
+      },
+      "note": "POST /v1/records authenticated by an ephemeral cert, with X-Agent-Signature over the body hash. predicate.on_behalf_of seals the OIDC identity (validated: true), the cert {id, thumbprint, expires_at} and agent_signature {alg, content_hash, signature}. keys-agent.json is the publicKeyJwk signed into that cert's EPHEMERAL_CERT_ISSUED platform entry, whose RFC 7638 thumbprint is the one sealed here; with it the agent signature re-verifies offline."
+    },
+    {
+      "file": "export/agent-signature-invalid.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_AGENT_SIGNATURE_INVALID",
+      "brokenAt": 1,
+      "options": {
+        "keysFile": "export/keys-oob.json",
+        "agentKeysFile": "export/keys-agent.json"
+      },
+      "note": "The sealed agent_signature has one bit flipped and the envelope is re-signed with the vault key, so the chain, the envelope signature and the payload binding all hold. With the cert key supplied, the agent signature fails to verify over the sealed content_hash."
+    },
+    {
+      "file": "export/agent-signature-cert-copy-tampered.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
+      "brokenAt": 1,
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "The on_behalf_of copy in entry 1 payload names a different cert thumbprint than the one sealed beside the agent signature. The copy a reader sees must equal the signed predicate.on_behalf_of, so this fails with or without agent keys."
+    },
+    {
+      "file": "export/agent-signature-invalid.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "The same fixture with no agent keys: the agent-signature check is opt-in and reports skipped_no_input, so the verdict rests on the envelope alone and passes. The vector above is what the check adds."
+    },
+    {
+      "file": "export/valid-delegation-bound.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 1,
+        "unsigned": 0,
+        "skipped": 0
+      },
+      "note": "POST /v1/records by a cert holder with an AGLedger-On-Behalf-Of token whose act.sub is the cert identity. predicate.on_behalf_of seals the delegated subject, the act chain, validated: true and binding: bound, with the caller cert beside them."
+    },
+    {
+      "file": "export/delegation-binding-tampered.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
+      "brokenAt": 1,
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "The on_behalf_of copy in entry 1 payload rewritten from binding: bound to unbound. The copy a reader sees must equal the signed predicate.on_behalf_of."
     },
     {
       "file": "export/unsigned.json",
