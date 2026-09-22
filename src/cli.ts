@@ -305,11 +305,22 @@ export function formatExportReportText(
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
   }
-  // a PASS must not be read as vouching for unsigned display projections
-  // (e.g. actorDisplayName). Signed attribution is the actorOwnerId/actorId UUID.
+  // A PASS must not be read as vouching for unsigned display projections
+  // (e.g. actorDisplayName). The attribution the export's guide points at
+  // instead, actorOwnerId/actorId, IS signature-covered, so say whether this
+  // run actually checked it rather than leaving the reader to assume.
   if (result.unsignedProjectionFields.length > 0) {
+    // `applied` says the check RAN, not that it passed, so a failed run must
+    // not be told its attribution agrees: on a FAIL the verdict above is the
+    // only thing this note may defer to.
+    const attribution =
+      result.optionalChecks.actor_attribution !== 'applied'
+        ? 'Attribution (actorId/actorOwnerId) carries no signed actor claim in this export, so it was NOT cross-checked.'
+        : result.valid
+          ? 'Attribution (actorId/actorOwnerId/actorRole) was cross-checked against the signed actor claim and agrees.'
+          : 'Attribution (actorId/actorOwnerId/actorRole) is cross-checked against the signed actor claim, and this run did not verify, so nothing above is vouched for.';
     lines.push(
-      `  note              : ${result.unsignedProjectionFields.length} unsigned display projection field(s) (${result.unsignedProjectionFields.join(', ')}) are NOT signature-covered. Attribution is the signed actorOwnerId/actorId UUID, not these labels.`,
+      `  note              : ${result.unsignedProjectionFields.length} unsigned display projection field(s) (${result.unsignedProjectionFields.join(', ')}) are NOT signature-covered. ${attribution}`,
     );
   }
   return lines.join('\n');

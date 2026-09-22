@@ -4,7 +4,11 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.6.0] - 2026-09-18
+## [1.6.0] - 2026-09-21
+
+### Fixed
+
+- **Actor attribution is verified, not displayed on trust.** An audit export's own verification guide names `actorDisplayName`, `actorOwnerType` and `humanReadableLabel` as unsigned display projections and tells the auditor that the attribution to rely on is the `actorId`/`actorOwnerId` UUID. Those two, and `actorRole`, are signature-covered in the COSE protected header (CWT_Claims label 15, private label -65539), and nothing compared them against it: an export or dump row could be re-attributed to another actor, changing nothing else, and still verify with out-of-band keys. They are now cross-checked per entry, and a divergence fails the new `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`. This runs on a dump directory and on an `/audit-export` file; the dump carries `actor_key_id`, `actor_role` and `actor_owner_id` on every row, so it always applies there. The text report's `note` line no longer tells the reader that attribution is the signed UUID without saying whether this run checked it: it now states that the attribution was cross-checked and agrees, or that the export carried no signed actor claim to check it against. Requires `@agledger/verify-core` 1.5.0.
 
 ### Added
 

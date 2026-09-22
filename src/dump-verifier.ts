@@ -160,7 +160,7 @@ function chainLabel(chainKey: string): string {
 }
 
 /** Adapt a dump vault row into the verify-core normalized entry shape, carrying
- *  the dump-only inputs (binding, oidcActor, createdAt). */
+ *  the dump-only inputs (binding, oidcActor, actorAttribution, createdAt). */
 function toNormalizedEntry(scopeId: string, e: VaultEntryDump): NormalizedEntry {
   return {
     scopeId,
@@ -179,6 +179,15 @@ function toNormalizedEntry(scopeId: string, e: VaultEntryDump): NormalizedEntry 
       iss: e.actor_oidc_iss ?? null,
       sub: e.actor_oidc_sub ?? null,
       synthesized: e.actor_oidc_synthesized,
+    },
+    // The actor columns a report displays as "who did this" are
+    // signature-covered (CWT_Claims label 15 -> -65539), so the core
+    // cross-checks them rather than taking them on trust. Required in the
+    // dump shape, so this check is always applicable on the dump path.
+    actorAttribution: {
+      actorId: e.actor_key_id,
+      actorRole: e.actor_role,
+      actorOwnerId: e.actor_owner_id,
     },
   };
 }
@@ -309,6 +318,7 @@ export function verifyVaultChains(
   const optionalChecks: Record<OptionalCheck, CheckApplicability> = {
     payload_binding: 'skipped_no_input',
     oidc_actor: 'skipped_no_input',
+    actor_attribution: 'skipped_no_input',
     key_temporal: 'skipped_no_input',
     agent_signature: 'skipped_no_input',
   };

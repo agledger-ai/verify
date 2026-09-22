@@ -189,9 +189,11 @@ re-exported so a caller need not add a second dependency.
   plus the input-gated checks: binding-integrity
   (`CHAIN_PAYLOAD_BINDING_MISMATCH`, which also holds a row copy of
   `on_behalf_of` or `traceparent` to the value the entry signed), OIDC-actor
-  cross-check (`CHAIN_OIDC_ACTOR_MISMATCH`), temporal key-validity
-  (`CHAIN_KEY_EXPIRED`), and, with `--agent-keys`, the agent signatures
-  (`CHAIN_AGENT_SIGNATURE_INVALID`).
+  cross-check (`CHAIN_OIDC_ACTOR_MISMATCH`), actor attribution
+  (`CHAIN_ACTOR_ATTRIBUTION_MISMATCH`: the `actor_key_id`, `actor_role` and
+  `actor_owner_id` a report displays against the actor claim the entry signed),
+  temporal key-validity (`CHAIN_KEY_EXPIRED`), and, with `--agent-keys`, the
+  agent signatures (`CHAIN_AGENT_SIGNATURE_INVALID`).
 - **Vault checkpoints**: the anchor row matches the live entry at its position
   and its signature verifies. A checkpoint without a matching `audit_vault` row
   is evidence of out-of-band TRUNCATE/DELETE (`CHECKPOINT_ROW_MISSING`).
