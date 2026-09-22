@@ -20,6 +20,13 @@ interface VectorOptions {
   keysFile?: string;
   requireKeyId?: string;
   requireOutOfBandKeys?: boolean;
+  /**
+   * A JSON array of agent cert public keys (JWKs). Unmapped, a vector that
+   * expects `CHAIN_AGENT_SIGNATURE_INVALID` runs with no agent keys, the check
+   * reports `skipped_no_input`, the document passes, and the suite fails on a
+   * vector that was never actually exercised.
+   */
+  agentKeysFile?: string;
 }
 
 interface SignatureCoverageSpec {
@@ -122,6 +129,11 @@ function loadKeys(options: VectorOptions | undefined): VerifyExportOptions {
   if (options?.requireKeyId !== undefined) out.requireKeyId = options.requireKeyId;
   if (options?.requireOutOfBandKeys !== undefined) {
     out.requireOutOfBandKeys = options.requireOutOfBandKeys;
+  }
+  if (options?.agentKeysFile) {
+    out.agentKeys = JSON.parse(
+      readFileSync(join(CONFORMANCE, options.agentKeysFile), 'utf-8'),
+    ) as VerifyExportOptions['agentKeys'];
   }
   return out;
 }

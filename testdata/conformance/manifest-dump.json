@@ -2,10 +2,10 @@
   "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of five NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-09-18T06:41:15.704Z",
+  "generatedAt": "2026-09-22T07:00:21.907Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "6fe63c36",
+    "apiGitSha": "3948cc68",
     "apiVersion": "1.8.0",
     "formatVersion": "2.0"
   },
@@ -50,6 +50,13 @@
       "expect": "fail",
       "failureCode": "CHAIN_OIDC_ACTOR_MISMATCH",
       "note": "actor_oidc_synthesized=true but the denormalised actor_oidc_sub was rewritten away from predicate.on_behalf_of.oidc — DBA tamper on a synthesized row."
+    },
+    {
+      "file": "dump/chain-actor-attribution-mismatch",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_ACTOR_ATTRIBUTION_MISMATCH",
+      "note": "The denormalised actor_owner_id on a vault row was rewritten to an owner the chain never signed — a DBA re-attributing the write to another actor while every signature still verifies."
     },
     {
       "file": "dump/chain-key-expired",
@@ -98,6 +105,26 @@
       "expect": "fail",
       "failureCode": "TENANT_CHECKPOINT_FORK",
       "note": "Two signed tree heads at the same tree_size carry different roots for the same org — engine fork or signing-key compromise."
+    },
+    {
+      "file": "dump/valid-identity",
+      "kind": "dump",
+      "expect": "pass",
+      "note": "The platform-ops chain (EPHEMERAL_CERT_ISSUED entries signing each cert publicKeyJwk beside its publicKeyThumbprint, and an AUTH_KEY_ROTATED entry) with its checkpoint, plus the record chains of a cert-signed create carrying a sealed agent_signature and a bound AGLedger-On-Behalf-Of delegation made with the last cert issued. The cert key that verifies the agent signature is in the signed issuance entry. Verifies clean."
+    },
+    {
+      "file": "dump/identity-cert-key-tampered",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
+      "note": "The EPHEMERAL_CERT_ISSUED row publicKeyJwk.x swapped for another Ed25519 key, the substitution that would let a forged agent signature verify. The key is in the signed payload, so the rewrite fails the payload binding."
+    },
+    {
+      "file": "dump/identity-key-rotated-tampered",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
+      "note": "The AUTH_KEY_ROTATED row newKeyId rewritten to another key id. The replacement key is in the signed payload, so the rewrite fails the payload binding."
     },
     {
       "file": "dump/valid-es256",
