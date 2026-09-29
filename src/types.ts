@@ -212,19 +212,28 @@ export interface VaultChainsReport {
   failureCount: number;
   /**
    * Which input-gated checks ran. A check is `applied` when it ran on at least
-   * one chain. `agent_signature` needs cert keys the dump does not carry, so it
-   * stays `skipped_no_input` unless `agentKeys` supplied the key for at least
-   * one engine-validated agent signature.
+   * one chain. `agent_signature` is `applied` once a cert key, from
+   * `agentKeys` or from the dump (`certKeysFromChain`), matched at least one
+   * engine-validated agent signature.
    */
   optionalChecks: Record<OptionalCheck, CheckApplicability>;
   /**
    * Agent signatures on the vault: `present` counts entries whose signed
    * payload carries `predicate.on_behalf_of.agent_signature`, `verified` those
-   * re-checked against a supplied cert key and found good. `present > verified`
-   * on a passing report means some were not checked (no key supplied, or a
-   * caller-asserted identity), never that they failed.
+   * re-checked against a cert key (supplied, or signed on the dump) and found
+   * good. `present > verified` on a passing report means some were not checked
+   * (no key for their cert, or a caller-asserted identity), never that they
+   * failed.
    */
   agentSignatures: { present: number; verified: number };
+  /**
+   * Cert public keys taken from the dump itself: the `publicKeyJwk` each
+   * `EPHEMERAL_CERT_ISSUED` entry signs on the platform-ops chain, counted
+   * once per key and only from a chain that verified clean. Used beside any
+   * `agentKeys` the caller passed. Zero on an org-scoped dump, which leaves
+   * that chain out, and for certs an engine older than 1.8.0 issued.
+   */
+  certKeysFromChain: number;
 }
 
 export interface TenantAdminReadsReport {
