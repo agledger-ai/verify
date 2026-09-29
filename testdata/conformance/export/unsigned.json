@@ -1,12 +1,10 @@
 {
-  "recordId": "3b35570f-ed96-4e3b-9d80-80dab9a32250",
+  "recordId": "20e6e0a7-4d98-428d-aae5-01f16fcb17e9",
   "chainIntegrity": true,
   "chainIntegrityReason": null,
   "chainIntegrityDetail": null,
   "signingPublicKey": null,
-  "signingPublicKeys": {
-    "15d63684b387235c": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI="
-  },
+  "signingPublicKeys": {},
   "signatureCoverage": {
     "signed": 0,
     "unsigned": 3,
@@ -33,15 +31,15 @@
     ],
     "evidenceBinding": "Completion evidence is bound to the chain BY HASH: a COMPLETION_SUBMITTED entry's `payload.evidenceHash` is the SHA-256 hex digest of the evidence JSON canonicalized per RFC 8785 (JCS — keys sorted, no whitespace, JSON.stringify number/string rules). This is a DIFFERENT canonicalization from the chain envelope's `canonicalization: RFC8949-CDE` (deterministic CBOR), which covers only the COSE payload. To re-bind a separately-obtained evidence body offline: canonicalize it per RFC 8785, SHA-256 it, and compare against the signed `evidenceHash` (Python: `hashlib.sha256(json.dumps(evidence, separators=(\",\", \":\"), sort_keys=True).encode()).hexdigest()` matches for evidence without non-BMP key-ordering edge cases). Pass `?evidence=true` on GET /v1/records/{id}/audit-export to inline the evidence bodies at each COMPLETION_SUBMITTED entry's top-level `evidence` field — an unsigned projection (like the fields in `unsignedFields`) whose authority comes from re-binding it to the signed hash, not from its presence in the export. On encrypted-mode records the server never sees cleartext: `evidenceHash` is client-supplied at submission time, so re-bind against the decrypted cleartext using the canonicalization your writer used.",
     "embeddedKeysHint": "This export embeds the engine's active signing public key(s) at `signingPublicKeys` (keyId → base64). Convenient but trust-on-first-use: an attacker who replaces both the chain AND the embedded key gets a self-consistent forged export.",
-    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from http://localhost:3001/v1/verification-keys (or the cached http://localhost:3001/.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Re-fetch rather than pinning once: keys rotate, no event announces it, and every historical key stays published. Each entry names its key in `integrity.signingKeyId`; resolve that id in the fetched set and check the entry was written inside that key's `activatedAt`/`retiredAt` window (`retiredAt: null` means still active).",
+    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from /v1/verification-keys (or the cached /.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Re-fetch rather than pinning once: keys rotate, no event announces it, and every historical key stays published. Each entry names its key in `integrity.signingKeyId`; resolve that id in the fetched set and check the entry was written inside that key's `activatedAt`/`retiredAt` window (`retiredAt: null` means still active).",
     "offlineVerifier": "Turnkey offline verifier: `@agledger/verify` on npm, installed at or above the `minVerifierVersion` /v1/verification-keys publishes for each signing key. Run `agledger-verify <dump-dir>` against a vault dump for the full chain, signature and checkpoint cross-check, with no AGLedger code in the dependency tree. Produce the dump with `./scripts/vault-dump.sh <out-dir>` from the install bundle, which runs the dump tool shipped in the image (`dist/scripts/dump-vault.js`), or with `pnpm vault:dump <out-dir>` (`scripts/dump-vault.ts`) from a source checkout. Either takes `--org <id>` to scope the dump to one org, which leaves out the platform-ops chain."
   },
   "exportMetadata": {
-    "recordId": "3b35570f-ed96-4e3b-9d80-80dab9a32250",
-    "orgId": "f97446bb-9154-488d-9c9c-a6f7497c8866",
+    "recordId": "20e6e0a7-4d98-428d-aae5-01f16fcb17e9",
+    "orgId": "236d07cf-2f62-45c8-b5a2-f2ead31a9824",
     "type": "test-generic-v1",
     "operatingMode": "cleartext",
-    "exportDate": "2026-09-22T07:00:21.385Z",
+    "exportDate": "2026-09-29T03:24:28.723Z",
     "totalEntries": 3,
     "expectedEntries": null,
     "chainIntegrity": true,
@@ -56,25 +54,18 @@
     "exportFormatVersion": "2.0",
     "canonicalization": "RFC8949-CDE",
     "signingPublicKey": null,
-    "signingPublicKeys": {
-      "15d63684b387235c": "MCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CI="
-    },
-    "signingKeyWindows": {
-      "15d63684b387235c": {
-        "activatedAt": "2026-09-22T07:00:18.905Z",
-        "retiredAt": null
-      }
-    }
+    "signingPublicKeys": {},
+    "signingKeyWindows": {}
   },
   "entries": [
     {
       "chainPosition": 1,
-      "createdAt": "2026-09-22T07:00:21.365Z",
-      "recordId": "3b35570f-ed96-4e3b-9d80-80dab9a32250",
-      "actorId": "e654fe25-3a83-46f5-bbaf-3fd83a8b867e",
+      "createdAt": "2026-09-29T03:24:28.661Z",
+      "recordId": "20e6e0a7-4d98-428d-aae5-01f16fcb17e9",
+      "actorId": "40fb717b-9eea-49c7-a49b-65096da16397",
       "actorRole": "admin",
-      "actorOwnerId": "f97446bb-9154-488d-9c9c-a6f7497c8866",
-      "actorDisplayName": "Org-f97446bb",
+      "actorOwnerId": "236d07cf-2f62-45c8-b5a2-f2ead31a9824",
+      "actorDisplayName": "Org-236d07cf",
       "actorOwnerType": "org",
       "actorOidcIss": null,
       "actorOidcSub": null,
@@ -86,21 +77,21 @@
         "phase": "create"
       },
       "integrity": {
-        "payloadHash": "dea1623d6e5dcf493cfc634da7ec79862733e11fd1d9bfccbe31de79ee2db131",
+        "payloadHash": "6ee7d0c95c781273171bc65fdd509cc9672e880b9cc5cf4a04b28429acdd61aa",
         "previousHash": null,
-        "coseSign1": "0oRYraUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESAAAAAAAAAAAD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JDNiMzU1NzBmLWVkOTYtNGUzYi05ZDgwLTgwZGFiOWEzMjI1MAYaarInhToAAQACowFQ5lT+JTqDRvW7rz/YOouGfgJlYWRtaW4DUPl0RruRVEiNnJym90l8iGY6AAEAAKIBAQL2oFkBHqRlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCC5CnYhsjbHcfCRcVSx0ME4Y2PDep4Nj8Z4IMQbMBnD5WlwcmVkaWNhdGWjZ3BheWxvYWSiYW4BZXBoYXNlZmNyZWF0ZWlyZWNvcmRfaWR4JDNiMzU1NzBmLWVkOTYtNGUzYi05ZDgwLTgwZGFiOWEzMjI1MGplbnRyeV90eXBlblJFQ09SRF9DUkVBVEVEbXByZWRpY2F0ZVR5cGV4Lmh0dHBzOi8vYWdsZWRnZXIuYWkvcHJlZGljYXRlcy9yZWNvcmQtc3RhdGUvdjFYQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "coseSign1": "0oRYrqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESAAAAAAAAAAAD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQyMGU2ZTBhNy00ZDk4LTQyOGQtYWFlNS0wMWYxNmZjYjE3ZTkGGmq7L2w6AAEAAqMBUED7cXue6knHpJtlCW2hY5cCZWFkbWluA1AjbQfPL2JFyLWi8urTGpgkOgABAACiAQEC9qBZAR6kZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1Nlggw/4fwqHFljqRIZF2VZ8psXz8fAiCP5w4i6FH72JvXYRpcHJlZGljYXRlo2dwYXlsb2FkomFuAWVwaGFzZWZjcmVhdGVpcmVjb3JkX2lkeCQyMGU2ZTBhNy00ZDk4LTQyOGQtYWFlNS0wMWYxNmZjYjE3ZTlqZW50cnlfdHlwZW5SRUNPUkRfQ1JFQVRFRG1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         "signingKeyId": null,
         "valid": true
       }
     },
     {
       "chainPosition": 2,
-      "createdAt": "2026-09-22T07:00:21.371Z",
-      "recordId": "3b35570f-ed96-4e3b-9d80-80dab9a32250",
-      "actorId": "e654fe25-3a83-46f5-bbaf-3fd83a8b867e",
+      "createdAt": "2026-09-29T03:24:28.669Z",
+      "recordId": "20e6e0a7-4d98-428d-aae5-01f16fcb17e9",
+      "actorId": "40fb717b-9eea-49c7-a49b-65096da16397",
       "actorRole": "admin",
-      "actorOwnerId": "f97446bb-9154-488d-9c9c-a6f7497c8866",
-      "actorDisplayName": "Org-f97446bb",
+      "actorOwnerId": "236d07cf-2f62-45c8-b5a2-f2ead31a9824",
+      "actorDisplayName": "Org-236d07cf",
       "actorOwnerType": "org",
       "actorOidcIss": null,
       "actorOidcSub": null,
@@ -112,21 +103,21 @@
         "phase": "transition"
       },
       "integrity": {
-        "payloadHash": "006c229d818c1b12a9b59ac0267ead8582207adbc5bfd9fd17fbb232e926721c",
-        "previousHash": "dea1623d6e5dcf493cfc634da7ec79862733e11fd1d9bfccbe31de79ee2db131",
-        "coseSign1": "0oRYzqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESAAAAAAAAAAAD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JDNiMzU1NzBmLWVkOTYtNGUzYi05ZDgwLTgwZGFiOWEzMjI1MAYaarInhToAAQACowFQ5lT+JTqDRvW7rz/YOouGfgJlYWRtaW4DUPl0RruRVEiNnJym90l8iGY6AAEAAKIBAgJYIN6hYj1uXc9JPPxjTafseYYnM+Ef0dm/zL4x3nnuLbExoFkBJ6RlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCC5CnYhsjbHcfCRcVSx0ME4Y2PDep4Nj8Z4IMQbMBnD5WlwcmVkaWNhdGWjZ3BheWxvYWSiYW4CZXBoYXNlanRyYW5zaXRpb25pcmVjb3JkX2lkeCQzYjM1NTcwZi1lZDk2LTRlM2ItOWQ4MC04MGRhYjlhMzIyNTBqZW50cnlfdHlwZXNSRUNPUkRfU1RBVEVfQ0hBTkdFbXByZWRpY2F0ZVR5cGV4Lmh0dHBzOi8vYWdsZWRnZXIuYWkvcHJlZGljYXRlcy9yZWNvcmQtc3RhdGUvdjFYQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "payloadHash": "237d904029f68c9945ebfecf44346e9b267170ced1456820a078e5dc8253d8de",
+        "previousHash": "6ee7d0c95c781273171bc65fdd509cc9672e880b9cc5cf4a04b28429acdd61aa",
+        "coseSign1": "0oRYz6UBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESAAAAAAAAAAAD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQyMGU2ZTBhNy00ZDk4LTQyOGQtYWFlNS0wMWYxNmZjYjE3ZTkGGmq7L2w6AAEAAqMBUED7cXue6knHpJtlCW2hY5cCZWFkbWluA1AjbQfPL2JFyLWi8urTGpgkOgABAACiAQICWCBu59DJXHgScxcbxl/dUJzJZy6IC5zFz0oEsoQprN1hqqBZASekZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1Nlggw/4fwqHFljqRIZF2VZ8psXz8fAiCP5w4i6FH72JvXYRpcHJlZGljYXRlo2dwYXlsb2FkomFuAmVwaGFzZWp0cmFuc2l0aW9uaXJlY29yZF9pZHgkMjBlNmUwYTctNGQ5OC00MjhkLWFhZTUtMDFmMTZmY2IxN2U5amVudHJ5X3R5cGVzUkVDT1JEX1NUQVRFX0NIQU5HRW1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         "signingKeyId": null,
         "valid": true
       }
     },
     {
       "chainPosition": 3,
-      "createdAt": "2026-09-22T07:00:21.377Z",
-      "recordId": "3b35570f-ed96-4e3b-9d80-80dab9a32250",
-      "actorId": "e654fe25-3a83-46f5-bbaf-3fd83a8b867e",
+      "createdAt": "2026-09-29T03:24:28.680Z",
+      "recordId": "20e6e0a7-4d98-428d-aae5-01f16fcb17e9",
+      "actorId": "40fb717b-9eea-49c7-a49b-65096da16397",
       "actorRole": "admin",
-      "actorOwnerId": "f97446bb-9154-488d-9c9c-a6f7497c8866",
-      "actorDisplayName": "Org-f97446bb",
+      "actorOwnerId": "236d07cf-2f62-45c8-b5a2-f2ead31a9824",
+      "actorDisplayName": "Org-236d07cf",
       "actorOwnerType": "org",
       "actorOidcIss": null,
       "actorOidcSub": null,
@@ -138,9 +129,9 @@
         "phase": "completion"
       },
       "integrity": {
-        "payloadHash": "b6823a49441d831686740083cdd2c796caa9817d70675de215af809dfaf2a26d",
-        "previousHash": "006c229d818c1b12a9b59ac0267ead8582207adbc5bfd9fd17fbb232e926721c",
-        "coseSign1": "0oRYzqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESAAAAAAAAAAAD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JDNiMzU1NzBmLWVkOTYtNGUzYi05ZDgwLTgwZGFiOWEzMjI1MAYaarInhToAAQACowFQ5lT+JTqDRvW7rz/YOouGfgJlYWRtaW4DUPl0RruRVEiNnJym90l8iGY6AAEAAKIBAwJYIABsIp2BjBsSqbWawCZ+rYWCIHrbxb/Z/Rf7sjLpJnIcoFkBKKRlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCC5CnYhsjbHcfCRcVSx0ME4Y2PDep4Nj8Z4IMQbMBnD5WlwcmVkaWNhdGWjZ3BheWxvYWSiYW4DZXBoYXNlamNvbXBsZXRpb25pcmVjb3JkX2lkeCQzYjM1NTcwZi1lZDk2LTRlM2ItOWQ4MC04MGRhYjlhMzIyNTBqZW50cnlfdHlwZXRDT01QTEVUSU9OX1NVQk1JVFRFRG1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "payloadHash": "33378924e80810c3a03f3e87b201f7ca76f3bd5d9687a5dd29f3f1a2517aac13",
+        "previousHash": "237d904029f68c9945ebfecf44346e9b267170ced1456820a078e5dc8253d8de",
+        "coseSign1": "0oRYz6UBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESAAAAAAAAAAAD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQyMGU2ZTBhNy00ZDk4LTQyOGQtYWFlNS0wMWYxNmZjYjE3ZTkGGmq7L2w6AAEAAqMBUED7cXue6knHpJtlCW2hY5cCZWFkbWluA1AjbQfPL2JFyLWi8urTGpgkOgABAACiAQMCWCAjfZBAKfaMmUXr/s9ENG6bJnFwztFFaCCgeOXcglPY3qBZASikZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1Nlggw/4fwqHFljqRIZF2VZ8psXz8fAiCP5w4i6FH72JvXYRpcHJlZGljYXRlo2dwYXlsb2FkomFuA2VwaGFzZWpjb21wbGV0aW9uaXJlY29yZF9pZHgkMjBlNmUwYTctNGQ5OC00MjhkLWFhZTUtMDFmMTZmY2IxN2U5amVudHJ5X3R5cGV0Q09NUExFVElPTl9TVUJNSVRURURtcHJlZGljYXRlVHlwZXguaHR0cHM6Ly9hZ2xlZGdlci5haS9wcmVkaWNhdGVzL3JlY29yZC1zdGF0ZS92MVhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
         "signingKeyId": null,
         "valid": true
       }
