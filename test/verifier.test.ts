@@ -284,6 +284,24 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     expect(missing!.message).not.toContain('RecordRow');
   });
 
+  it('names an entry-level failure by the chain it is on', () => {
+    const { dump } = buildHappyDump();
+    const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
+    const onSchema = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
+    onSchema[onSchema.length - 1]!.payload_hash = '0'.repeat(64);
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    const entryFailure = report.failures.find((f) => f.scopeId === 'schema:org-1' && f.position !== undefined);
+    expect(entryFailure).toBeDefined();
+    expect(entryFailure!.message).toMatch(/^Chain schema:org-1 pos \d+: /);
+
+    const plain = cloneDump(dump);
+    const recordEntry = plain.vaultEntries[plain.vaultEntries.length - 1]!;
+    recordEntry.payload_hash = '0'.repeat(64);
+    const recordReport = verifyVaultChains(plain.vaultEntries, plain.vaultCheckpoints, plain.signingKeys);
+    const recordFailure = recordReport.failures.find((f) => f.position !== undefined);
+    expect(recordFailure!.message).toMatch(new RegExp(`^Record ${recordFailure!.scopeId} pos \\d+: `));
+  });
+
   it('falls back to record_id when a pre-producer dump carries no chain_key', () => {
     const { dump } = buildHappyDump();
     const d = cloneDump(dump);
