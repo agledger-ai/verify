@@ -4,6 +4,27 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-09-28
+
+### Fixed
+
+- **An unsigned row written once the install signs is a break, as the engine grades it.** The instant the install began signing is the earliest `activated_at` in `vault_signing_keys`, retired keys included; from then on every writer holds a registered key. An unsigned chain entry written at or after it, or after a signed entry in the same chain, fails `CHAIN_ENTRY_UNSIGNED` (from `@agledger/verify-core` 1.6.0). An unsigned vault checkpoint written at or after it fails `CHECKPOINT_UNSIGNED`. On the cross-party read log, a leaf whose envelope kid is the unsigned sentinel `0000000000000000` fails the new `TENANT_READ_LEAF_UNSIGNED` when read at or after that instant or after a signed leaf in the same org's log, and an unsigned tree head written at or after it fails the new `TENANT_CHECKPOINT_UNSIGNED`. Each is checked after the row, hash, index and root cross-checks, so an existing tamper finding keeps its own code. Unsigned rows from before the first key activation stay reduced coverage, so an install that never registered a key still verifies. Before this, an unsigned entry or checkpoint anywhere was reduced coverage, which is what a writer holding no key, or a DBA nulling a signed row's key id, leaves behind.
+- **A read-log leaf's signature is verified.** A leaf that names a real key now has its COSE_Sign1 signature checked under that key: one that does not verify, carries an all-zero signature, or does not decode fails `TENANT_READ_SIGNATURE_INVALID`, and a kid the key registry does not hold fails `CHAIN_SIGNATURE_MISSING_KEY`. Only the leaf hash and index were checked before, so a restamped leaf passed.
+- **A chain-entry failure names the chain it is on.** An entry-level failure on a schema chain read `RecordRow schema:<orgId> pos N`, presenting the chain key as a record id; it now reads `Chain schema:<orgId> pos N`, as checkpoint failures already did. A failure on a per-record chain reads `Record <id> pos N` instead of the internal type name `RecordRow`.
+- **An all-zero signature on a chain entry that names a signing key fails `CHAIN_SIGNATURE_INVALID`** rather than being graded unsigned, from `@agledger/verify-core` 1.6.0.
+- **The README said neither a dump nor an export carries cert public keys.** A dump not scoped to one org does: each `EPHEMERAL_CERT_ISSUED` entry on the platform-ops chain signs its cert's `publicKeyJwk` (API 1.8.0 on). An org-scoped dump leaves that chain out, a per-record `/audit-export` does not include it, and a cert issued before 1.8.0 carries only its thumbprint. The README and `--help` now say so.
+
+### Added
+
+- **A full dump re-verifies sealed agent signatures without `--agent-keys`.** The dump verifier takes the cert public keys the platform-ops chain signs, from a chain it has verified clean (hash chain, vault signatures and checkpoints) and only from entries whose vault signature checked, reading each key from the signed payload. They are used beside any `--agent-keys` / `agentKeys`, and the dump report counts them as `vault.certKeysFromChain`. The `agent sigs` line says when the keys came from the dump.
+- `FailureCode` adds `TENANT_READ_LEAF_UNSIGNED` and `TENANT_CHECKPOINT_UNSIGNED` beside the `@agledger/verify-core` set.
+
+### Changed
+
+- Requires `@agledger/verify-core` 1.6.0.
+- The conformance corpus is regenerated at agledger-api `cea0f7d5`, where the unsigned export vector is written before any signing key is registered. Same vectors and expected codes, and all pass.
+- The agent-signature line reads `no key for their cert` where it read `no key supplied for their cert`, since a key can now come from the dump.
+
 ## [1.6.0] - 2026-09-21
 
 ### Fixed
