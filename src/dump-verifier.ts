@@ -27,8 +27,11 @@
  * break, and so is an unsigned entry or leaf that follows a signed one in its
  * chain or log. Anything earlier is reduced coverage, not a break.
  *
- * The agent-signature check needs the cert public keys, which the dump does
- * not carry, so it runs only when the caller passes `agentKeys`.
+ * The agent-signature check needs the cert public keys. A dump not scoped to
+ * one org carries them: each `EPHEMERAL_CERT_ISSUED` entry on the platform-ops
+ * chain signs its cert's `publicKeyJwk` (engines from 1.8.0 on). They are
+ * taken only from a chain this walk has itself verified clean, entry
+ * signature included, and added to any keys the caller passes as `agentKeys`.
  *
  * Fail-closed posture (security review):
  *   - A dump with zero vault entries is CHAIN_EMPTY, never a silent pass.
@@ -41,8 +44,11 @@ import {
   buildAgentKeyRegistry,
   buildKeyRegistry,
   decodeCoseSign1,
+  decodePredicate,
   describeUnsupportedAlgorithm,
   earliestKeyActivation,
+  ed25519JwkThumbprint,
+  ed25519JwkToSpki,
   extractKid,
   merkleRoot,
   sha256Hex,
@@ -75,7 +81,10 @@ export interface VerifyDumpOptions {
   /**
    * Ed25519 public keys of agent ephemeral certs, as JWKs: the `publicKeyJwk`
    * an agent sent to `POST /v1/auth/oidc/cert`, also the `cnf.jwk` claim inside
-   * the `certJws`. The dump does not carry them. Where an entry's signed
+   * the `certJws`. Needed for certs the dump does not sign a key for: every
+   * cert on an org-scoped dump (which leaves out the platform-ops chain), and
+   * certs issued by an engine older than 1.8.0. The keys a dump does carry
+   * are used without being passed here. Where an entry's signed
    * payload carries an engine-validated `predicate.on_behalf_of.agent_signature`
    * whose sealed cert thumbprint matches one of these keys, the signature is
    * re-verified offline; one that does not verify fails
@@ -126,6 +135,43 @@ function buildVaultKeyRegistry(keys: readonly SigningKeyDump[]): KeyRegistry {
  * built KeyRegistry, so a row the registry builder would set aside still
  * counts, as it does in the engine's `min(activated_at)`.
  */
+/** The entry type that records a cert's issuance, with its public key signed in. */
+const CERT_ISSUED = 'EPHEMERAL_CERT_ISSUED';
+
+/**
+ * Add to `registry` the cert public keys a verified chain signs, and return how
+ * many were new. Called only for a chain that verified with no failure, its
+ * checkpoints included, and reads only entries whose vault signature checked
+ * `ok`, so every key taken is one the engine signed and nobody changed since.
+ * The key is read from the signed predicate, not the row copy. It is filed
+ * under its own RFC 7638 thumbprint, which is how a sealed agent signature
+ * names its cert, so a key can only ever check the signatures made under it.
+ */
+function harvestCertKeys(
+  chain: readonly VaultEntryDump[],
+  result: ChainResult,
+  registry: Map<string, string>,
+): number {
+  let added = 0;
+  chain.forEach((row, i) => {
+    if (result.entries[i]?.signature !== 'ok') return;
+    const parts = decodeCoseSign1(Buffer.from(row.cose_sign1, 'base64'));
+    const predicate = parts ? decodePredicate(parts.payloadBstr) : null;
+    if (predicate?.['entry_type'] !== CERT_ISSUED) return;
+    const payload = predicate['payload'];
+    const jwk =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)['publicKeyJwk']
+        : undefined;
+    const thumbprint = ed25519JwkThumbprint(jwk);
+    const spki = ed25519JwkToSpki(jwk);
+    if (thumbprint === null || spki === null || registry.has(thumbprint)) return;
+    registry.set(thumbprint, spki);
+    added++;
+  });
+  return added;
+}
+
 function signingSinceOf(keys: readonly SigningKeyDump[]): string | null {
   return earliestKeyActivation(keys.map((k) => ({ activatedAt: k.activated_at ?? null })));
 }
@@ -355,8 +401,15 @@ export function verifyVaultChains(
   const keyRegistry = buildVaultKeyRegistry(signingKeys);
   const keyIndex = indexKeys(signingKeys);
   const signingSince = signingSinceOf(signingKeys);
-  const agentKeys =
-    options.agentKeys !== undefined ? buildAgentKeyRegistry(options.agentKeys) : undefined;
+  // Caller keys first, then the cert keys each clean chain signs. A chain can
+  // only use keys harvested from chains closed before it; the producer sorts
+  // the platform-ops chain (the all-zero record id) first, so on a dump in
+  // producer order every record chain sees every cert key. Out of order, a
+  // signature simply goes unchecked, never misjudged.
+  const agentKeys = new Map<string, string>(
+    options.agentKeys !== undefined ? buildAgentKeyRegistry(options.agentKeys) : [],
+  );
+  let certKeysFromChain = 0;
   // Each input-gated check is reported `applied` once it ran on any chain, so
   // "not checked anywhere" never reads as "passed".
   const optionalChecks: Record<OptionalCheck, CheckApplicability> = {
@@ -392,6 +445,7 @@ export function verifyVaultChains(
     failureCount: failures.count,
     optionalChecks,
     agentSignatures,
+    certKeysFromChain,
   });
 
   const closeChain = (chainKey: string): void => {
@@ -410,9 +464,13 @@ export function verifyVaultChains(
     }
     agentSignatures.present += result.agentSignatures.present;
     agentSignatures.verified += result.agentSignatures.verified;
+    const failuresBefore = failures.count;
     collectChainFailures(chainKey, result, failures);
     verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keyIndex, signingSince, failures);
     checkpointsByChain.delete(chainKey);
+    if (result.valid && failures.count === failuresBefore) {
+      certKeysFromChain += harvestCertKeys(chain, result, agentKeys);
+    }
   };
 
   // `undefined` means "no row seen yet"; `null` is a real value (schema chains).

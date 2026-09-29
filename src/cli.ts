@@ -151,7 +151,8 @@ Options:
                               thumbprint has that signature re-verified
                               offline, and fails CHAIN_AGENT_SIGNATURE_INVALID
                               if it does not verify. Applies to a dump
-                              directory and to an /audit-export file.
+                              directory (added to the cert keys the dump
+                              itself signs) and to an /audit-export file.
   --keys, -k                  Path to a JSON file holding out-of-band public
                               keys, for an /audit-export file. Accepts a
                               {keyId: SPKI-DER-base64} map, a
@@ -179,8 +180,13 @@ The key-policy flags (--keys, --require-key-id, --require-out-of-band-keys)
 apply to /audit-export files only; a dump directory carries its own signed key
 history and rejects them.
 
-Neither a dump nor an export carries agent cert keys, so without --agent-keys
-the agent-signature check reports "not checked" and changes no verdict.
+A dump not scoped to one org carries the cert keys itself: each
+EPHEMERAL_CERT_ISSUED entry on the platform-ops chain signs its cert's
+publicKeyJwk (engines from 1.8.0 on), and a key is used once that chain has
+verified clean. An org-scoped dump leaves the platform-ops chain out, and a
+per-record /audit-export carries no cert keys, so for those pass --agent-keys.
+Where no key is at hand the agent-signature check reports "not checked" and
+changes no verdict.
 
 A dump directory must contain:
   audit_vault.ndjson
@@ -222,26 +228,34 @@ export interface TextReportOptions {
 /**
  * One line on the agent-signature check, worded by case so a PASS never reads
  * as covering signatures that were not re-verified. `present > verified` on a
- * passing report means some were not checked (no key supplied for their cert,
- * or a caller-asserted identity), never that they failed; on a failing report
- * the failure is also listed.
+ * passing report means some were not checked (no key for their cert, or a
+ * caller-asserted identity), never that they failed; on a failing report the
+ * failure is also listed. `keysFromChain` counts the cert keys a dump signs
+ * itself (always 0 for an export).
  */
 function agentSignatureSummary(
   counts: { present: number; verified: number },
   check: CheckApplicability,
   keysSupplied: boolean,
+  keysFromChain = 0,
 ): string {
   const base = `present=${counts.present} verified=${counts.verified}`;
   if (counts.present === 0) return `${base} (none on the chain)`;
   const unverified = counts.present - counts.verified;
+  const onChain = `${keysFromChain} cert key${keysFromChain === 1 ? '' : 's'} the dump signs`;
   if (check === 'applied') {
+    const against =
+      keysFromChain === 0 ? 'the supplied keys' : keysSupplied ? `the supplied keys and the ${onChain}` : `the ${onChain}`;
     return unverified === 0
-      ? `${base} (all re-verified against the supplied keys)`
-      : `${base} (${unverified} NOT verified: no key supplied for their cert, a caller-asserted identity, or a failure listed in this report)`;
+      ? `${base} (all re-verified against ${against})`
+      : `${base} (${unverified} NOT verified: no key for their cert, a caller-asserted identity, or a failure listed in this report)`;
   }
-  return keysSupplied
-    ? `${base} (NOT verified: none of the supplied keys matches the cert thumbprint sealed with an engine-validated agent signature)`
-    : `${base} (NOT verified: pass --agent-keys with the agent cert keys to re-verify them)`;
+  if (keysSupplied) {
+    return `${base} (NOT verified: none of the supplied keys${keysFromChain === 0 ? '' : ` or the ${onChain}`} matches the cert thumbprint sealed with an engine-validated agent signature)`;
+  }
+  return keysFromChain === 0
+    ? `${base} (NOT verified: pass --agent-keys with the agent cert keys to re-verify them)`
+    : `${base} (NOT verified: none of the ${onChain} matches; pass --agent-keys with the agent cert keys to re-verify them)`;
 }
 
 export function formatDumpReportText(report: VerifyReport, options: TextReportOptions = {}): string {
@@ -254,7 +268,7 @@ export function formatDumpReportText(report: VerifyReport, options: TextReportOp
   lines.push(`  entries     : ${report.vault.entryCount}`);
   lines.push(`  checkpoints : ${report.vault.checkpointCount}`);
   lines.push(
-    `  agent sigs  : ${agentSignatureSummary(report.vault.agentSignatures, report.vault.optionalChecks.agent_signature, options.agentKeysSupplied ?? false)}`,
+    `  agent sigs  : ${agentSignatureSummary(report.vault.agentSignatures, report.vault.optionalChecks.agent_signature, options.agentKeysSupplied ?? false, report.vault.certKeysFromChain)}`,
   );
   lines.push(`  failures    : ${report.vault.failureCount}`);
   lines.push(...failureLines(report.vault.failures, report.vault.failureCount, '    '));

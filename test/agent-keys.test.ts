@@ -228,7 +228,7 @@ describe('--agent-keys on a dump directory', () => {
 
   it('says which signatures were checked in the text report', () => {
     const r = runCli([DUMP, '--agent-keys', KEY_FILE]);
-    expect(r.stdout).toContain('agent sigs  : present=12 verified=6 (6 NOT verified: no key supplied');
+    expect(r.stdout).toContain('agent sigs  : present=12 verified=6 (6 NOT verified: no key for their cert');
     expect(runCli([DUMP]).stdout).toContain('agent sigs  : present=12 verified=0 (NOT verified: pass --agent-keys');
   });
 

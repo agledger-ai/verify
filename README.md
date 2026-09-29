@@ -114,19 +114,37 @@ An agent that authenticates with an ephemeral cert can sign each request body
 it sends. The Server checks that signature, then seals it into the chain entry
 as `predicate.on_behalf_of.agent_signature`, beside the RFC 7638 thumbprint of
 the cert's public key. The envelope signature proves the Server wrote that. To
-prove the agent itself signed, without taking the Server's word for it, pass
-the cert's public key and the signature is re-verified offline:
+prove the agent itself signed, without taking the Server's word for it, the
+signature is re-verified offline under the cert's public key.
+
+Where that key comes from depends on what you are verifying:
+
+- **A dump not scoped to one org** carries it. The Server records every cert
+  it issues as an `EPHEMERAL_CERT_ISSUED` entry on the platform-ops chain, and
+  from API 1.8.0 that entry signs the cert's `publicKeyJwk` beside its
+  `publicKeyThumbprint`. The verifier takes each such key once the
+  platform-ops chain has verified clean (hash chain, vault signatures and
+  checkpoints) and only from an entry whose vault signature checked, so it
+  uses no key the vault key did not sign. No flag is needed.
+- **An org-scoped dump** (`--org <id>` on the dump tool) leaves the
+  platform-ops chain out, and **a per-record `/audit-export`** does not
+  include it either. Neither carries cert keys.
+- **A cert issued by a Server older than 1.8.0** has only its thumbprint on
+  the chain.
+
+For the last two cases, pass the keys:
 
 ```bash
 agledger-verify ./dump --agent-keys agent-keys.json
 agledger-verify export.json --agent-keys agent-keys.json
 ```
 
-Neither a dump nor an export carries cert public keys, so they come from the
-agent: the `publicKeyJwk` it sent to `POST /v1/auth/oidc/cert`, which is also
-the `cnf.jwk` claim inside the `certJws` it got back. The file holds one
-Ed25519 JWK, a list of them, or a `{"keys": [...]}` JWK Set, and any entry may
-wrap its key as `{"publicKeyJwk": {...}}`:
+They come from the agent: the `publicKeyJwk` it sent to
+`POST /v1/auth/oidc/cert`, which is also the `cnf.jwk` claim inside the
+`certJws` it got back. On a dump they are used beside the keys the dump
+signs. The file holds one Ed25519 JWK, a list of them, or a
+`{"keys": [...]}` JWK Set, and any entry may wrap its key as
+`{"publicKeyJwk": {...}}`:
 
 ```json
 [{ "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519", "x": "BKOgK3KibE8BZH8SXTX9dmAXcwgocTMHIv-R_eRB2lo" } }]
@@ -138,9 +156,10 @@ no trust. The report gives `present` (entries carrying an agent signature) and
 `verified` (those re-checked and found good), and says whether the check ran at
 all: in the text report on the `agent sigs` / `agent signatures` line, in JSON
 as `optionalChecks.agent_signature` and `agentSignatures` (under `vault` for a
-dump). `present > verified` on a passing report means some signatures name a
-cert whose key you did not supply, never that they failed. One that does not
-verify fails `CHAIN_AGENT_SIGNATURE_INVALID`. Without `--agent-keys` the check
+dump, beside `certKeysFromChain`, the number of cert keys the dump signed).
+`present > verified` on a passing report means some signatures name a cert
+whose key was not at hand, never that they failed. One that does not verify
+fails `CHAIN_AGENT_SIGNATURE_INVALID`. With no key for any of them the check
 is reported as not run and no verdict changes. The text line reads `all
 re-verified` only when every agent signature on the chain was; otherwise it
 says how many were NOT verified and why, including when none of the supplied
@@ -159,7 +178,7 @@ if (!report.ok) {
 }
 ```
 
-To re-verify agent signatures, pass the cert keys as the third argument:
+To supply cert keys the dump does not sign itself, pass them as the third argument:
 
 ```ts
 import { verifyDumpStreaming } from '@agledger/verify';
@@ -192,8 +211,9 @@ re-exported so a caller need not add a second dependency.
   cross-check (`CHAIN_OIDC_ACTOR_MISMATCH`), actor attribution
   (`CHAIN_ACTOR_ATTRIBUTION_MISMATCH`: the `actor_key_id`, `actor_role` and
   `actor_owner_id` a report displays against the actor claim the entry signed),
-  temporal key-validity (`CHAIN_KEY_EXPIRED`), and, with `--agent-keys`, the
-  agent signatures (`CHAIN_AGENT_SIGNATURE_INVALID`).
+  temporal key-validity (`CHAIN_KEY_EXPIRED`), and the agent signatures
+  (`CHAIN_AGENT_SIGNATURE_INVALID`) under the cert keys the dump signs or
+  `--agent-keys` supplies.
 - **Vault checkpoints**: the anchor row matches the live entry at its position
   and its signature verifies. A checkpoint without a matching `audit_vault` row
   is evidence of out-of-band TRUNCATE/DELETE (`CHECKPOINT_ROW_MISSING`).
