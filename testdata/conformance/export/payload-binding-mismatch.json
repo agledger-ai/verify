@@ -1,5 +1,5 @@
 {
-  "recordId": "c3816a09-d39b-4289-9dd5-b0fb355bc498",
+  "recordId": "3dbb88a8-2866-4ca3-9a80-f990482565d3",
   "chainIntegrity": true,
   "chainIntegrityReason": null,
   "chainIntegrityDetail": null,
@@ -33,15 +33,15 @@
     ],
     "evidenceBinding": "Completion evidence is bound to the chain BY HASH: a COMPLETION_SUBMITTED entry's `payload.evidenceHash` is the SHA-256 hex digest of the evidence JSON canonicalized per RFC 8785 (JCS — keys sorted, no whitespace, JSON.stringify number/string rules). This is a DIFFERENT canonicalization from the chain envelope's `canonicalization: RFC8949-CDE` (deterministic CBOR), which covers only the COSE payload. To re-bind a separately-obtained evidence body offline: canonicalize it per RFC 8785, SHA-256 it, and compare against the signed `evidenceHash` (Python: `hashlib.sha256(json.dumps(evidence, separators=(\",\", \":\"), sort_keys=True).encode()).hexdigest()` matches for evidence without non-BMP key-ordering edge cases). Pass `?evidence=true` on GET /v1/records/{id}/audit-export to inline the evidence bodies at each COMPLETION_SUBMITTED entry's top-level `evidence` field — an unsigned projection (like the fields in `unsignedFields`) whose authority comes from re-binding it to the signed hash, not from its presence in the export. On encrypted-mode records the server never sees cleartext: `evidenceHash` is client-supplied at submission time, so re-bind against the decrypted cleartext using the canonicalization your writer used.",
     "embeddedKeysHint": "This export embeds the engine's active signing public key(s) at `signingPublicKeys` (keyId → base64). Convenient but trust-on-first-use: an attacker who replaces both the chain AND the embedded key gets a self-consistent forged export.",
-    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from http://localhost:3001/v1/verification-keys (or the cached http://localhost:3001/.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Re-fetch rather than pinning once: keys rotate, no event announces it, and every historical key stays published. Each entry names its key in `integrity.signingKeyId`; resolve that id in the fetched set and check the entry was written inside that key's `activatedAt`/`retiredAt` window (`retiredAt: null` means still active).",
+    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from /v1/verification-keys (or the cached /.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Re-fetch rather than pinning once: keys rotate, no event announces it, and every historical key stays published. Each entry names its key in `integrity.signingKeyId`; resolve that id in the fetched set and check the entry was written inside that key's `activatedAt`/`retiredAt` window (`retiredAt: null` means still active).",
     "offlineVerifier": "Turnkey offline verifier: `@agledger/verify` on npm, installed at or above the `minVerifierVersion` /v1/verification-keys publishes for each signing key. Run `agledger-verify <dump-dir>` against a vault dump for the full chain, signature and checkpoint cross-check, with no AGLedger code in the dependency tree. Produce the dump with `./scripts/vault-dump.sh <out-dir>` from the install bundle, which runs the dump tool shipped in the image (`dist/scripts/dump-vault.js`), or with `pnpm vault:dump <out-dir>` (`scripts/dump-vault.ts`) from a source checkout. Either takes `--org <id>` to scope the dump to one org, which leaves out the platform-ops chain."
   },
   "exportMetadata": {
-    "recordId": "c3816a09-d39b-4289-9dd5-b0fb355bc498",
-    "orgId": "56392e9c-3877-42b2-95ad-99ba085e5231",
+    "recordId": "3dbb88a8-2866-4ca3-9a80-f990482565d3",
+    "orgId": "bd16d95b-296f-4c9a-9165-32bbd969987b",
     "type": "test-generic-v1",
     "operatingMode": "cleartext",
-    "exportDate": "2026-09-22T07:00:21.094Z",
+    "exportDate": "2026-09-29T03:24:31.121Z",
     "totalEntries": 3,
     "expectedEntries": null,
     "chainIntegrity": true,
@@ -61,7 +61,7 @@
     },
     "signingKeyWindows": {
       "15d63684b387235c": {
-        "activatedAt": "2026-09-22T07:00:18.905Z",
+        "activatedAt": "2026-09-29T03:24:28.726Z",
         "retiredAt": null
       }
     }
@@ -69,12 +69,12 @@
   "entries": [
     {
       "chainPosition": 1,
-      "createdAt": "2026-09-22T07:00:21.061Z",
-      "recordId": "c3816a09-d39b-4289-9dd5-b0fb355bc498",
-      "actorId": "7e1aa4fb-caf1-4a63-a501-eefd340c70c9",
+      "createdAt": "2026-09-29T03:24:31.079Z",
+      "recordId": "3dbb88a8-2866-4ca3-9a80-f990482565d3",
+      "actorId": "433954d7-1eb6-404a-a942-fac4b550af21",
       "actorRole": "admin",
-      "actorOwnerId": "56392e9c-3877-42b2-95ad-99ba085e5231",
-      "actorDisplayName": "Org-56392e9c",
+      "actorOwnerId": "bd16d95b-296f-4c9a-9165-32bbd969987b",
+      "actorDisplayName": "Org-bd16d95b",
       "actorOwnerType": "org",
       "actorOidcIss": null,
       "actorOidcSub": null,
@@ -86,21 +86,21 @@
         "phase": "create"
       },
       "integrity": {
-        "payloadHash": "5b2fb86183489de33ad96048de4f9ec3324fcc9cacb80e46c7e4fbf8aa0f6ec1",
+        "payloadHash": "39c7c841b0529e6de5f5fe84283f25eb072c851e6858a2b0996050d97b438c98",
         "previousHash": null,
-        "coseSign1": "0oRYraUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JGMzODE2YTA5LWQzOWItNDI4OS05ZGQ1LWIwZmIzNTViYzQ5OAYaarInhToAAQACowFQfhqk+8rxSmOlAe79NAxwyQJlYWRtaW4DUFY5Lpw4d0Kyla2ZugheUjE6AAEAAKIBAQL2oFkBHqRlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCBHjv/SDQvVAnAJImiPz5WtR/DYPeMrOp8KdNAbG+9372lwcmVkaWNhdGWjZ3BheWxvYWSiYW4BZXBoYXNlZmNyZWF0ZWlyZWNvcmRfaWR4JGMzODE2YTA5LWQzOWItNDI4OS05ZGQ1LWIwZmIzNTViYzQ5OGplbnRyeV90eXBlblJFQ09SRF9DUkVBVEVEbXByZWRpY2F0ZVR5cGV4Lmh0dHBzOi8vYWdsZWRnZXIuYWkvcHJlZGljYXRlcy9yZWNvcmQtc3RhdGUvdjFYQJWRpTzlsODtKBl1KNI4HpCkkTWtt3y01QIkV3Di3rSXNPwDEsqO7EN06g+W5GLShobbMbyU9STgD1aOeWvfgQc=",
+        "coseSign1": "0oRYrqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQzZGJiODhhOC0yODY2LTRjYTMtOWE4MC1mOTkwNDgyNTY1ZDMGGmq7L286AAEAAqMBUEM5VNcetkBKqUL6xLVQryECZWFkbWluA1C9FtlbKW9MmpFlMrvZaZh7OgABAACiAQEC9qBZAR6kZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1NlgghjAnwPXmYhI+MPZmbRobcaAD4Gz4Po17oAd/896itbxpcHJlZGljYXRlo2dwYXlsb2FkomFuAWVwaGFzZWZjcmVhdGVpcmVjb3JkX2lkeCQzZGJiODhhOC0yODY2LTRjYTMtOWE4MC1mOTkwNDgyNTY1ZDNqZW50cnlfdHlwZW5SRUNPUkRfQ1JFQVRFRG1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWEA5dfB1My+xspjhG1PI7MyaMrw4hE/3WQgCsoNu4078gYOYYEJ57uAZTZC94/ACaospiYL0jqgtQ16A2T67XEEO",
         "signingKeyId": "15d63684b387235c",
         "valid": true
       }
     },
     {
       "chainPosition": 2,
-      "createdAt": "2026-09-22T07:00:21.069Z",
-      "recordId": "c3816a09-d39b-4289-9dd5-b0fb355bc498",
-      "actorId": "7e1aa4fb-caf1-4a63-a501-eefd340c70c9",
+      "createdAt": "2026-09-29T03:24:31.087Z",
+      "recordId": "3dbb88a8-2866-4ca3-9a80-f990482565d3",
+      "actorId": "433954d7-1eb6-404a-a942-fac4b550af21",
       "actorRole": "admin",
-      "actorOwnerId": "56392e9c-3877-42b2-95ad-99ba085e5231",
-      "actorDisplayName": "Org-56392e9c",
+      "actorOwnerId": "bd16d95b-296f-4c9a-9165-32bbd969987b",
+      "actorDisplayName": "Org-bd16d95b",
       "actorOwnerType": "org",
       "actorOidcIss": null,
       "actorOidcSub": null,
@@ -113,21 +113,21 @@
         "n": 99
       },
       "integrity": {
-        "payloadHash": "9a70b0706b1f4eaeb66152bb8d6f75eb4101d911e04b1ab89cb2d387e8889a82",
-        "previousHash": "5b2fb86183489de33ad96048de4f9ec3324fcc9cacb80e46c7e4fbf8aa0f6ec1",
-        "coseSign1": "0oRYzqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JGMzODE2YTA5LWQzOWItNDI4OS05ZGQ1LWIwZmIzNTViYzQ5OAYaarInhToAAQACowFQfhqk+8rxSmOlAe79NAxwyQJlYWRtaW4DUFY5Lpw4d0Kyla2ZugheUjE6AAEAAKIBAgJYIFsvuGGDSJ3jOtlgSN5PnsMyT8ycrLgORsfk+/iqD27BoFkBJ6RlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCBHjv/SDQvVAnAJImiPz5WtR/DYPeMrOp8KdNAbG+9372lwcmVkaWNhdGWjZ3BheWxvYWSiYW4CZXBoYXNlanRyYW5zaXRpb25pcmVjb3JkX2lkeCRjMzgxNmEwOS1kMzliLTQyODktOWRkNS1iMGZiMzU1YmM0OThqZW50cnlfdHlwZXNSRUNPUkRfU1RBVEVfQ0hBTkdFbXByZWRpY2F0ZVR5cGV4Lmh0dHBzOi8vYWdsZWRnZXIuYWkvcHJlZGljYXRlcy9yZWNvcmQtc3RhdGUvdjFYQKRWAQ1DzhGxY1l16puO4jPzy+E9Hov1AURYaOBM7KTEzX59uEyQlH0lMH9wXjRmBXNw1E2DinhBzr5WaGGpjws=",
+        "payloadHash": "59eab8982dddd6b36924774746e58d100ae5d01889ad06b47b52f32c68d268cf",
+        "previousHash": "39c7c841b0529e6de5f5fe84283f25eb072c851e6858a2b0996050d97b438c98",
+        "coseSign1": "0oRYz6UBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQzZGJiODhhOC0yODY2LTRjYTMtOWE4MC1mOTkwNDgyNTY1ZDMGGmq7L286AAEAAqMBUEM5VNcetkBKqUL6xLVQryECZWFkbWluA1C9FtlbKW9MmpFlMrvZaZh7OgABAACiAQICWCA5x8hBsFKebeX1/oQoPyXrByyFHmhYorCZYFDZe0OMmKBZASekZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1NlgghjAnwPXmYhI+MPZmbRobcaAD4Gz4Po17oAd/896itbxpcHJlZGljYXRlo2dwYXlsb2FkomFuAmVwaGFzZWp0cmFuc2l0aW9uaXJlY29yZF9pZHgkM2RiYjg4YTgtMjg2Ni00Y2EzLTlhODAtZjk5MDQ4MjU2NWQzamVudHJ5X3R5cGVzUkVDT1JEX1NUQVRFX0NIQU5HRW1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWEC8oJ8/fpPa9xdU/vwue9wqCcl/KzDMGbmNjr+XS+YgaH9iNZ8IQfvneK0jM5ELmakbQUxjUsrEn7MpEzkxra8A",
         "signingKeyId": "15d63684b387235c",
         "valid": true
       }
     },
     {
       "chainPosition": 3,
-      "createdAt": "2026-09-22T07:00:21.075Z",
-      "recordId": "c3816a09-d39b-4289-9dd5-b0fb355bc498",
-      "actorId": "7e1aa4fb-caf1-4a63-a501-eefd340c70c9",
+      "createdAt": "2026-09-29T03:24:31.100Z",
+      "recordId": "3dbb88a8-2866-4ca3-9a80-f990482565d3",
+      "actorId": "433954d7-1eb6-404a-a942-fac4b550af21",
       "actorRole": "admin",
-      "actorOwnerId": "56392e9c-3877-42b2-95ad-99ba085e5231",
-      "actorDisplayName": "Org-56392e9c",
+      "actorOwnerId": "bd16d95b-296f-4c9a-9165-32bbd969987b",
+      "actorDisplayName": "Org-bd16d95b",
       "actorOwnerType": "org",
       "actorOidcIss": null,
       "actorOidcSub": null,
@@ -139,9 +139,9 @@
         "phase": "completion"
       },
       "integrity": {
-        "payloadHash": "39a15c7da73df253be0a6a22227fce26e00f3ab168fe65c099853bbb4e6ae0dc",
-        "previousHash": "9a70b0706b1f4eaeb66152bb8d6f75eb4101d911e04b1ab89cb2d387e8889a82",
-        "coseSign1": "0oRYzqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdWh0dHA6Ly9sb2NhbGhvc3Q6MzAwMQJ4JGMzODE2YTA5LWQzOWItNDI4OS05ZGQ1LWIwZmIzNTViYzQ5OAYaarInhToAAQACowFQfhqk+8rxSmOlAe79NAxwyQJlYWRtaW4DUFY5Lpw4d0Kyla2ZugheUjE6AAEAAKIBAwJYIJpwsHBrH06utmFSu41vdetBAdkR4EsauJyy04foiJqCoFkBKKRlX3R5cGV4H2h0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjFnc3ViamVjdIGiZG5hbWVpcmVjb3JkX2lkZmRpZ2VzdKFmc2hhMjU2WCBHjv/SDQvVAnAJImiPz5WtR/DYPeMrOp8KdNAbG+9372lwcmVkaWNhdGWjZ3BheWxvYWSiYW4DZXBoYXNlamNvbXBsZXRpb25pcmVjb3JkX2lkeCRjMzgxNmEwOS1kMzliLTQyODktOWRkNS1iMGZiMzU1YmM0OThqZW50cnlfdHlwZXRDT01QTEVUSU9OX1NVQk1JVFRFRG1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWECDRlDQt1yL/TScASka3Cj3HI3Xw4omDHjiZ/qY4uln2elkD9EftMEIgZVRITmdc5VxuT+IWLD8F1RG1dt42MoG",
+        "payloadHash": "2fbbc85f3442ff67458612866f49f5bbaae1f4cf3ca6e8868077bbfdf38efb06",
+        "previousHash": "59eab8982dddd6b36924774746e58d100ae5d01889ad06b47b52f32c68d268cf",
+        "coseSign1": "0oRYz6UBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQzZGJiODhhOC0yODY2LTRjYTMtOWE4MC1mOTkwNDgyNTY1ZDMGGmq7L286AAEAAqMBUEM5VNcetkBKqUL6xLVQryECZWFkbWluA1C9FtlbKW9MmpFlMrvZaZh7OgABAACiAQMCWCBZ6riYLd3Ws2kkd0dG5Y0QCuXQGImtBrR7UvMsaNJoz6BZASikZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1NlgghjAnwPXmYhI+MPZmbRobcaAD4Gz4Po17oAd/896itbxpcHJlZGljYXRlo2dwYXlsb2FkomFuA2VwaGFzZWpjb21wbGV0aW9uaXJlY29yZF9pZHgkM2RiYjg4YTgtMjg2Ni00Y2EzLTlhODAtZjk5MDQ4MjU2NWQzamVudHJ5X3R5cGV0Q09NUExFVElPTl9TVUJNSVRURURtcHJlZGljYXRlVHlwZXguaHR0cHM6Ly9hZ2xlZGdlci5haS9wcmVkaWNhdGVzL3JlY29yZC1zdGF0ZS92MVhAPw3e73pD95pNRSkHm+T7z2ZXAD0WOgsgfVBfkeISz6D0w8l7roFwqy1a3DQ1ojI9nQuvojXOlb51zeQYjxlCAw==",
         "signingKeyId": "15d63684b387235c",
         "valid": true
       }
