@@ -198,9 +198,21 @@ re-exported so a caller need not add a second dependency.
   and its signature verifies. A checkpoint without a matching `audit_vault` row
   is evidence of out-of-band TRUNCATE/DELETE (`CHECKPOINT_ROW_MISSING`).
 - **`org_admin_reads` chain**: leaf_hash matches sha256(cose_sign1), leaf_index
-  gap-free per org.
+  gap-free per org, and each leaf's signature verifies under the key its
+  envelope names (`TENANT_READ_SIGNATURE_INVALID`).
 - **STH (signed tree head) checkpoints**: recomputed Merkle root over the first
   `tree_size` leaves matches the signed `root_hash`; signature verifies.
+- **Unsigned rows**, graded as the engine grades them. The install began
+  signing at the earliest `activated_at` in `vault_signing_keys`, retired keys
+  included. From then on every writer holds a registered key, so an unsigned
+  row written at or after that instant is a break: `CHAIN_ENTRY_UNSIGNED` for a
+  chain entry, `CHECKPOINT_UNSIGNED` for a vault checkpoint,
+  `TENANT_READ_LEAF_UNSIGNED` for a read-log leaf (its envelope kid is the
+  unsigned sentinel `0000000000000000`) and `TENANT_CHECKPOINT_UNSIGNED` for a
+  tree head. An unsigned entry or leaf after a signed one in the same chain or
+  org log is a break whatever its time. Unsigned rows from before the first key
+  activation stay reduced coverage, so an install that never registered a key
+  still verifies.
 - **Engine-fork detection**: two checkpoints at the same `tree_size` carrying
   different `root_hash` is `TENANT_CHECKPOINT_FORK`.
 

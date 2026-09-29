@@ -17,9 +17,36 @@
  * lacks `cose_sign1` is a pre-2.0 shape this verifier refuses to parse
  * best-effort (UNSUPPORTED_FORMAT).
  */
-import type { CheckApplicability, FailureCode, OptionalCheck } from '@agledger/verify-core';
+import type {
+  CheckApplicability,
+  FailureCode as CoreFailureCode,
+  OptionalCheck,
+} from '@agledger/verify-core';
 
-export type { FailureCode };
+/**
+ * Every code this verifier reports: the shared `@agledger/verify-core` set,
+ * plus the cross-party read log findings only a dump can produce.
+ *
+ *   - TENANT_READ_LEAF_UNSIGNED   engine mirror of `leaf_signature_missing`: an
+ *                                   org_admin_reads leaf whose envelope kid is
+ *                                   the unsigned sentinel (`0000000000000000`)
+ *                                   after a signed leaf in the same org's log,
+ *                                   or with a `read_at` at or after the earliest
+ *                                   `activated_at` in `vault_signing_keys`
+ *                                   (retired keys included). From that instant
+ *                                   every writer holds a registered key, so the
+ *                                   leaf is what a writer without one leaves on
+ *                                   the log. Earlier unsigned leaves stay
+ *                                   reduced coverage, not a break.
+ *   - TENANT_CHECKPOINT_UNSIGNED  engine mirror of the read log's
+ *                                   `checkpoint_unsigned`: an
+ *                                   org_admin_reads_checkpoints row with no
+ *                                   signing key id whose `checkpoint_at` is at
+ *                                   or after that same instant. The tree head
+ *                                   was forged or its key id nulled, and
+ *                                   nothing it anchors can be trusted.
+ */
+export type FailureCode = CoreFailureCode | 'TENANT_READ_LEAF_UNSIGNED' | 'TENANT_CHECKPOINT_UNSIGNED';
 
 /** One line of audit_vault.ndjson. */
 export interface VaultEntryDump {

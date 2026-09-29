@@ -19,6 +19,14 @@
  * use verify-core primitives (merkleRoot, verifyCoseSign1, sha256Hex) and emit
  * the canonical CHECKPOINT_* / TENANT_* codes.
  *
+ * Unsigned rows follow the engine's one rule everywhere: the instant the
+ * install began signing is the earliest `activated_at` in
+ * `vault_signing_keys` (retired keys included; the dump always carries the
+ * whole registry, even when scoped to one org). An unsigned chain entry, vault
+ * checkpoint, read-log leaf or read-log checkpoint written at or after it is a
+ * break, and so is an unsigned entry or leaf that follows a signed one in its
+ * chain or log. Anything earlier is reduced coverage, not a break.
+ *
  * The agent-signature check needs the cert public keys, which the dump does
  * not carry, so it runs only when the caller passes `agentKeys`.
  *
@@ -32,11 +40,15 @@
 import {
   buildAgentKeyRegistry,
   buildKeyRegistry,
+  decodeCoseSign1,
   describeUnsupportedAlgorithm,
+  earliestKeyActivation,
+  extractKid,
   merkleRoot,
   sha256Hex,
   verifyChain,
   verifyCoseSign1,
+  writtenWhileSigning,
   type AgentPublicKeyJwk,
   type ChainResult,
   type CheckApplicability,
@@ -106,6 +118,24 @@ function buildVaultKeyRegistry(keys: readonly SigningKeyDump[]): KeyRegistry {
   }));
   return buildKeyRegistry(verificationKeys);
 }
+
+/**
+ * When the install began signing: the earliest `activated_at` in the dump's
+ * key registry, or null when no key carries one (an install that never
+ * registered a key). Read from the registry rows directly rather than from a
+ * built KeyRegistry, so a row the registry builder would set aside still
+ * counts, as it does in the engine's `min(activated_at)`.
+ */
+function signingSinceOf(keys: readonly SigningKeyDump[]): string | null {
+  return earliestKeyActivation(keys.map((k) => ({ activatedAt: k.activated_at ?? null })));
+}
+
+/**
+ * The kid an unsigned COSE_Sign1 carries, as the engine writes it (eight zero
+ * bytes, hex). A read-log leaf has no signing-key column, so the envelope's
+ * kid is the only unsigned marker it has.
+ */
+const UNSIGNED_KID = '0'.repeat(16);
 
 function indexKeys(keys: readonly SigningKeyDump[]): Map<string, SigningKeyDump> {
   const map = new Map<string, SigningKeyDump>();
@@ -219,6 +249,7 @@ function verifyChainCheckpoints(
   chain: readonly VaultEntryDump[],
   checkpoints: readonly VaultCheckpointDump[],
   keys: Map<string, SigningKeyDump>,
+  signingSince: string | null,
   failures: FailureSink,
 ): void {
   for (const cp of checkpoints) {
@@ -246,7 +277,19 @@ function verifyChainCheckpoints(
 
     // Only null/undefined means unsigned; "" must resolve in the registry and
     // fail as a missing key rather than silently skip the signature check.
-    if (cp.signing_key_id != null) {
+    if (cp.signing_key_id == null) {
+      // Engine mirror of `checkpoint_unsigned`. Checked after the row and hash
+      // cross-checks, as the engine orders it, so a truncated or diverged
+      // chain is still reported under its own code.
+      if (writtenWhileSigning(cp.created_at, signingSince)) {
+        failures.push({
+          code: 'CHECKPOINT_UNSIGNED',
+          message: `${label} pos ${cp.chain_position}: checkpoint has no signing_key_id but was written ${cp.created_at}, at or after the earliest signing key activation ${signingSince}`,
+          scopeId: chainKey,
+          position: cp.chain_position,
+        });
+      }
+    } else {
       const key = keys.get(cp.signing_key_id);
       if (!key) {
         failures.push({
@@ -311,6 +354,7 @@ export function verifyVaultChains(
   const failures = new FailureSink();
   const keyRegistry = buildVaultKeyRegistry(signingKeys);
   const keyIndex = indexKeys(signingKeys);
+  const signingSince = signingSinceOf(signingKeys);
   const agentKeys =
     options.agentKeys !== undefined ? buildAgentKeyRegistry(options.agentKeys) : undefined;
   // Each input-gated check is reported `applied` once it ran on any chain, so
@@ -358,14 +402,16 @@ export function verifyVaultChains(
     chainCount++;
     chain.sort((a, b) => a.chain_position - b.chain_position);
     const normalized = chain.map((e) => toNormalizedEntry(chainKey, e));
-    const result = verifyChain(normalized, keyRegistry, { agentKeys });
+    // `signingSince` is passed rather than left for the core to derive from
+    // `keyRegistry`, so it is the same instant the checkpoint pass uses.
+    const result = verifyChain(normalized, keyRegistry, { agentKeys, signingSince });
     for (const check of Object.keys(optionalChecks) as OptionalCheck[]) {
       if (result.optionalChecks[check] === 'applied') optionalChecks[check] = 'applied';
     }
     agentSignatures.present += result.agentSignatures.present;
     agentSignatures.verified += result.agentSignatures.verified;
     collectChainFailures(chainKey, result, failures);
-    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keyIndex, failures);
+    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keyIndex, signingSince, failures);
     checkpointsByChain.delete(chainKey);
   };
 
@@ -428,7 +474,7 @@ export function verifyVaultChains(
   // with the same code as a short chain, since both mean the anchor outlived
   // its rows.
   for (const orphaned of checkpointsByChain.values()) {
-    verifyChainCheckpoints([], orphaned, keyIndex, failures);
+    verifyChainCheckpoints([], orphaned, keyIndex, signingSince, failures);
   }
 
   return report(chainCount);
@@ -465,15 +511,89 @@ function detectCheckpointForks(
   }
 }
 
+/**
+ * Grade one read-log leaf's signature the way the engine does, after its index
+ * and hash have been checked. Returns the failure, or null when the leaf holds
+ * up. `mustSign.signedBefore` is set by any leaf that names a real key,
+ * whatever its own verdict, as the engine's walk does.
+ */
+function checkLeafSignature(
+  orgId: string,
+  leaf: OrgAdminReadDump,
+  coseSign1Bytes: Buffer,
+  keys: Map<string, SigningKeyDump>,
+  mustSign: { signedBefore: boolean; signingSince: string | null },
+): Failure | null {
+  const at = `Org ${orgId} leaf ${leaf.leaf_index}`;
+  const parts = decodeCoseSign1(coseSign1Bytes);
+  const kid = parts ? extractKid(parts.protectedBstr) : null;
+  if (kid === null) {
+    return {
+      code: 'TENANT_READ_SIGNATURE_INVALID',
+      message: `${at}: cose_sign1 ${parts ? 'carries no kid' : 'does not decode as a COSE_Sign1 envelope'}, so no signature can be attributed to it`,
+      scopeId: orgId,
+      leafIndex: leaf.leaf_index,
+    };
+  }
+  if (kid === UNSIGNED_KID) {
+    // Engine mirror of `leaf_signature_missing`: unsigned is reduced coverage
+    // only before the install began signing and before any signed leaf in
+    // this org's log.
+    let why: string | null = null;
+    if (mustSign.signedBefore) {
+      why = 'follows a signed leaf in the same org log';
+    } else if (writtenWhileSigning(leaf.read_at, mustSign.signingSince)) {
+      why = `was written ${leaf.read_at}, at or after the earliest signing key activation ${mustSign.signingSince}`;
+    }
+    return why === null
+      ? null
+      : {
+          code: 'TENANT_READ_LEAF_UNSIGNED',
+          message: `${at}: leaf is unsigned (kid ${UNSIGNED_KID}) but ${why}`,
+          scopeId: orgId,
+          leafIndex: leaf.leaf_index,
+        };
+  }
+  mustSign.signedBefore = true;
+  const key = keys.get(kid);
+  if (!key) {
+    return {
+      code: 'CHAIN_SIGNATURE_MISSING_KEY',
+      message: `${at}: leaf kid "${kid}" not in dumped key registry`,
+      scopeId: orgId,
+      leafIndex: leaf.leaf_index,
+      signingKeyId: kid,
+    };
+  }
+  const outcome = verifyCoseSign1(coseSign1Bytes, key.public_key);
+  // Fail closed on ANY non-ok outcome; an all-zero signature under a real kid
+  // ('unsigned') is a wiped signature, as the engine grades it.
+  if (outcome === 'ok') return null;
+  return {
+    code: outcome === 'unsupported-key-algorithm' ? 'CHAIN_UNSUPPORTED_ALGORITHM' : 'TENANT_READ_SIGNATURE_INVALID',
+    message:
+      outcome === 'unsupported-key-algorithm'
+        ? `${at}: this leaf's signature could NOT BE CHECKED. Its signing key ${kid} ${describeUnsupportedAlgorithm(key.public_key)}`
+        : `${at}: COSE_Sign1 signature does not verify (${outcome})`,
+    scopeId: orgId,
+    leafIndex: leaf.leaf_index,
+    signingKeyId: kid,
+  };
+}
+
 function verifyOneOrgAdminReadsLog(
   orgId: string,
   leaves: OrgAdminReadDump[],
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
   keys: Map<string, SigningKeyDump>,
+  signingSince: string | null,
   failures: FailureSink,
 ): void {
   leaves.sort((a, b) => a.leaf_index - b.leaf_index);
+  const mustSign = { signedBefore: false, signingSince };
 
+  // One finding per org, the first met in leaf order, then the walk stops
+  // before the checkpoints: the engine reports the read log the same way.
   for (let i = 0; i < leaves.length; i++) {
     const leaf = leaves[i];
     if (!leaf) continue;
@@ -496,6 +616,11 @@ function verifyOneOrgAdminReadsLog(
         scopeId: orgId,
         leafIndex: leaf.leaf_index,
       });
+      return;
+    }
+    const signatureFailure = checkLeafSignature(orgId, leaf, coseSign1Bytes, keys, mustSign);
+    if (signatureFailure) {
+      failures.push(signatureFailure);
       return;
     }
   }
@@ -525,7 +650,18 @@ function verifyOneOrgAdminReadsLog(
 
     // Only null/undefined means unsigned; "" must resolve in the registry and
     // fail as a missing key rather than silently skip the signature check.
-    if (cp.signing_key_id != null) {
+    if (cp.signing_key_id == null) {
+      // Engine mirror of the read log's `checkpoint_unsigned`, checked after
+      // the leaf-count and root cross-checks as the engine orders it.
+      if (writtenWhileSigning(cp.checkpoint_at, signingSince)) {
+        failures.push({
+          code: 'TENANT_CHECKPOINT_UNSIGNED',
+          message: `Org ${orgId}: checkpoint ${cp.id} has no signing_key_id but was written ${cp.checkpoint_at}, at or after the earliest signing key activation ${signingSince}`,
+          scopeId: orgId,
+          treeSize: cp.tree_size,
+        });
+      }
+    } else {
       const key = keys.get(cp.signing_key_id);
       if (!key) {
         failures.push({
@@ -566,6 +702,7 @@ export function verifyOrgAdminReadsChains(
 ): TenantAdminReadsReport {
   const failures = new FailureSink();
   const keys = indexKeys(signingKeys);
+  const signingSince = signingSinceOf(signingKeys);
   const leavesByOrg = groupByOrg(reads);
   const checkpointsByOrg = groupByOrg(checkpoints);
 
@@ -580,6 +717,7 @@ export function verifyOrgAdminReadsChains(
       leavesByOrg.get(orgId) ?? [],
       checkpointsByOrg.get(orgId) ?? [],
       keys,
+      signingSince,
       failures,
     );
   }
