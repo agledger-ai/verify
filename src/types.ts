@@ -187,7 +187,7 @@ export interface Dump {
 export interface Failure {
   code: FailureCode;
   message: string;
-  /** RecordRow id for vault failures, org id for org-reads failures. */
+  /** Record id (or schema chain key) for vault failures, org id for org-reads failures. */
   scopeId?: string;
   position?: number;
   leafIndex?: number;

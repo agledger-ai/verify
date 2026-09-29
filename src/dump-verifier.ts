@@ -227,12 +227,12 @@ function checkpointChainKeyOf(cp: VaultCheckpointDump): string {
 
 /**
  * How a chain is named in failure messages. A per-record chain key IS a record
- * id, so "RecordRow <uuid>" is a lookup an auditor can act on. A schema chain
+ * id, so "Record <uuid>" is a lookup an auditor can act on. A schema chain
  * key is not: labelling it that way sent auditors to /v1/records/{id} for a
  * 404, so it is named as the chain it actually is.
  */
 function chainLabel(chainKey: string): string {
-  return chainKey.startsWith('schema:') ? `Chain ${chainKey}` : `RecordRow ${chainKey}`;
+  return chainKey.startsWith('schema:') ? `Chain ${chainKey}` : `Record ${chainKey}`;
 }
 
 /** Adapt a dump vault row into the verify-core normalized entry shape, carrying
@@ -275,7 +275,7 @@ function collectChainFailures(scopeId: string, result: ChainResult, failures: Fa
     if (entry.valid || !entry.failure) continue;
     failures.push({
       code: entry.failure.code,
-      message: `RecordRow ${scopeId} pos ${entry.position}: ${entry.failure.detail}`,
+      message: `${chainLabel(scopeId)} pos ${entry.position}: ${entry.failure.detail}`,
       scopeId,
       position: entry.position,
     });
