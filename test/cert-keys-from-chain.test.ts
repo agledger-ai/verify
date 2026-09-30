@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { AGENT_SIGNATURE_CONTEXT, ed25519JwkThumbprint, type AgentPublicKeyJwk } from '@agledger/verify-core';
 import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { EXIT_UNANCHORED, runCli } from '../src/cli.js';
+import { EXIT_OK, runCli } from '../src/cli.js';
 import type { Dump } from '../src/types.js';
 import { buildVaultEntry, generateKey, signingKeyDump } from './fixtures.js';
 
@@ -43,7 +43,7 @@ describe('a full dump re-verifies agent signatures from its own cert keys', () =
 
   it('says where the key came from in the text report', () => {
     const r = runCli([join(DUMPS, 'valid-identity')]);
-    expect(r.exitCode).toBe(EXIT_UNANCHORED);
+    expect(r.exitCode).toBe(EXIT_OK);
     expect(r.stdout).toContain('agent sigs  : present=1 verified=1 (all re-verified against the 1 cert key the dump signs)');
   });
 

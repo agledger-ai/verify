@@ -8,7 +8,6 @@ import { DEFAULT_FILENAMES } from '../src/loader.js';
 import {
   EXIT_CANNOT_VERIFY,
   EXIT_OK,
-  EXIT_UNANCHORED,
   EXIT_VERIFICATION_FAILED,
   formatDumpReportText,
   formatExportReportText,
@@ -137,12 +136,13 @@ describe('formatDumpReportText', () => {
     expect(text).toContain('org_admin_reads chain');
   });
 
-  it('never renders PASS for a clean dump verified without a pin', () => {
+  it('never renders a trusted PASS for a clean dump verified without a pin', () => {
     const { dump } = buildHappyDump();
     const text = formatDumpReportText(verifyDump(dump));
-    expect(text).toMatch(/^\[NOT ANCHORED\]/);
+    expect(text).toMatch(/^\[VERIFIED, NOT ANCHORED\]/);
     expect(text).not.toContain('[PASS]');
-    expect(text).toContain('NOT a clean verdict');
+    expect(text).toContain('NOT a trusted verdict');
+    expect(text).toContain('Ask the operator');
     expect(text).toContain('status      : NOT RUN');
   });
 
@@ -161,7 +161,7 @@ describe('formatExportReportText: unsigned-projection note', () => {
     const text = formatExportReportText(
       exportResult({ unsignedProjectionFields: ['actorDisplayName', 'actorOwnerType', 'humanReadableLabel'] }),
     );
-    expect(text).toMatch(/^\[NOT ANCHORED\]/);
+    expect(text).toMatch(/^\[VERIFIED, NOT ANCHORED\]/);
     expect(text).toContain('note');
     expect(text).toContain('actorDisplayName');
     expect(text).toContain('NOT signature-covered');
@@ -223,16 +223,16 @@ describe('runCli (dump-dir end-to-end)', () => {
     expect(result.stdout).toMatch(/^\[PASS\]/);
   });
 
-  it('exits 3 on a clean dump directory with no pin, and the JSON says it is not ok', () => {
+  it('exits 0 on a clean dump directory with no pin, and says it is not anchored', () => {
     const { dump } = buildHappyDump();
     writeDump(dump);
     const text = runCli([dir]);
-    expect(text.exitCode).toBe(EXIT_UNANCHORED);
-    expect(text.stdout).toMatch(/^\[NOT ANCHORED\]/);
+    expect(text.exitCode).toBe(EXIT_OK);
+    expect(text.stdout).toMatch(/^\[VERIFIED, NOT ANCHORED\]/);
     const json = runCli([dir, '-f', 'json']);
-    expect(json.exitCode).toBe(EXIT_UNANCHORED);
+    expect(json.exitCode).toBe(EXIT_OK);
     const parsed = JSON.parse(json.stdout) as { ok: boolean; verdict: string; keyTrust: { status: string } };
-    expect(parsed).toMatchObject({ ok: false, verdict: 'unanchored', keyTrust: { status: 'no_anchor' } });
+    expect(parsed).toMatchObject({ ok: true, verdict: 'unanchored', keyTrust: { status: 'no_anchor' } });
   });
 
   it('exits 1 when the pin reaches none of the keys that signed the dump', () => {
@@ -292,10 +292,10 @@ describe('runCli key-policy flags (verify#8, conformance corpus)', () => {
   // The corpus vault key, the pin its installer printed.
   const PIN = 'sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e';
 
-  it('an export verified against its own embedded keys is NOT ANCHORED, never PASS', () => {
+  it('an export verified against its own embedded keys is VERIFIED, NOT ANCHORED, never PASS', () => {
     const result = runCli([keySub]);
-    expect(result.exitCode).toBe(EXIT_UNANCHORED);
-    expect(result.stdout).toMatch(/^\[NOT ANCHORED\]/);
+    expect(result.exitCode).toBe(EXIT_OK);
+    expect(result.stdout).toMatch(/^\[VERIFIED, NOT ANCHORED\]/);
     expect(result.stdout).toContain('supplied=0');
     const json = JSON.parse(runCli([keySub, '-f', 'json']).stdout) as { verdict: string; valid: boolean };
     expect(json).toMatchObject({ verdict: 'unanchored', valid: true });

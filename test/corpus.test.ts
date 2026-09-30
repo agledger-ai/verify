@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_UNANCHORED, runCli } from '../src/cli.js';
+import { EXIT_CANNOT_VERIFY, EXIT_OK, runCli } from '../src/cli.js';
 import {
   spkiSha256,
   verifyAuditExport,
@@ -120,7 +120,7 @@ describe('DUMP conformance corpus (manifest-dump.json)', () => {
 
       if (vector.expect === 'pass') {
         expect(codes, 'expected pass').toEqual([]);
-        expect(report.verdict).toBe(anchors ? 'verified' : 'unanchored');
+        expect(report.verdict).toBe(anchors ? 'trusted' : 'unanchored');
         return;
       }
 
@@ -131,11 +131,11 @@ describe('DUMP conformance corpus (manifest-dump.json)', () => {
     });
   }
 
-  it('CLI verifies the valid dump directory: exit 3 unpinned, exit 0 pinned', () => {
+  it('CLI verifies the valid dump directory: unanchored unpinned, trusted pinned, exit 0 both', () => {
     const dir = join(CONFORMANCE, 'dump', 'valid');
     const unpinned = runCli([dir]);
-    expect(unpinned.exitCode).toBe(EXIT_UNANCHORED);
-    expect(unpinned.stdout).toMatch(/^\[NOT ANCHORED\]/);
+    expect(unpinned.exitCode).toBe(EXIT_OK);
+    expect(unpinned.stdout).toMatch(/^\[VERIFIED, NOT ANCHORED\]/);
     const pinned = runCli([dir, '--trust-anchor', currentPin('dump/valid')]);
     expect(pinned.exitCode).toBe(EXIT_OK);
     expect(pinned.stdout).toMatch(/^\[PASS\]/);
@@ -158,7 +158,7 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
     (dir) => {
       const report = verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [currentPin(dir)] });
       expect(allCodes(report)).toEqual([]);
-      expect(report.verdict).toBe('verified');
+      expect(report.verdict).toBe('trusted');
       expect(report.keyTrust.order).toBe('written');
       expect(report.keyTrust.unanchoredKeyIds).toEqual([]);
     },
@@ -274,13 +274,13 @@ describe('EXPORT conformance corpus (manifest-export.json)', () => {
     const valid = exportVectors.find((v) => v.expect === 'pass' && !v.options?.requireKeyId);
     expect(valid).toBeDefined();
     const unpinned = runCli([join(CONFORMANCE, valid!.file), '--report-format=json']);
-    expect(unpinned.exitCode).toBe(EXIT_UNANCHORED);
+    expect(unpinned.exitCode).toBe(EXIT_OK);
     expect(JSON.parse(unpinned.stdout)).toMatchObject({ valid: true, verdict: 'unanchored', keyTrust: { status: 'no_anchor' } });
     const anchoredFrom = (JSON.parse(readFileSync(join(CONFORMANCE, valid!.file), 'utf-8')) as RecordAuditExportInput)
       .exportMetadata.anchoredFrom!;
     const pinned = runCli([join(CONFORMANCE, valid!.file), '--report-format=json', '--trust-anchor', anchoredFrom]);
     expect(pinned.exitCode).toBe(EXIT_OK);
-    expect(JSON.parse(pinned.stdout)).toMatchObject({ valid: true, verdict: 'verified', keyTrust: { status: 'walked', anchoredFromPinned: true } });
+    expect(JSON.parse(pinned.stdout)).toMatchObject({ valid: true, verdict: 'trusted', keyTrust: { status: 'walked', anchoredFromPinned: true } });
   });
 
   it('CLI exits nonzero on a failing export file and names the code', () => {

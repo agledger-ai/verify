@@ -30,7 +30,6 @@ import { verifyDumpStreaming } from '../src/verify-dir.js';
 import {
   EXIT_CANNOT_VERIFY,
   EXIT_OK,
-  EXIT_UNANCHORED,
   EXIT_VERIFICATION_FAILED,
   formatDumpReportText,
   runCli,
@@ -207,9 +206,9 @@ describe('fail-closed on a dump that is not in producer order', () => {
 });
 
 describe('exit codes separate "failed" from "could not verify"', () => {
-  it('exits 0 on the valid corpus dump pinned on its key, and 3 without the pin', () => {
+  it('exits 0 on the valid corpus dump, pinned or not', () => {
     expect(runCli([VALID_DUMP, '--trust-anchor', VALID_PIN]).exitCode).toBe(EXIT_OK);
-    expect(runCli([VALID_DUMP]).exitCode).toBe(EXIT_UNANCHORED);
+    expect(runCli([VALID_DUMP]).exitCode).toBe(EXIT_OK);
   });
 
   it('exits 1 when a dump reads fine and the chain does not hold up', () => {

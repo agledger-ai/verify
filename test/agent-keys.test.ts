@@ -9,7 +9,7 @@
  * record chains: that cert-signed lifecycle (6 agent signatures), a lifecycle
  * signed under a different cert whose key was never kept (6), and an unsigned
  * API-key lifecycle. Every run is pinned on that instance's vault key, so a
- * clean run is a PASS rather than NOT ANCHORED.
+ * clean run is a trusted PASS.
  */
 import { generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
