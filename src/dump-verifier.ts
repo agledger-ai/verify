@@ -277,6 +277,15 @@ function harvestCertKeys(
 const UNSIGNED_KID = '0'.repeat(16);
 
 /**
+ * The bytes of a row's cose_sign1 column. The engine never writes it null, so
+ * a row without one was edited: it reads as empty bytes, which no leaf hash
+ * matches and no claim decodes from, rather than throwing out of the walk.
+ */
+function envelopeBytes(coseSign1: unknown): Buffer {
+  return typeof coseSign1 === 'string' ? Buffer.from(coseSign1, 'base64') : Buffer.alloc(0);
+}
+
+/**
  * Compare an envelope's signed claim with what its row says, field by field,
  * and name the first that differs: `null` when every one agrees. An envelope
  * that does not decode as a claim is named as such. The row columns are what
@@ -284,10 +293,10 @@ const UNSIGNED_KID = '0'.repeat(16);
  * beside an intact envelope, or a fabricated row over any envelope, passed.
  */
 function claimDisagreement(
-  coseSign1: string,
+  coseSign1: string | null | undefined,
   expect: (claim: NonNullable<ReturnType<typeof decodeSignedClaim>>) => Array<[string, unknown, unknown]>,
 ): string | null {
-  const claim = decodeSignedClaim(Buffer.from(coseSign1, 'base64'));
+  const claim = decodeSignedClaim(envelopeBytes(coseSign1));
   if (claim === null) return 'cose_sign1 does not decode as a signed AGLedger claim';
   for (const [field, signed, row] of expect(claim)) {
     if (signed !== row) return `the signed ${field} ${JSON.stringify(signed ?? null)} is not the row's ${JSON.stringify(row ?? null)}`;
@@ -499,7 +508,7 @@ function verifyChainCheckpoints(
         failures.push({ ...key, scopeId: chainKey, position: cp.chain_position, signingKeyId: cp.signing_key_id });
         continue;
       }
-      const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
+      const coseSign1Bytes = envelopeBytes(cp.cose_sign1);
       const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
       // Fail closed on ANY non-ok outcome. 'unsigned' (an all-zero signature
       // on a checkpoint that CLAIMS a signing key) is tampering, not benign:
@@ -808,7 +817,7 @@ function verifyOneOrgAdminReadsLog(
       return;
     }
     // leaf_hash is the RFC 9162 leaf hash of the envelope bytes.
-    const coseSign1Bytes = Buffer.from(leaf.cose_sign1, 'base64');
+    const coseSign1Bytes = envelopeBytes(leaf.cose_sign1);
     const recomputed = orgReadLeafHash(coseSign1Bytes);
     if (recomputed !== leaf.leaf_hash) {
       failures.push({
@@ -912,7 +921,7 @@ function verifyOneOrgAdminReadsLog(
         failures.push({ ...key, scopeId: orgId, treeSize: cp.tree_size, signingKeyId: cp.signing_key_id });
         continue;
       }
-      const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
+      const coseSign1Bytes = envelopeBytes(cp.cose_sign1);
       const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
       // Fail closed on ANY non-ok outcome; see the vault-checkpoint site.
       if (outcome !== 'ok') {
