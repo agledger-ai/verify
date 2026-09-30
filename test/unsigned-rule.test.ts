@@ -70,11 +70,13 @@ function longChain(dump: Dump): Dump['vaultEntries'] {
  * the eight-zero-byte sentinel and the signature slot is zeroed. Protected
  * header otherwise unchanged, so every chain claim still holds.
  */
-function asUnsignedEnvelope(coseSign1B64: string, kidHex = UNSIGNED_KID, zeroSignature = true): string {
+function asUnsignedEnvelope(coseSign1B64: string, kidHex = UNSIGNED_KID, zeroSignature = true, previousHash?: string): string {
   const parts = decodeCoseSign1(Buffer.from(coseSign1B64, 'base64'));
   if (!parts) throw new Error('corpus envelope must decode');
   const header = cborDecode(parts.protectedBstr, { useMaps: true }) as Map<number, unknown>;
   header.set(4, Buffer.from(kidHex, 'hex'));
+  // The chain claim's previous hash, when the leaf before was rewritten too.
+  if (previousHash !== undefined) (header.get(-65537) as Map<number, unknown>).set(2, Buffer.from(previousHash, 'hex'));
   const protectedBstr = cborEncode(header, rfc8949EncodeOptions);
   const signature = zeroSignature ? new Uint8Array(parts.signature.length) : parts.signature;
   const inner = cborEncode([protectedBstr, new Map(), parts.payloadBstr, signature], rfc8949EncodeOptions);
@@ -99,10 +101,35 @@ function replaceLeaf(dump: Dump, index: number, coseSign1: string): OrgAdminRead
   return leaf;
 }
 
-/** Make every read-log tree head unsigned and written before `before`. */
+/**
+ * Make a checkpoint row unsigned the way the engine writes one: no key id,
+ * and an envelope carrying the unsigned kid and a zeroed signature. Nulling
+ * the column alone leaves the signed kid disagreeing with it, which is a
+ * claim mismatch rather than an unsigned checkpoint.
+ */
+function unsign(cp: { signing_key_id: string | null; cose_sign1: string }): void {
+  cp.signing_key_id = null;
+  cp.cose_sign1 = asUnsignedEnvelope(cp.cose_sign1);
+}
+
+/**
+ * Make every read-log tree head unsigned and written before `before`, its
+ * signed root restamped to the row's (which `replaceLeaf` may have re-rooted),
+ * as an engine writing that tree head unsigned would have signed it.
+ */
 function unsignTreeHeads(dump: Dump, before: string): void {
   for (const cp of dump.orgAdminReadsCheckpoints) {
-    cp.signing_key_id = null;
+    unsign(cp);
+    const parts = decodeCoseSign1(Buffer.from(cp.cose_sign1, 'base64'))!;
+    const stmt = cborDecode(parts.payloadBstr, { useMaps: false }) as {
+      subject: Array<{ digest: { sha256: Uint8Array } }>;
+      predicate: Record<string, unknown>;
+    };
+    stmt.subject[0]!.digest.sha256 = Buffer.from(cp.root_hash, 'hex');
+    stmt.predicate['chain_tip_hash'] = `sha256:${cp.root_hash}`;
+    const payloadBstr = cborEncode(stmt, rfc8949EncodeOptions);
+    const inner = cborEncode([parts.protectedBstr, new Map(), payloadBstr, parts.signature], rfc8949EncodeOptions);
+    cp.cose_sign1 = Buffer.concat([Buffer.from([0xd2]), inner]).toString('base64');
     cp.checkpoint_at = shiftMs(before, -1);
   }
 }
@@ -207,7 +234,7 @@ describe('vault_checkpoints: CHECKPOINT_UNSIGNED', () => {
   it('an unsigned checkpoint written after the earliest activation fails', () => {
     const dump = validDump();
     const cp = dump.vaultCheckpoints[0]!;
-    cp.signing_key_id = null;
+    unsign(cp);
     const failure = only(verifyDump(dump));
     expect(failure).toMatchObject({ code: 'CHECKPOINT_UNSIGNED', position: cp.chain_position, scopeId: cp.chain_key });
     expect(failure.message).toContain(activation(dump));
@@ -216,7 +243,7 @@ describe('vault_checkpoints: CHECKPOINT_UNSIGNED', () => {
   it('an unsigned checkpoint written before the earliest activation is not a break, and one at it is', () => {
     const dump = validDump();
     const cp = dump.vaultCheckpoints[0]!;
-    cp.signing_key_id = null;
+    unsign(cp);
     cp.created_at = shiftMs(activation(dump), -1);
     const report = verifyDump(dump);
     expect(report.verdict, JSON.stringify(codes(report))).toBe('unanchored');
@@ -228,7 +255,7 @@ describe('vault_checkpoints: CHECKPOINT_UNSIGNED', () => {
   it('an unsigned checkpoint with no write time cannot be placed and stays what it was', () => {
     const dump = validDump();
     const cp = dump.vaultCheckpoints[0]!;
-    cp.signing_key_id = null;
+    unsign(cp);
     delete cp.created_at;
     expect(verifyDump(dump).verdict).toBe('unanchored');
   });
@@ -236,9 +263,9 @@ describe('vault_checkpoints: CHECKPOINT_UNSIGNED', () => {
   it('a diverged or orphaned unsigned checkpoint keeps its own code', () => {
     const dump = validDump();
     const [diverged, orphaned] = dump.vaultCheckpoints;
-    diverged!.signing_key_id = null;
+    unsign(diverged!);
     diverged!.payload_hash = 'e'.repeat(64);
-    orphaned!.signing_key_id = null;
+    unsign(orphaned!);
     dump.vaultEntries = dump.vaultEntries.filter((e) => e.chain_key !== orphaned!.chain_key);
     expect(codes(verifyDump(dump)).sort()).toEqual(['CHECKPOINT_HASH_MISMATCH', 'CHECKPOINT_ROW_MISSING']);
   });
@@ -275,8 +302,8 @@ describe('org_admin_reads leaves: TENANT_READ_LEAF_UNSIGNED', () => {
     const dump = validDump();
     const at = shiftMs(dump.orgAdminReads[1]!.read_at, 1);
     dump.signingKeys[0]!.activated_at = at;
-    replaceLeaf(dump, 0, asUnsignedEnvelope(dump.orgAdminReads[0]!.cose_sign1));
-    replaceLeaf(dump, 1, asUnsignedEnvelope(dump.orgAdminReads[1]!.cose_sign1));
+    const first = replaceLeaf(dump, 0, asUnsignedEnvelope(dump.orgAdminReads[0]!.cose_sign1));
+    replaceLeaf(dump, 1, asUnsignedEnvelope(dump.orgAdminReads[1]!.cose_sign1, UNSIGNED_KID, true, first.leaf_hash));
     unsignTreeHeads(dump, at);
     const verify = () =>
       verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, walkDumpKeys(dump.signingKeys));
@@ -326,11 +353,11 @@ describe('org_admin_reads leaves: the signature a real kid claims', () => {
     expect(only(verifyDump(dump))).toMatchObject({ code: 'TENANT_READ_SIGNATURE_INVALID', leafIndex: 0 });
   });
 
-  it('a leaf whose bytes are not a COSE_Sign1 envelope is TENANT_READ_SIGNATURE_INVALID', () => {
+  it('a leaf whose bytes are not a COSE_Sign1 envelope is TENANT_READ_CLAIM_MISMATCH, as the engine grades it', () => {
     const dump = validDump();
     replaceLeaf(dump, 0, Buffer.from('not an envelope').toString('base64'));
     const failure = only(verifyDump(dump));
-    expect(failure).toMatchObject({ code: 'TENANT_READ_SIGNATURE_INVALID', leafIndex: 0 });
+    expect(failure).toMatchObject({ code: 'TENANT_READ_CLAIM_MISMATCH', leafIndex: 0 });
     expect(failure.message).toContain('does not decode');
   });
 });
@@ -339,7 +366,7 @@ describe('org_admin_reads_checkpoints: TENANT_CHECKPOINT_UNSIGNED', () => {
   it('an unsigned tree head written after the earliest activation fails', () => {
     const dump = validDump();
     const cp = dump.orgAdminReadsCheckpoints[0]!;
-    cp.signing_key_id = null;
+    unsign(cp);
     const failure = only(verifyDump(dump));
     expect(failure).toMatchObject({ code: 'TENANT_CHECKPOINT_UNSIGNED', scopeId: cp.org_id, treeSize: cp.tree_size });
     expect(failure.message).toContain(activation(dump));
@@ -348,7 +375,7 @@ describe('org_admin_reads_checkpoints: TENANT_CHECKPOINT_UNSIGNED', () => {
   it('an unsigned tree head written before the earliest activation is not a break, and one at it is', () => {
     const dump = validDump();
     const cp = dump.orgAdminReadsCheckpoints[0]!;
-    cp.signing_key_id = null;
+    unsign(cp);
     cp.checkpoint_at = shiftMs(activation(dump), -1);
     expect(verifyDump(dump).verdict).toBe('unanchored');
 
@@ -359,7 +386,7 @@ describe('org_admin_reads_checkpoints: TENANT_CHECKPOINT_UNSIGNED', () => {
   it('an unsigned tree head over the wrong root reports the root', () => {
     const dump = validDump();
     const cp = dump.orgAdminReadsCheckpoints[0]!;
-    cp.signing_key_id = null;
+    unsign(cp);
     cp.root_hash = 'c'.repeat(64);
     expect(codes(verifyDump(dump))).toEqual(['TENANT_CHECKPOINT_ROOT_MISMATCH']);
   });
@@ -369,8 +396,8 @@ describe('CLI', () => {
   it('exits 1 and names each unsigned finding on a dump directory', () => {
     const dump = validDump();
     longChain(dump)[1]!.signing_key_id = null;
-    dump.vaultCheckpoints[0]!.signing_key_id = null;
-    dump.orgAdminReadsCheckpoints[0]!.signing_key_id = null;
+    unsign(dump.vaultCheckpoints[0]!);
+    unsign(dump.orgAdminReadsCheckpoints[0]!);
     const dir = mkdtempSync(join(tmpdir(), 'agledger-verify-unsigned-'));
     try {
       const write = (name: string, rows: readonly unknown[]) =>

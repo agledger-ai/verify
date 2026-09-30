@@ -4,13 +4,16 @@ import { verifyDump, verifyOrgAdminReadsChains, verifyVaultChains, walkDumpKeys 
 import {
   buildHappyDump,
   buildOrgAdminRead,
+  buildOrgAdminReadLog,
   buildOrgAdminReadsCheckpoint,
+  buildVaultCheckpoint,
   buildVaultEntry,
   cloneDump,
   generateKey,
   pinOf,
   signingKeyDump,
 } from './fixtures.js';
+import type { KeyMaterial } from './fixtures.js';
 
 /** Flip a byte at the given offset of a base64-encoded byte string. */
 function mutateBase64Byte(base64: string, offset: number): string {
@@ -192,14 +195,15 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     expect(report.failures.some((f) => f.code === 'CHECKPOINT_SIGNATURE_INVALID')).toBe(true);
   });
 
-  it('CHAIN_SIGNATURE_MISSING_KEY when a checkpoint carries signing_key_id ""', () => {
+  it('CHECKPOINT_CLAIM_MISMATCH, never unsigned, when a checkpoint carries signing_key_id ""', () => {
     // Only null means unsigned. A tampered checkpoint with an empty-string key
-    // id must not slip past the signature check on a truthiness shortcut.
+    // id must not slip past the signature check on a truthiness shortcut; the
+    // engine meets it first as a column that disagrees with the signed kid.
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.vaultCheckpoints[0]!.signing_key_id = '';
     const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
-    expect(report.failures.some((f) => f.code === 'CHAIN_SIGNATURE_MISSING_KEY')).toBe(true);
+    expect(report.failures.map((f) => f.code)).toEqual(['CHECKPOINT_CLAIM_MISMATCH']);
   });
 
   it('CHAIN_SIGNATURE_MISSING_KEY when registry omits the signing key', () => {
@@ -256,27 +260,30 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
   // A schema chain's checkpoint carries a derived UUIDv8 in
   // record_id, which matches no audit_vault row by inspection. Joining on that
   // column stranded the checkpoint and failed a healthy vault.
-  const asSchemaChain = (dump: ReturnType<typeof cloneDump>, chainKey: string) => {
+  const asSchemaChain = (dump: ReturnType<typeof cloneDump>, chainKey: string, key: KeyMaterial) => {
     const cp = dump.vaultCheckpoints[0]!;
     for (const e of dump.vaultEntries) {
       if (e.record_id === cp.record_id) e.chain_key = chainKey;
     }
     cp.chain_key = chainKey;
-    // The derived v8 the engine writes: deliberately matches nothing.
+    // The derived v8 the engine writes: deliberately matches nothing. The
+    // engine signs it as the checkpoint's subject, so the envelope is re-signed.
     cp.record_id = '019a0000-0000-8000-8000-0000000000ff';
+    const resigned = buildVaultCheckpoint(cp.record_id, cp.chain_position, cp.payload_hash, key, cp.record_id);
+    cp.cose_sign1 = resigned.cose_sign1;
     return dump;
   };
 
   it('joins checkpoints on chain_key, so a healthy schema chain passes', () => {
-    const { dump } = buildHappyDump();
-    const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
+    const { dump, key } = buildHappyDump();
+    const d = asSchemaChain(cloneDump(dump), 'schema:org-1', key);
     const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
     expect(report.failures).toEqual([]);
   });
 
   it('still catches a truncated schema chain, and names it by chain_key not record id', () => {
-    const { dump } = buildHappyDump();
-    const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
+    const { dump, key } = buildHappyDump();
+    const d = asSchemaChain(cloneDump(dump), 'schema:org-1', key);
     // Drop the row the checkpoint anchors: real tampering must still fail.
     const anchored = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
     d.vaultEntries = d.vaultEntries.filter((e) => e !== anchored[anchored.length - 1]);
@@ -289,8 +296,8 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
   });
 
   it('names an entry-level failure by the chain it is on', () => {
-    const { dump } = buildHappyDump();
-    const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
+    const { dump, key } = buildHappyDump();
+    const d = asSchemaChain(cloneDump(dump), 'schema:org-1', key);
     const onSchema = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
     onSchema[onSchema.length - 1]!.payload_hash = '0'.repeat(64);
     const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
@@ -390,11 +397,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
   it('TENANT_CHECKPOINT_FORK when two checkpoints at same tree_size have different roots', () => {
     const { dump, key } = buildHappyDump();
     const tampered = cloneDump(dump);
-    const altLeaves = [
-      buildOrgAdminRead({ orgId: 'enterprise-1', leafIndex: 0, key, recordId: 'record-FORK-0' }),
-      buildOrgAdminRead({ orgId: 'enterprise-1', leafIndex: 1, key, recordId: 'record-FORK-1' }),
-      buildOrgAdminRead({ orgId: 'enterprise-1', leafIndex: 2, key, recordId: 'record-FORK-2' }),
-    ];
+    const altLeaves = buildOrgAdminReadLog('enterprise-1', 3, key, (i) => `record-FORK-${i}`);
     const altCp = buildOrgAdminReadsCheckpoint('enterprise-1', altLeaves, key, 3);
     altCp.id = 'oar-cp-fork';
     tampered.orgAdminReadsCheckpoints.push(altCp);
@@ -412,7 +415,9 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const realLeaves = tampered.orgAdminReads.filter((l) => l.org_id === 'enterprise-1');
     const phantomLeaves = [...realLeaves];
     for (let i = 0; i < 5; i++) {
-      phantomLeaves.push(buildOrgAdminRead({ orgId: 'enterprise-1', leafIndex: realLeaves.length + i, key }));
+      phantomLeaves.push(
+        buildOrgAdminRead({ orgId: 'enterprise-1', leafIndex: realLeaves.length + i, key, previousHash: phantomLeaves[phantomLeaves.length - 1]!.leaf_hash }),
+      );
     }
     tampered.orgAdminReadsCheckpoints = [buildOrgAdminReadsCheckpoint('enterprise-1', phantomLeaves, key)];
     const report = verifyOrgAdminReadsChains(
