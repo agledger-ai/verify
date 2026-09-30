@@ -4,9 +4,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { decode as cborDecode, encode as cborEncode, rfc8949EncodeOptions } from 'cborg';
-import { decodeCoseSign1, merkleRoot, sha256Hex } from '@agledger/verify-core';
+import { decodeCoseSign1, orgReadLeafHash, orgReadMerkleRoot } from '@agledger/verify-core';
 import { loadDump } from '../src/loader.js';
-import { verifyDump, verifyOrgAdminReadsChains } from '../src/dump-verifier.js';
+import { verifyDump, verifyOrgAdminReadsChains, walkDumpKeys } from '../src/dump-verifier.js';
 import { EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
 import type { Dump, Failure, FailureCode, OrgAdminReadDump, VerifyReport } from '../src/types.js';
 
@@ -90,11 +90,11 @@ function asUnsignedEnvelope(coseSign1B64: string, kidHex = UNSIGNED_KID, zeroSig
 function replaceLeaf(dump: Dump, index: number, coseSign1: string): OrgAdminReadDump {
   const leaf = dump.orgAdminReads[index]!;
   leaf.cose_sign1 = coseSign1;
-  leaf.leaf_hash = sha256Hex(Buffer.from(coseSign1, 'base64'));
+  leaf.leaf_hash = orgReadLeafHash(Buffer.from(coseSign1, 'base64'));
   for (const cp of dump.orgAdminReadsCheckpoints) {
-    cp.root_hash = merkleRoot(
+    cp.root_hash = orgReadMerkleRoot(
       dump.orgAdminReads.filter((l) => l.org_id === cp.org_id).slice(0, cp.tree_size).map((l) => l.leaf_hash),
-    );
+    )!;
   }
   return leaf;
 }
@@ -110,7 +110,7 @@ function unsignTreeHeads(dump: Dump, before: string): void {
 describe('baseline', () => {
   it('dump/valid verifies clean and every read-log leaf signature is checked', () => {
     const report = verifyDump(validDump());
-    expect(report.ok, JSON.stringify(codes(report))).toBe(true);
+    expect(report.verdict, JSON.stringify(codes(report))).toBe('unanchored');
     expect(report.orgAdminReads.leafCount).toBe(2);
   });
 });
@@ -176,7 +176,7 @@ describe('audit_vault chain entries: CHAIN_ENTRY_UNSIGNED', () => {
     const last = chain[chain.length - 1]!.created_at;
     dump.signingKeys[0]!.activated_at = shiftMs(last, 1);
     const report = verifyDump(dump);
-    expect(report.ok, JSON.stringify(codes(report))).toBe(true);
+    expect(report.verdict, JSON.stringify(codes(report))).toBe('unanchored');
 
     // At the activation instant itself it is a break: the window is inclusive.
     dump.signingKeys[0]!.activated_at = last;
@@ -191,7 +191,7 @@ describe('audit_vault chain entries: CHAIN_ENTRY_UNSIGNED', () => {
     dump.orgAdminReads = [];
     dump.orgAdminReadsCheckpoints = [];
     const report = verifyDump(dump);
-    expect(report.ok, JSON.stringify(codes(report))).toBe(true);
+    expect(report.verdict, JSON.stringify(codes(report))).toBe('unanchored');
   });
 
   it('a tampered hash on an unsigned entry is still reported under its own code', () => {
@@ -219,7 +219,7 @@ describe('vault_checkpoints: CHECKPOINT_UNSIGNED', () => {
     cp.signing_key_id = null;
     cp.created_at = shiftMs(activation(dump), -1);
     const report = verifyDump(dump);
-    expect(report.ok, JSON.stringify(codes(report))).toBe(true);
+    expect(report.verdict, JSON.stringify(codes(report))).toBe('unanchored');
 
     cp.created_at = activation(dump);
     expect(only(verifyDump(dump)).code).toBe('CHECKPOINT_UNSIGNED');
@@ -230,7 +230,7 @@ describe('vault_checkpoints: CHECKPOINT_UNSIGNED', () => {
     const cp = dump.vaultCheckpoints[0]!;
     cp.signing_key_id = null;
     delete cp.created_at;
-    expect(verifyDump(dump).ok).toBe(true);
+    expect(verifyDump(dump).verdict).toBe('unanchored');
   });
 
   it('a diverged or orphaned unsigned checkpoint keeps its own code', () => {
@@ -267,7 +267,7 @@ describe('org_admin_reads leaves: TENANT_READ_LEAF_UNSIGNED', () => {
     dump.signingKeys[0]!.status = 'retired';
     dump.signingKeys[0]!.retired_at = shiftMs(activation(dump), 1);
     replaceLeaf(dump, 0, asUnsignedEnvelope(dump.orgAdminReads[0]!.cose_sign1));
-    const report = verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, dump.signingKeys);
+    const report = verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, walkDumpKeys(dump.signingKeys));
     expect(report.failures.map((f) => f.code)).toEqual(['TENANT_READ_LEAF_UNSIGNED']);
   });
 
@@ -279,7 +279,7 @@ describe('org_admin_reads leaves: TENANT_READ_LEAF_UNSIGNED', () => {
     replaceLeaf(dump, 1, asUnsignedEnvelope(dump.orgAdminReads[1]!.cose_sign1));
     unsignTreeHeads(dump, at);
     const verify = () =>
-      verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, dump.signingKeys);
+      verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, walkDumpKeys(dump.signingKeys));
     expect(verify().failures).toEqual([]);
 
     dump.signingKeys[0]!.activated_at = dump.orgAdminReads[1]!.read_at;
@@ -350,7 +350,7 @@ describe('org_admin_reads_checkpoints: TENANT_CHECKPOINT_UNSIGNED', () => {
     const cp = dump.orgAdminReadsCheckpoints[0]!;
     cp.signing_key_id = null;
     cp.checkpoint_at = shiftMs(activation(dump), -1);
-    expect(verifyDump(dump).ok).toBe(true);
+    expect(verifyDump(dump).verdict).toBe('unanchored');
 
     cp.checkpoint_at = activation(dump);
     expect(only(verifyDump(dump)).code).toBe('TENANT_CHECKPOINT_UNSIGNED');
@@ -378,6 +378,7 @@ describe('CLI', () => {
       write('audit_vault.ndjson', dump.vaultEntries);
       write('vault_checkpoints.ndjson', dump.vaultCheckpoints);
       write('vault_signing_keys.ndjson', dump.signingKeys);
+      write('vault_key_statements.ndjson', dump.keyStatements);
       write('org_admin_reads.ndjson', dump.orgAdminReads);
       write('org_admin_reads_checkpoints.ndjson', dump.orgAdminReadsCheckpoints);
       const result = runCli([dir]);

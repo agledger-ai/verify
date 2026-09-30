@@ -1,12 +1,12 @@
 {
-  "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of five NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
+  "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of the NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-09-29T03:24:31.869Z",
+  "generatedAt": "2026-09-30T22:06:10.744Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "cea0f7d5",
-    "apiVersion": "1.8.0",
+    "apiGitSha": "e690979c",
+    "apiVersion": "2.0.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -86,6 +86,18 @@
       "note": "A row signing_key_id was rewritten to an aliased registry entry carrying the same key material. The signature verifies under the alias; only the signature-covered kid (label 4) exposes the rewrite."
     },
     {
+      "file": "dump/chain-signing-key-unanchored",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_SIGNING_KEY_UNANCHORED",
+      "options": {
+        "trustAnchors": [
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "A key row with no key statement, and an entry it signed appended to the tip of a chain: what database write access alone produces. The signature verifies under the row, and nothing signed links the key to the pinned vault key, so the entry breaks."
+    },
+    {
       "file": "dump/chain-alg-registry-lie",
       "kind": "dump",
       "expect": "fail",
@@ -125,6 +137,82 @@
       "expect": "fail",
       "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
       "note": "The AUTH_KEY_ROTATED row newKeyId rewritten to another key id. The replacement key is in the signed payload, so the rewrite fails the payload binding."
+    },
+    {
+      "file": "dump/valid-unsigned-history-then-signed",
+      "kind": "dump",
+      "expect": "pass",
+      "note": "History written before the install registered its first key (two unsigned entries, an unsigned vault checkpoint, an unsigned read-log leaf under an unsigned tree head), continued after it with a signed entry, a signed checkpoint, a signed leaf and a signed tree head. Unsigned before the earliest activatedAt with nothing signed before it is reduced coverage on every log: none of CHAIN_ENTRY_UNSIGNED, CHECKPOINT_UNSIGNED, TENANT_READ_LEAF_UNSIGNED or TENANT_CHECKPOINT_UNSIGNED."
+    },
+    {
+      "file": "dump/chain-entry-unsigned-after-signed",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_ENTRY_UNSIGNED",
+      "note": "An audit_vault chain whose entry 1 is signed, entry 2 was written by a process holding no key (signing_key_id null), and entry 3 is signed again: the engine signature_missing at position 2."
+    },
+    {
+      "file": "dump/chain-entry-unsigned-after-activation",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_ENTRY_UNSIGNED",
+      "note": "An audit_vault chain with no signed entry, written by a process holding no key after the earliest activated_at in vault_signing_keys.ndjson: the engine signature_missing at position 1, placed by the key set alone."
+    },
+    {
+      "file": "dump/checkpoint-unsigned",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_UNSIGNED",
+      "note": "A signed audit_vault chain whose vault_checkpoints row was written by a process holding no key (signing_key_id null) after the earliest activated_at: the engine checkpoint_unsigned. The row and its hash match the chain, so only the missing signature fails."
+    },
+    {
+      "file": "dump/tenant-read-leaf-unsigned",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_READ_LEAF_UNSIGNED",
+      "note": "An org_admin_reads log whose first leaf (leaf_index 0) is signed and second (leaf_index 1) was written by a process holding no key (the unsigned sentinel kid 0000000000000000): the engine leaf_signature_missing at leaf_index 1."
+    },
+    {
+      "file": "dump/tenant-checkpoint-unsigned",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_CHECKPOINT_UNSIGNED",
+      "note": "An org_admin_reads log with one signed leaf under a tree head written by a process holding no key (org_admin_reads_checkpoints.signing_key_id null) after the earliest activated_at: the engine checkpoint_unsigned. The root matches its leaves, so only the missing signature fails."
+    },
+    {
+      "file": "dump/valid-key-succession",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675"
+        ]
+      },
+      "note": "A chain whose entry 1 is signed by the vault key and entry 2 by its successor, admitted by a succession both keys sign, after which the vault key was retired by a forced closure the successor signs. Pinned to the successor, the walk reaches the retired vault key backward through the succession that is the successor's admission, and the vault key's window ends at the retiredAt its closure signs."
+    },
+    {
+      "file": "dump/valid-key-succession",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_SIGNING_KEY_UNANCHORED",
+      "options": {
+        "trustAnchors": [
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "The same dump pinned to the retired vault key. The closure is forced, and a forced closure voids every edge out of the key it closes, the succession that admitted the successor included, so nothing this pin reaches anchors the successor and entry 2 is unanchored. Without `forced` the same succession, stored before the closure, would anchor it."
+    },
+    {
+      "file": "dump/chain-signing-key-closed-endorser",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHAIN_SIGNING_KEY_UNANCHORED",
+      "options": {
+        "trustAnchors": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675"
+        ]
+      },
+      "note": "valid-key-succession plus what a leaked copy of the retired vault key can write: a succession admitting a new key, signed by both, stored after the vault key's closure, and an entry the new key signed on the tip. Pinned to the successor, the walk reaches the vault key backward; every signature verifies, but every edge out of a key stored after its first closure is void, so nothing anchors the new key. Without the closure the same rows anchor it. The engine also reports the planted succession itself as a statement its endorser signed after its closure (KEY_STATEMENT_INVALID); that finding is expected beside this one."
     },
     {
       "file": "dump/valid-es256",

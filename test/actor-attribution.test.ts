@@ -8,24 +8,25 @@
  * would still verify clean, which made the attribution the export guide points
  * an auditor at unverifiable.
  *
- * The dump under `fixtures/live-1.8.0/dump` is unmodified API 1.8.0 output.
+ * The dump under `fixtures/live-1.8.0/dump` is unmodified API 1.8.0 output,
+ * read through `liveDumpCopy`, and every run is pinned on that instance's key.
  */
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { EXIT_OK, EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
+import { EXIT_OK, EXIT_VERIFICATION_FAILED, runCli as runCliUnpinned } from '../src/cli.js';
 import type { VaultEntryDump, VerifyReport } from '../src/types.js';
+import { LIVE_PIN, liveDumpCopy } from './fixtures.js';
+
+const runCli = (argv: readonly string[]) => runCliUnpinned([...argv, '--trust-anchor', LIVE_PIN]);
 
 const here = dirname(fileURLToPath(import.meta.url));
-const LIVE_DUMP = join(here, 'fixtures', 'live-1.8.0', 'dump');
 const LIVE_EXPORT = join(here, 'fixtures', 'live-1.8.0', 'export-cert-lifecycle.json');
 
 let dir: string;
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'agledger-verify-actor-'));
-  cpSync(LIVE_DUMP, dir, { recursive: true });
+  dir = liveDumpCopy();
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -73,7 +74,7 @@ describe('actor attribution on a full vault dump', () => {
       ['actor_role', 'platform'],
     ] as const) {
       rmSync(dir, { recursive: true, force: true });
-      cpSync(LIVE_DUMP, dir, { recursive: true });
+      dir = liveDumpCopy();
       const rows = vaultRows();
       rows[0]![field] = value;
       writeVault(rows);

@@ -14,6 +14,10 @@
  * conforming producer that isn't engine code.
  */
 import { createPrivateKey, generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
+import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { encode as cborEncode, rfc8949EncodeOptions } from 'cborg';
 import type { Dump, SigningKeyDump } from '../src/types.js';
 
@@ -307,24 +311,26 @@ export function buildOrgAdminRead(args: BuildLeafArgs): Dump['orgAdminReads'][nu
     export_batch_id: null,
     read_at: new Date(2026, 3, 25, 12, 0, args.leafIndex).toISOString(),
     leaf_index: args.leafIndex,
-    leaf_hash: envelope.payloadHash,
+    leaf_hash: rfc9162LeafHash(envelope.bytes),
     cose_sign1: envelope.base64,
   };
 }
 
-function merkleRootLocal(leaves: readonly string[]): string {
+/** RFC 9162 §2.1 leaf hash, hex(sha256(0x00 || bytes)), written out here rather than taken from verify-core. */
+export function rfc9162LeafHash(bytes: Uint8Array): string {
+  return hash('sha256', Buffer.concat([Buffer.from([0]), bytes]), 'hex');
+}
+
+/** RFC 9162 §2.1.1 Merkle Tree Hash over hex leaf hashes: node = sha256(0x01 || L || R), split at the largest power of two below n. */
+export function merkleRootLocal(leaves: readonly string[]): string {
   if (leaves.length === 0) return hash('sha256', '', 'hex');
-  let level: string[] = [...leaves];
-  while (level.length > 1) {
-    const next: string[] = [];
-    for (let i = 0; i < level.length; i += 2) {
-      const left = level[i] ?? '';
-      const right = level[i + 1] ?? left;
-      next.push(hash('sha256', left + right, 'hex'));
-    }
-    level = next;
-  }
-  return level[0] ?? '';
+  const root = (lo: number, hi: number): Buffer => {
+    if (hi - lo === 1) return Buffer.from(leaves[lo] ?? '', 'hex');
+    let k = 1;
+    while (k * 2 < hi - lo) k *= 2;
+    return Buffer.from(hash('sha256', Buffer.concat([Buffer.from([1]), root(lo, lo + k), root(lo + k, hi)]), 'hex'), 'hex');
+  };
+  return root(0, leaves.length).toString('hex');
 }
 
 export function buildOrgAdminReadsCheckpoint(
@@ -420,6 +426,7 @@ export function buildHappyDump(): HappyDumpResult {
       vaultEntries: [m1e1, m1e2, m1e3, m2e1, m2e2, m2e3],
       vaultCheckpoints: [cp],
       signingKeys: [signingKey],
+      keyStatements: [],
       orgAdminReads: [...leaves1, ...leaves2],
       orgAdminReadsCheckpoints: [tarCp1],
     },
@@ -456,4 +463,27 @@ export function cloneDump(dump: Dump): Dump {
 export function stableUuidFromString(s: string): string {
   const h = hash('sha256', s, 'hex').slice(0, 32);
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+/** The `--trust-anchor` pin of a key: sha256 of its SPKI DER. */
+export function pinOf(key: KeyMaterial): string {
+  return `sha256:${hash('sha256', Buffer.from(key.publicKeyDerB64, 'base64'), 'hex')}`;
+}
+
+/** The vault key pin of the API 1.8.0 instance the live fixtures come from. */
+export const LIVE_PIN = 'sha256:4b2f0b6374460c7604411b79ac4304827909faffce7553a75087f0a8debaa9ce';
+
+const LIVE_DUMP = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'live-1.8.0', 'dump');
+
+/**
+ * A temporary copy of the live API 1.8.0 dump slice, readable by a 2.0
+ * verifier. API 1.8.0 wrote no key statements, so the copy gains an empty
+ * `vault_key_statements.ndjson`; the slice carries no read-log leaves, the
+ * only part whose format 2.0 changed. The fixture itself stays unmodified.
+ */
+export function liveDumpCopy(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'agledger-verify-live-'));
+  cpSync(LIVE_DUMP, dir, { recursive: true });
+  writeFileSync(join(dir, 'vault_key_statements.ndjson'), '');
+  return dir;
 }

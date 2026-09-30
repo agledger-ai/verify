@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { verifyDump, verifyOrgAdminReadsChains, verifyVaultChains } from '../src/dump-verifier.js';
+import { verifyDump, verifyOrgAdminReadsChains, verifyVaultChains, walkDumpKeys } from '../src/dump-verifier.js';
 import {
   buildHappyDump,
   buildOrgAdminRead,
@@ -8,6 +8,7 @@ import {
   buildVaultEntry,
   cloneDump,
   generateKey,
+  pinOf,
   signingKeyDump,
 } from './fixtures.js';
 
@@ -20,10 +21,12 @@ function mutateBase64Byte(base64: string, offset: number): string {
 }
 
 describe('verifyDump: happy path', () => {
-  it('reports ok=true and surfaces no failures on a clean dump', () => {
-    const { dump } = buildHappyDump();
-    const report = verifyDump(dump);
+  it('pinned on its key, reports ok=true and surfaces no failures on a clean dump', () => {
+    const { dump, key } = buildHappyDump();
+    const report = verifyDump(dump, { trustAnchors: [pinOf(key)] });
+    expect(report.verdict).toBe('verified');
     expect(report.ok).toBe(true);
+    expect(report.keyTrust.findings).toEqual([]);
     expect(report.vault.failures).toEqual([]);
     expect(report.orgAdminReads.failures).toEqual([]);
     expect(report.vault.recordCount).toBe(2);
@@ -42,7 +45,7 @@ describe('verifyDump: happy path', () => {
     cp.witness_key_id = 'witness-key-1';
     cp.witness_cosigned_at = '2026-04-25T19:00:00.000Z';
     const report = verifyDump(dump);
-    expect(report.ok).toBe(true);
+    expect(report.verdict).toBe('unanchored');
     expect(report.orgAdminReads.witnessCosignedCheckpoints).toEqual([
       { checkpointId: cp.id, witnessKeyId: 'witness-key-1' },
     ]);
@@ -51,7 +54,7 @@ describe('verifyDump: happy path', () => {
 
 describe('verifyVaultChains: fail-closed fixes (security review)', () => {
   it('CHAIN_EMPTY when the vault has zero entries (empty/truncated)', () => {
-    const report = verifyVaultChains([], [], []);
+    const report = verifyVaultChains([], [], walkDumpKeys([]));
     expect(report.failures.some((f) => f.code === 'CHAIN_EMPTY')).toBe(true);
   });
 
@@ -60,6 +63,7 @@ describe('verifyVaultChains: fail-closed fixes (security review)', () => {
       vaultEntries: [],
       vaultCheckpoints: [],
       signingKeys: [],
+      keyStatements: [],
       orgAdminReads: [],
       orgAdminReadsCheckpoints: [],
     });
@@ -72,7 +76,7 @@ describe('verifyVaultChains: fail-closed fixes (security review)', () => {
     const tampered = cloneDump(dump);
     // Strip the canonical envelope to simulate a pre-cutover dump shape.
     (tampered.vaultEntries[0] as { cose_sign1?: string }).cose_sign1 = '';
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'UNSUPPORTED_FORMAT')).toBe(true);
   });
 
@@ -93,7 +97,7 @@ describe('verifyVaultChains: fail-closed fixes (security review)', () => {
       key,
       createdAt: '2026-03-01T00:00:00.000Z',
     });
-    const report = verifyVaultChains([e1], [], [sk]);
+    const report = verifyVaultChains([e1], [], walkDumpKeys([sk]));
     expect(report.failures.some((f) => f.code === 'CHAIN_KEY_EXPIRED')).toBe(true);
   });
 });
@@ -104,7 +108,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const tampered = cloneDump(dump);
     const target = tampered.vaultEntries[1]!;
     target.payload_hash = 'ff'.repeat(32);
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_HASH_MISMATCH')).toBe(true);
   });
 
@@ -112,7 +116,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.vaultEntries[2]!.previous_hash = 'ff'.repeat(32);
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_LINK_BROKEN')).toBe(true);
   });
 
@@ -120,7 +124,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.vaultEntries[0]!.previous_hash = 'aa'.repeat(32);
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_GENESIS_INVALID')).toBe(true);
   });
 
@@ -128,7 +132,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.vaultEntries.splice(1, 1);
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_POSITION_GAP')).toBe(true);
   });
 
@@ -140,7 +144,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     buf[buf.length - 1] = (buf[buf.length - 1]! ^ 0xff) & 0xff;
     target.cose_sign1 = buf.toString('base64');
     target.payload_hash = createHash('sha256').update(buf).digest('hex');
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_SIGNATURE_INVALID')).toBe(true);
   });
 
@@ -161,7 +165,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
       generateKeyPairSync('x25519').publicKey.export({ type: 'spki', format: 'der' }) as Buffer
     ).toString('base64');
 
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     // The entry walk reports the same code first; this asserts the checkpoint site.
     const failure = report.failures.find(
       (f) => f.code === 'CHAIN_UNSUPPORTED_ALGORITHM' && f.message.includes('checkpoint'),
@@ -184,7 +188,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const buf = Buffer.from(cp.cose_sign1, 'base64');
     buf.fill(0, buf.length - 64);
     cp.cose_sign1 = buf.toString('base64');
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHECKPOINT_SIGNATURE_INVALID')).toBe(true);
   });
 
@@ -194,7 +198,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.vaultCheckpoints[0]!.signing_key_id = '';
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_SIGNATURE_MISSING_KEY')).toBe(true);
   });
 
@@ -202,7 +206,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.signingKeys = [];
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_SIGNATURE_MISSING_KEY')).toBe(true);
   });
 
@@ -211,7 +215,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const tampered = cloneDump(dump);
     // Alter only the visible row payload; cose_sign1 still carries the original.
     tampered.vaultEntries[1]!.payload = { kind: 'transition', m: 'TAMPERED', n: 99 };
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHAIN_PAYLOAD_BINDING_MISMATCH')).toBe(true);
   });
 
@@ -228,7 +232,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     });
     // Tamper the denormalised actor column away from the signed identity.
     e1.actor_oidc_sub = 'user-ATTACKER';
-    const report = verifyVaultChains([e1], [], [signingKeyDump(key)]);
+    const report = verifyVaultChains([e1], [], walkDumpKeys([signingKeyDump(key)]));
     expect(report.failures.some((f) => f.code === 'CHAIN_OIDC_ACTOR_MISMATCH')).toBe(true);
   });
 
@@ -236,7 +240,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.vaultCheckpoints[0]!.payload_hash = 'ee'.repeat(32);
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHECKPOINT_HASH_MISMATCH')).toBe(true);
   });
 
@@ -245,7 +249,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const tampered = cloneDump(dump);
     const cp = tampered.vaultCheckpoints[0]!;
     tampered.vaultEntries = tampered.vaultEntries.filter((e) => e.record_id !== cp.record_id);
-    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, tampered.signingKeys);
+    const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
     expect(report.failures.some((f) => f.code === 'CHECKPOINT_ROW_MISSING')).toBe(true);
   });
 
@@ -266,7 +270,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
   it('joins checkpoints on chain_key, so a healthy schema chain passes', () => {
     const { dump } = buildHappyDump();
     const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
-    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
     expect(report.failures).toEqual([]);
   });
 
@@ -276,7 +280,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     // Drop the row the checkpoint anchors: real tampering must still fail.
     const anchored = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
     d.vaultEntries = d.vaultEntries.filter((e) => e !== anchored[anchored.length - 1]);
-    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
     const missing = report.failures.find((f) => f.code === 'CHECKPOINT_ROW_MISSING');
     expect(missing).toBeDefined();
     expect(missing!.scopeId).toBe('schema:org-1');
@@ -289,7 +293,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const d = asSchemaChain(cloneDump(dump), 'schema:org-1');
     const onSchema = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
     onSchema[onSchema.length - 1]!.payload_hash = '0'.repeat(64);
-    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
     const entryFailure = report.failures.find((f) => f.scopeId === 'schema:org-1' && f.position !== undefined);
     expect(entryFailure).toBeDefined();
     expect(entryFailure!.message).toMatch(/^Chain schema:org-1 pos \d+: /);
@@ -297,7 +301,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const plain = cloneDump(dump);
     const recordEntry = plain.vaultEntries[plain.vaultEntries.length - 1]!;
     recordEntry.payload_hash = '0'.repeat(64);
-    const recordReport = verifyVaultChains(plain.vaultEntries, plain.vaultCheckpoints, plain.signingKeys);
+    const recordReport = verifyVaultChains(plain.vaultEntries, plain.vaultCheckpoints, walkDumpKeys(plain.signingKeys));
     const recordFailure = recordReport.failures.find((f) => f.position !== undefined);
     expect(recordFailure!.message).toMatch(new RegExp(`^Record ${recordFailure!.scopeId} pos \\d+: `));
   });
@@ -307,7 +311,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const d = cloneDump(dump);
     for (const e of d.vaultEntries) delete e.chain_key;
     delete d.vaultCheckpoints[0]!.chain_key;
-    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, d.signingKeys);
+    const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
     expect(report.failures).toEqual([]);
   });
 });
@@ -320,7 +324,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
-      tampered.signingKeys,
+      walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_READ_LEAF_HASH_MISMATCH')).toBe(true);
   });
@@ -334,7 +338,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
-      tampered.signingKeys,
+      walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_READ_LEAF_INDEX_GAP')).toBe(true);
   });
@@ -346,7 +350,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
-      tampered.signingKeys,
+      walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_CHECKPOINT_ROOT_MISMATCH')).toBe(true);
   });
@@ -361,7 +365,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
-      tampered.signingKeys,
+      walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_CHECKPOINT_SIGNATURE_INVALID')).toBe(true);
   });
@@ -378,7 +382,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
-      tampered.signingKeys,
+      walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_CHECKPOINT_SIGNATURE_INVALID')).toBe(true);
   });
@@ -397,7 +401,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
-      tampered.signingKeys,
+      walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_CHECKPOINT_FORK')).toBe(true);
   });
@@ -414,7 +418,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const report = verifyOrgAdminReadsChains(
       tampered.orgAdminReads,
       tampered.orgAdminReadsCheckpoints,
-      tampered.signingKeys,
+      walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_CHECKPOINT_LEAF_COUNT_MISMATCH')).toBe(true);
   });

@@ -1,5 +1,5 @@
 /**
- * NDJSON dump-dir loader. Reads the five expected files and returns a typed
+ * NDJSON dump-dir loader. Reads the six expected files and returns a typed
  * Dump. Missing files produce an explicit error rather than a silent empty
  * array, because a verifier that reports OK on a half-empty dump is the wrong
  * default.
@@ -25,6 +25,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { join } from 'node:path';
 import type {
   Dump,
+  KeyStatementDump,
   SigningKeyDump,
   OrgAdminReadDump,
   OrgAdminReadsCheckpointDump,
@@ -39,6 +40,8 @@ export interface DumpFiles {
   vaultCheckpoints: string;
   /** Required. */
   signingKeys: string;
+  /** Required (API 2.0 dumps always write it; the trust walk reads it). */
+  keyStatements: string;
   /** Required (zero rows on an org with no admin cross-party reads). */
   orgAdminReads: string;
   /** Required. */
@@ -49,6 +52,7 @@ export const DEFAULT_FILENAMES: DumpFiles = {
   vaultEntries: 'audit_vault.ndjson',
   vaultCheckpoints: 'vault_checkpoints.ndjson',
   signingKeys: 'vault_signing_keys.ndjson',
+  keyStatements: 'vault_key_statements.ndjson',
   orgAdminReads: 'org_admin_reads.ndjson',
   orgAdminReadsCheckpoints: 'org_admin_reads_checkpoints.ndjson',
 };
@@ -155,8 +159,9 @@ export function* streamVaultEntries(
 
 /**
  * Load every companion file except the vault entries. Each is bounded by
- * something small (checkpoint interval, key rotations, admin cross-party reads),
- * and the checkpoint and Merkle passes need them all in memory anyway.
+ * something small (checkpoint interval, key rotations and their statements,
+ * admin cross-party reads), and the checkpoint, Merkle and trust passes need
+ * them all in memory anyway.
  */
 export function loadCompanions(
   dumpDir: string,
@@ -165,6 +170,7 @@ export function loadCompanions(
   return {
     vaultCheckpoints: readNdjson<VaultCheckpointDump>(join(dumpDir, filenames.vaultCheckpoints)),
     signingKeys: readNdjson<SigningKeyDump>(join(dumpDir, filenames.signingKeys)),
+    keyStatements: readNdjson<KeyStatementDump>(join(dumpDir, filenames.keyStatements)),
     orgAdminReads: readNdjson<OrgAdminReadDump>(join(dumpDir, filenames.orgAdminReads)),
     orgAdminReadsCheckpoints: readNdjson<OrgAdminReadsCheckpointDump>(
       join(dumpDir, filenames.orgAdminReadsCheckpoints),

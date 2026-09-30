@@ -9,6 +9,7 @@ import {
   verifyOrgAdminReadsChains,
   verifyVaultChains,
   assembleReport,
+  walkDumpKeys,
   type VerifyDumpOptions,
 } from './dump-verifier.js';
 import { DEFAULT_FILENAMES, loadCompanions, streamVaultEntries, type DumpFiles } from './loader.js';
@@ -22,12 +23,15 @@ import type { VerifyReport } from './types.js';
  * string cap and the heap a fully materialized vault would need (verify#14).
  * Peak memory is one chain group. This is the path the CLI takes.
  *
- * The companion files are still loaded whole: the checkpoint cross-check and
- * the org_admin_reads Merkle recomputation each need their full set, and each
- * is bounded by something far smaller than the vault.
+ * The companion files are still loaded whole: the checkpoint cross-check,
+ * the org_admin_reads Merkle recomputation and the key-statement walk each
+ * need their full set, and each is bounded by something far smaller than the
+ * vault.
  *
- * `options.agentKeys` enables the offline agent-signature check (see
- * `VerifyDumpOptions`).
+ * `options.trustAnchors` (with `options.distrustedKeys`) runs the key walk,
+ * and `options.agentKeys` enables the offline agent-signature check (see
+ * `VerifyDumpOptions`). Throws `TypeError` on a malformed anchor or
+ * distrusted key, and `DumpReadError` on a file that cannot be read.
  */
 export function verifyDumpStreaming(
   dumpDir: string,
@@ -35,17 +39,10 @@ export function verifyDumpStreaming(
   options: VerifyDumpOptions = {},
 ): VerifyReport {
   const companions = loadCompanions(dumpDir, filenames);
+  const keys = walkDumpKeys(companions.signingKeys, companions.keyStatements, options);
   return assembleReport(
-    verifyVaultChains(
-      streamVaultEntries(dumpDir, filenames),
-      companions.vaultCheckpoints,
-      companions.signingKeys,
-      options,
-    ),
-    verifyOrgAdminReadsChains(
-      companions.orgAdminReads,
-      companions.orgAdminReadsCheckpoints,
-      companions.signingKeys,
-    ),
+    verifyVaultChains(streamVaultEntries(dumpDir, filenames), companions.vaultCheckpoints, keys, options),
+    verifyOrgAdminReadsChains(companions.orgAdminReads, companions.orgAdminReadsCheckpoints, keys),
+    keys,
   );
 }

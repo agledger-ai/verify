@@ -12,8 +12,9 @@ export {
   verifyVaultChains,
   verifyOrgAdminReadsChains,
   assembleReport,
+  walkDumpKeys,
 } from './dump-verifier.js';
-export type { VerifyDumpOptions } from './dump-verifier.js';
+export type { DumpKeyTrust, KeyTrustOptions, VaultChainOptions, VerifyDumpOptions } from './dump-verifier.js';
 // Streams audit_vault.ndjson instead of materializing it. Prefer this over
 // verifyDump(loadDump(dir)) for anything larger than a demo vault.
 export { verifyDumpStreaming } from './verify-dir.js';
@@ -21,6 +22,7 @@ export type {
   Dump,
   Failure,
   FailureCode,
+  KeyStatementDump,
   SigningKeyDump,
   OrgAdminReadDump,
   OrgAdminReadsCheckpointDump,
@@ -28,6 +30,7 @@ export type {
   VaultChainsReport,
   VaultCheckpointDump,
   VaultEntryDump,
+  Verdict,
   VerifyReport,
 } from './types.js';
 export {
@@ -39,6 +42,7 @@ export {
   EXIT_OK,
   EXIT_VERIFICATION_FAILED,
   EXIT_CANNOT_VERIFY,
+  EXIT_UNANCHORED,
 } from './cli.js';
 export type { CliResult, ParsedArgs, CannotVerifyReport, TextReportOptions } from './cli.js';
 
@@ -52,8 +56,14 @@ export {
   sha256Hex,
   decodeCoseSign1,
   verifyCoseSign1,
-  merkleRoot,
-  verifyInclusion,
+  orgReadLeafHash,
+  orgReadMerkleRoot,
+  verifyOrgReadInclusion,
+  computeKeyTrust,
+  applyKeyTrust,
+  parseTrustAnchors,
+  parseDistrustedKeys,
+  spkiSha256,
 } from '@agledger/verify-core';
 export type {
   VerificationKey,
@@ -64,7 +74,10 @@ export type {
   AgentKeyRegistry,
   OptionalCheck,
   CheckApplicability,
-  OutOfBandKeyEntry,
+  SuppliedKeyEntry,
+  DistrustedKey,
+  KeyTrust,
+  KeyTrustReport,
   RecordAuditExportInput,
   VerifyExportResult,
 } from '@agledger/verify-core';

@@ -30,6 +30,7 @@ import { verifyDumpStreaming } from '../src/verify-dir.js';
 import {
   EXIT_CANNOT_VERIFY,
   EXIT_OK,
+  EXIT_UNANCHORED,
   EXIT_VERIFICATION_FAILED,
   formatDumpReportText,
   runCli,
@@ -39,6 +40,8 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const CORPUS_DUMPS = join(here, '..', 'testdata', 'conformance', 'dump');
 const VALID_DUMP = join(CORPUS_DUMPS, 'valid');
+/** The corpus vault key, the pin its installer printed. */
+const VALID_PIN = 'sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e';
 
 /** Every dump vector in the conformance corpus, valid and tampered alike. */
 const VECTORS = [
@@ -126,7 +129,7 @@ describe('streaming verification matches the in-memory path', () => {
     const streamed = verifyDumpStreaming(source);
     const inMemory = verifyDump(loadDump(source));
 
-    expect(streamed.ok).toBe(inMemory.ok);
+    expect(streamed.verdict).toBe(inMemory.verdict);
     expect(streamed.vault.recordCount).toBe(inMemory.vault.recordCount);
     expect(streamed.vault.entryCount).toBe(inMemory.vault.entryCount);
     expect(streamed.vault.checkpointCount).toBe(inMemory.vault.checkpointCount);
@@ -199,13 +202,14 @@ describe('fail-closed on a dump that is not in producer order', () => {
   });
 
   it('still verifies the same dump clean when the rows are in producer order', () => {
-    expect(verifyDumpStreaming(stageDump(VALID_DUMP)).ok).toBe(true);
+    expect(verifyDumpStreaming(stageDump(VALID_DUMP)).verdict).toBe('unanchored');
   });
 });
 
 describe('exit codes separate "failed" from "could not verify"', () => {
-  it('exits 0 on the valid corpus dump', () => {
-    expect(runCli([VALID_DUMP]).exitCode).toBe(EXIT_OK);
+  it('exits 0 on the valid corpus dump pinned on its key, and 3 without the pin', () => {
+    expect(runCli([VALID_DUMP, '--trust-anchor', VALID_PIN]).exitCode).toBe(EXIT_OK);
+    expect(runCli([VALID_DUMP]).exitCode).toBe(EXIT_UNANCHORED);
   });
 
   it('exits 1 when a dump reads fine and the chain does not hold up', () => {

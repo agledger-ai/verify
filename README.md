@@ -1,15 +1,17 @@
 # @agledger/verify
 
 Standalone offline verifier for a **full AGLedger installation dump**: the
-per-record `audit_vault` hash chain, the vault checkpoints, and the
-`org_admin_reads` Merkle log, all read from a static NDJSON dump. No engine, no
-database, no network.
+per-record `audit_vault` hash chain, the vault checkpoints, the
+`org_admin_reads` Merkle log, and the signed key statements that anchor every
+vault key, all read from a static NDJSON dump. No engine, no database, no
+network. It reads dumps and exports from AGLedger API 2.0.
 
 Built on [`@agledger/verify-core`](https://www.npmjs.com/package/@agledger/verify-core): the per-record (and per-org
 schema-event) hash-chain walk is the same body of logic the SDK `/verify`
 subpath, the CLI, and the MCP server all run. This package adds the
 dump-structural passes the core does not model (checkpoint cross-check, the
-org-admin-reads STH + fork detection) and the full-vault loader.
+org-admin-reads STH + fork detection) and the full-vault loader. The key walk
+is verify-core's too.
 
 ## Why
 
@@ -19,9 +21,12 @@ needs an independent verifier that does not trust the engine. If the engine
 were compromised, an in-engine "everything is fine" report would be worth
 nothing. This package is that escape hatch: it lives outside the engine and
 checks a dump the operator produces with the engine's `vault:dump` exporter.
-For a fully independent audit, supply
-the vault verification keys out of band rather than trusting any keys carried in
-the dump.
+
+The one thing a dump cannot tell you on its own is which keys to trust: anything
+with write access to the database can add a key row and sign entries with it.
+So an independent audit pins one vault key it holds or took out of band
+(`--trust-anchor`), and the verifier trusts only keys that signed key
+statements link to it. Without a pin the report is never a PASS.
 
 ## Install
 
@@ -44,9 +49,11 @@ Node 24 or newer.
 ## CLI
 
 ```bash
-agledger-verify <target> [--report-format text|json] [--agent-keys <file>]
+agledger-verify <target> [--trust-anchor sha256:<hex>]...
+                [--distrusted-keys <list>] [--agent-keys <file>]
+                [--report-format text|json]
                 [--keys <file>] [--require-key-id <id>]
-                [--require-out-of-band-keys]
+                [--require-supplied-keys]
 ```
 
 `<target>` is auto-detected:
@@ -64,13 +71,75 @@ input errors, so a machine consumer always gets something parseable.
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Verified. No failures. |
-| `1` | Verification FAILED. The chain or log does not hold up. |
-| `2` | Could NOT verify. The input was missing, unreadable, or malformed; no verdict was reached. |
+| `0` | Verified. No failures, and every signing key anchored to a `--trust-anchor` pin. |
+| `1` | Verification FAILED. The chain, log, or key statements do not hold up. |
+| `2` | Could NOT verify. The input was missing, unreadable, or malformed (a mistyped pin included); no verdict was reached. |
+| `3` | NOT ANCHORED. Nothing failed, but no `--trust-anchor` was given, so the keys were the artifact's own word. |
 
-`1` and `2` mean opposite things, so treat only `1` as evidence of tampering.
-An audit gate wired to "nonzero means the chain is broken" will otherwise raise
-a tamper alarm over a mistyped path.
+Only `1` is evidence of tampering, and only `0` is a clean verdict. An audit
+gate wired to "nonzero means the chain is broken" would otherwise raise a
+tamper alarm over a mistyped path, and one wired to "zero means clean" is
+never handed a run that anchored nothing.
+
+### Anchoring keys
+
+A vault key is trusted only when signed **key statements** link it to a key you
+pinned. The dump carries them in `vault_key_statements.ndjson`: a genesis for
+the install's first key, a succession signed by the old key and the new one at
+each rotation, a closure at each retirement. A database writer can add a key
+row; it cannot add a statement, because every link is a signature it does not
+hold. Pin the SPKI digest of a vault key taken out of band: the installer
+prints the first key's, and the Server's `signing-key-digest.js` derives one
+from any key you hold.
+
+```bash
+agledger-verify ./dump --trust-anchor sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e
+```
+
+`--trust-anchor` is repeatable. The statements are walked in the dump's write
+order (`created_at`, then row id), the rule the engine applies to its own
+registry, and each anchored key is held to the window its statements sign
+rather than to the registry columns. A row signed by a key the walk does not
+reach fails, with the code the engine's own scan reports for it:
+
+| Row | Code |
+| --- | --- |
+| chain entry | `CHAIN_SIGNING_KEY_UNANCHORED` |
+| vault checkpoint | `CHECKPOINT_KEY_UNANCHORED` |
+| read-log leaf | `TENANT_READ_KEY_UNANCHORED` |
+| read-log tree head | `TENANT_CHECKPOINT_KEY_UNANCHORED` |
+
+Findings about the statements themselves fail the dump too, and are listed
+under `key anchoring` in the text report and in `keyTrust.findings` in JSON:
+`KEY_STATEMENT_INVALID` (a statement that does not verify or disagrees with
+what it is filed under), `KEY_CLOSURE_INVALID` (a retired key with no closure
+that counts), and `CHAIN_KEY_WINDOW_DRIFT` (a registry column that differs from
+the signed window). A key reached only through a statement this host cannot
+compute (Ed25519 history on a FIPS host) is `undecided`, and what it signed is
+`CHAIN_UNSUPPORTED_ALGORITHM`, not tamper.
+
+When a key has leaked, pass the operator's `VAULT_DISTRUSTED_KEYS` as
+`--distrusted-keys`: a comma list of `sha256:<hex>`, each optionally
+`@<RFC 3339 instant>`. What such a key stored from that instant on (or, with no
+instant, from the retirement a trusted key signed for it) counts for nothing.
+It needs a `--trust-anchor`.
+
+Without a pin nothing is anchored. The chains are still checked against the
+dump's own `vault_signing_keys`, so tampering that leaves the keys alone is
+still found, but a key written into the database alone would pass. The report
+says so rather than PASS:
+
+- text: the headline is `[NOT ANCHORED]`, followed by the line saying this is
+  not a clean verdict, and `key anchoring` reads `NOT RUN`;
+- JSON: `ok` is `false`, `verdict` is `"unanchored"` (`"verified"` and
+  `"failed"` are the others), `keyTrust.status` is `"no_anchor"`, and
+  `vault.optionalChecks.key_anchoring` is `"skipped_no_input"`;
+- exit code `3`.
+
+An `/audit-export` file reads the same way (`verdict` beside verify-core's
+result in JSON). The flags apply to it too, and its statements come from
+`exportMetadata.signingKeyStatements` plus any `statements` on keys passed
+with `--keys`.
 
 ### Vault size
 
@@ -83,30 +152,33 @@ the true total in `failureCount` and a `... and N more not shown` line in the
 text report. A systemic problem on a large vault produces one failure per
 entry, and burying the finding under a million identical lines helps nobody.
 
-### Independent verification of an export
+### Supplied keys for an export
 
 Without `--keys`, an `/audit-export` file is verified against the signing keys
-carried **inside that same export**. That proves internal consistency, not
-independence: an attacker who fully re-signs a chain with their own key and
-embeds it also passes, and the text report says so
-(`key provenance: out-of-band=0` plus an explicit warning line). For the
-independent audit this README's "Why" section describes, fetch the keys
-separately and require them:
+carried inside that same export. `--keys` supplies them from elsewhere, and
+`--require-supplied-keys` refuses the export's own:
 
 ```bash
-# Save the engine's verification keys through a channel you trust
-# (the raw response envelope is accepted as-is; .data is unwrapped).
+# The raw response envelope is accepted as-is; .data is unwrapped, and the
+# key statements it carries are walked with the export's.
 curl -s https://ledger.example.com/v1/verification-keys > keys.json
 
-agledger-verify export.json --keys keys.json --require-out-of-band-keys
+agledger-verify export.json --keys keys.json --require-supplied-keys \
+  --trust-anchor sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e
 ```
+
+Where a key came from is not whether it is trusted: keys fetched from the
+Server come from the same database an attacker would write to. The report's
+`key provenance: supplied=N embedded=M` line says where each key came from, and
+only the `--trust-anchor` walk says a key is trusted.
 
 `--keys` accepts a `{keyId: SPKI-DER-base64}` map, a
 `[{keyId, publicKey, ...}]` list, or the raw `GET /v1/verification-keys`
 response envelope. `--require-key-id <id>` additionally rejects an
 otherwise-valid export signed by a retired or unexpected key. The key-policy
 flags apply to `/audit-export` files only; a dump directory carries its own
-signed key history (`vault_signing_keys.ndjson`) and rejects them.
+signed key history (`vault_signing_keys.ndjson` and
+`vault_key_statements.ndjson`) and rejects them.
 
 ### Agent signatures
 
@@ -171,14 +243,23 @@ anything that is not an Ed25519 JWK, is exit `2`.
 ```ts
 import { verifyDumpStreaming } from '@agledger/verify';
 
-const report = verifyDumpStreaming('/path/to/dump');
+const report = verifyDumpStreaming('/path/to/dump', undefined, {
+  trustAnchors: ['sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e'],
+});
+console.log(report.verdict); // 'verified' | 'unanchored' | 'failed'
 if (!report.ok) {
   console.error(JSON.stringify(report, null, 2));
   process.exit(1);
 }
 ```
 
-To supply cert keys the dump does not sign itself, pass them as the third argument:
+`ok` is true only for `verified`. Without `trustAnchors` the best a dump can
+do is `unanchored`, with `keyTrust.status` `no_anchor`. `distrustedKeys` takes
+the `VAULT_DISTRUSTED_KEYS` entries, as strings or parsed. A malformed anchor
+or distrusted key throws `TypeError`, as does `distrustedKeys` without
+`trustAnchors`.
+
+To supply cert keys the dump does not sign itself, add them to the options:
 
 ```ts
 import { verifyDumpStreaming } from '@agledger/verify';
@@ -195,9 +276,12 @@ instead of materializing it. `loadDump` + `verifyDump` still exist and produce
 the same report, but they hold every row, so keep them for dumps small enough
 to fit in heap.
 
-The shared core's per-record export path and the low-level primitives
-(`verifyAuditExport`, `verifyChain`, `merkleRoot`, `verifyCoseSign1`, …) are
-re-exported so a caller need not add a second dependency.
+`walkDumpKeys` runs the key walk on its own, and `verifyVaultChains` /
+`verifyOrgAdminReadsChains` take its result. The shared core's per-record
+export path and the low-level primitives (`verifyAuditExport`, `verifyChain`,
+`computeKeyTrust`, `orgReadLeafHash`, `orgReadMerkleRoot`,
+`verifyOrgReadInclusion`, `verifyCoseSign1`, and others) are re-exported so a
+caller need not add a second dependency.
 
 ## What is verified
 
@@ -211,17 +295,24 @@ re-exported so a caller need not add a second dependency.
   cross-check (`CHAIN_OIDC_ACTOR_MISMATCH`), actor attribution
   (`CHAIN_ACTOR_ATTRIBUTION_MISMATCH`: the `actor_key_id`, `actor_role` and
   `actor_owner_id` a report displays against the actor claim the entry signed),
-  temporal key-validity (`CHAIN_KEY_EXPIRED`), and the agent signatures
+  temporal key-validity (`CHAIN_KEY_EXPIRED`, against the signed window once
+  anchored), key anchoring (`CHAIN_SIGNING_KEY_UNANCHORED`), and the agent signatures
   (`CHAIN_AGENT_SIGNATURE_INVALID`) under the cert keys the dump signs or
   `--agent-keys` supplies.
+- **Key statements**: walked from the `--trust-anchor` pins in write order;
+  see "Anchoring keys".
 - **Vault checkpoints**: the anchor row matches the live entry at its position
-  and its signature verifies. A checkpoint without a matching `audit_vault` row
-  is evidence of out-of-band TRUNCATE/DELETE (`CHECKPOINT_ROW_MISSING`).
-- **`org_admin_reads` chain**: leaf_hash matches sha256(cose_sign1), leaf_index
-  gap-free per org, and each leaf's signature verifies under the key its
-  envelope names (`TENANT_READ_SIGNATURE_INVALID`).
-- **STH (signed tree head) checkpoints**: recomputed Merkle root over the first
-  `tree_size` leaves matches the signed `root_hash`; signature verifies.
+  and its signature verifies under an anchored key. A checkpoint without a
+  matching `audit_vault` row is evidence of out-of-band TRUNCATE/DELETE
+  (`CHECKPOINT_ROW_MISSING`).
+- **`org_admin_reads` chain**: leaf_hash is the RFC 9162 leaf hash of the
+  envelope, sha256(0x00 || cose_sign1); leaf_index is gap-free per org; and
+  each leaf's signature verifies under the anchored key its envelope names
+  (`TENANT_READ_SIGNATURE_INVALID`).
+- **STH (signed tree head) checkpoints**: the RFC 9162 root over the first
+  `tree_size` leaves matches the signed `root_hash`; signature verifies. An
+  inclusion proof from `GET /v1/audit/org-reads/checkpoints/{id}/proof` checks
+  with the re-exported `verifyOrgReadInclusion`.
 - **Unsigned rows**, graded as the engine grades them. The install began
   signing at the earliest `activated_at` in `vault_signing_keys`, retired keys
   included. From then on every writer holds a registered key, so an unsigned
@@ -258,6 +349,7 @@ See `src/types.ts`. One JSON object per line:
 | `audit_vault.ndjson` | Per-record (and per-org schema-event) hash-chain entries. |
 | `vault_checkpoints.ndjson` | Periodic signed checkpoints over the chain. |
 | `vault_signing_keys.ndjson` | Public-key registry with rotation windows. |
+| `vault_key_statements.ndjson` | Signed key statements (genesis, succession, closure) with their write time. |
 | `org_admin_reads.ndjson` | Admin cross-party read log. |
 | `org_admin_reads_checkpoints.ndjson` | Signed-tree-head envelopes over the read log. |
 

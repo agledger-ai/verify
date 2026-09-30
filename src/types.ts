@@ -19,34 +19,18 @@
  */
 import type {
   CheckApplicability,
+  DumpKeyStatementRow,
   FailureCode as CoreFailureCode,
+  KeyTrustReport,
   OptionalCheck,
 } from '@agledger/verify-core';
 
 /**
- * Every code this verifier reports: the shared `@agledger/verify-core` set,
- * plus the cross-party read log findings only a dump can produce.
- *
- *   - TENANT_READ_LEAF_UNSIGNED   engine mirror of `leaf_signature_missing`: an
- *                                   org_admin_reads leaf whose envelope kid is
- *                                   the unsigned sentinel (`0000000000000000`)
- *                                   after a signed leaf in the same org's log,
- *                                   or with a `read_at` at or after the earliest
- *                                   `activated_at` in `vault_signing_keys`
- *                                   (retired keys included). From that instant
- *                                   every writer holds a registered key, so the
- *                                   leaf is what a writer without one leaves on
- *                                   the log. Earlier unsigned leaves stay
- *                                   reduced coverage, not a break.
- *   - TENANT_CHECKPOINT_UNSIGNED  engine mirror of the read log's
- *                                   `checkpoint_unsigned`: an
- *                                   org_admin_reads_checkpoints row with no
- *                                   signing key id whose `checkpoint_at` is at
- *                                   or after that same instant. The tree head
- *                                   was forged or its key id nulled, and
- *                                   nothing it anchors can be trusted.
+ * Every code this verifier reports. It is the shared `@agledger/verify-core`
+ * taxonomy, which carries the dump-only codes too (the checkpoint, read-log and
+ * key-statement findings), so every verifier reports from one list.
  */
-export type FailureCode = CoreFailureCode | 'TENANT_READ_LEAF_UNSIGNED' | 'TENANT_CHECKPOINT_UNSIGNED';
+export type FailureCode = CoreFailureCode;
 
 /** One line of audit_vault.ndjson. */
 export interface VaultEntryDump {
@@ -135,12 +119,21 @@ export interface SigningKeyDump {
   public_key: string;
   algorithm: string;
   status: 'active' | 'retired';
-  /** Temporal-validity window. Fed into verifyChain for CHAIN_KEY_NOT_YET_ACTIVE
-   *  (written before activation) and CHAIN_KEY_EXPIRED (written after retirement). */
+  /** Temporal-validity window, as the registry row lists it. Entries are held
+   *  to it (CHAIN_KEY_NOT_YET_ACTIVE, CHAIN_KEY_EXPIRED) only when no walk ran;
+   *  with `trustAnchors` an anchored key is held to the window its statements
+   *  sign, and a column that differs is CHAIN_KEY_WINDOW_DRIFT. */
   activated_at?: string;
   retired_at?: string | null;
   retired_by?: string | null;
 }
+
+/**
+ * One line of vault_key_statements.ndjson: a signed key statement (genesis,
+ * succession, adoption or closure) as the engine stored it, with the write
+ * time the trust walk orders by.
+ */
+export type KeyStatementDump = DumpKeyStatementRow;
 
 /** One line of org_admin_reads.ndjson. */
 export interface OrgAdminReadDump {
@@ -153,6 +146,7 @@ export interface OrgAdminReadDump {
   export_batch_id: string | null;
   read_at: string;
   leaf_index: number;
+  /** RFC 9162 leaf hash of `cose_sign1`: hex(sha256(0x00 || bytes)). */
   leaf_hash: string;
   /** Base64-encoded canonical COSE_Sign1 envelope (org-read claim). */
   cose_sign1: string;
@@ -167,7 +161,7 @@ export interface OrgAdminReadsCheckpointDump {
   checkpoint_at: string;
   log_id: string;
   /** Base64-encoded canonical COSE_Sign1 envelope (vault-checkpoint claim
-   *  over the Merkle root). */
+   *  over the RFC 9162 root of the first `tree_size` leaves). */
   cose_sign1: string;
   signing_key_id: string | null;
   witness_signature: string | null;
@@ -180,6 +174,7 @@ export interface Dump {
   vaultEntries: VaultEntryDump[];
   vaultCheckpoints: VaultCheckpointDump[];
   signingKeys: SigningKeyDump[];
+  keyStatements: KeyStatementDump[];
   orgAdminReads: OrgAdminReadDump[];
   orgAdminReadsCheckpoints: OrgAdminReadsCheckpointDump[];
 }
@@ -247,8 +242,30 @@ export interface TenantAdminReadsReport {
   failureCount: number;
 }
 
+/**
+ * The overall verdict.
+ *
+ *   - `verified`: every check ran clean, and every signing key was anchored by
+ *     signed key statements to a `trustAnchors` pin.
+ *   - `unanchored`: nothing failed, but no `trustAnchors` were given, so every
+ *     key was taken from the dump's own `vault_signing_keys`. A key written into
+ *     the database alone would pass. Not a clean verdict.
+ *   - `failed`: at least one failure (see `failureCount` on each section and
+ *     `keyTrust.findings`).
+ */
+export type Verdict = 'verified' | 'unanchored' | 'failed';
+
 export interface VerifyReport {
+  /** True only for the `verified` verdict. */
   ok: boolean;
+  verdict: Verdict;
+  /**
+   * The key-statement walk: which keys the `trustAnchors` reach, and any
+   * finding about the statements themselves (`KEY_STATEMENT_INVALID`,
+   * `KEY_CLOSURE_INVALID`, `CHAIN_KEY_WINDOW_DRIFT`), each of which fails the
+   * dump. `status` is `no_anchor` when no anchors were given.
+   */
+  keyTrust: KeyTrustReport;
   vault: VaultChainsReport;
   orgAdminReads: TenantAdminReadsReport;
 }

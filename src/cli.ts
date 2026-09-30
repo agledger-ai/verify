@@ -10,9 +10,11 @@
  * Exit codes distinguish the two ways this can end badly, because they mean
  * opposite things to an audit gate (verify#14):
  *
- *   0  verified, no failures
+ *   0  verified, no failures, every key anchored to a --trust-anchor pin
  *   1  VERIFICATION FAILED, the chain or log does not hold up
  *   2  COULD NOT VERIFY, the input could not be read or parsed at all
+ *   3  NOT ANCHORED, nothing failed but no --trust-anchor was given, so the
+ *      keys were the artifact's own word; not a clean verdict
  *
  * Collapsing those into a single nonzero code is what made an oversized vault
  * look like a tamper alarm. A gate wired to "nonzero means the chain is broken"
@@ -25,24 +27,37 @@
 import { readFileSync, statSync } from 'node:fs';
 import {
   buildAgentKeyRegistry,
+  parseDistrustedKeys,
+  parseTrustAnchors,
   verifyAuditExport,
   type AgentPublicKeyJwk,
   type CheckApplicability,
-  type OutOfBandKeyEntry,
+  type DistrustedKey,
+  type KeyTrustReport,
   type RecordAuditExportInput,
+  type SuppliedKeyEntry,
   type VerifyExportResult,
 } from '@agledger/verify-core';
 import { DumpReadError } from './loader.js';
 import { verifyDumpStreaming } from './verify-dir.js';
-import type { Failure, VerifyReport } from './types.js';
+import type { Failure, Verdict, VerifyReport } from './types.js';
 
-/** Verified, no failures. */
+/** Verified, no failures, and every signing key anchored to a pin. */
 export const EXIT_OK = 0;
 /** The target was read and verified, and it does not hold up. */
 export const EXIT_VERIFICATION_FAILED = 1;
 /** The target could not be read, parsed, or addressed at all. No verdict was
  *  reached, which is NOT the same as a failed verdict. */
 export const EXIT_CANNOT_VERIFY = 2;
+/** Nothing failed, but no `--trust-anchor` was given, so every key was taken
+ *  on the artifact's own word. Not a clean verdict, and not tamper evidence. */
+export const EXIT_UNANCHORED = 3;
+
+const EXIT_BY_VERDICT: Readonly<Record<Verdict, number>> = {
+  verified: EXIT_OK,
+  failed: EXIT_VERIFICATION_FAILED,
+  unanchored: EXIT_UNANCHORED,
+};
 
 /** Machine-readable shape emitted under `--report-format json` when no verdict
  *  could be reached. Distinguishable from a VerifyReport by the `error` key. */
@@ -57,8 +72,12 @@ export interface ParsedArgs {
   showHelp: boolean;
   keys: string | null;
   requireKeyId: string | null;
-  requireOutOfBandKeys: boolean;
+  requireSuppliedKeys: boolean;
   agentKeys: string | null;
+  /** `--trust-anchor` values, in the order given. */
+  trustAnchors: string[];
+  /** `--distrusted-keys` values, each a single entry or a comma list. */
+  distrustedKeys: string[];
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -68,8 +87,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     showHelp: false,
     keys: null,
     requireKeyId: null,
-    requireOutOfBandKeys: false,
+    requireSuppliedKeys: false,
     agentKeys: null,
+    trustAnchors: [],
+    distrustedKeys: [],
   };
   const takeValue = (flag: string, next: string | undefined): string => {
     if (next === undefined || next.startsWith('-')) {
@@ -113,8 +134,24 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     } else if (arg.startsWith('--agent-keys=')) {
       out.agentKeys = arg.slice('--agent-keys='.length);
       if (!out.agentKeys) throw new Error('--agent-keys requires a value');
+    } else if (arg === '--trust-anchor') {
+      out.trustAnchors.push(takeValue('--trust-anchor', argv[i + 1]));
+      i++;
+    } else if (arg.startsWith('--trust-anchor=')) {
+      const value = arg.slice('--trust-anchor='.length);
+      if (!value) throw new Error('--trust-anchor requires a value');
+      out.trustAnchors.push(value);
+    } else if (arg === '--distrusted-keys') {
+      out.distrustedKeys.push(takeValue('--distrusted-keys', argv[i + 1]));
+      i++;
+    } else if (arg.startsWith('--distrusted-keys=')) {
+      const value = arg.slice('--distrusted-keys='.length);
+      if (!value) throw new Error('--distrusted-keys requires a value');
+      out.distrustedKeys.push(value);
+    } else if (arg === '--require-supplied-keys') {
+      out.requireSuppliedKeys = true;
     } else if (arg === '--require-out-of-band-keys') {
-      out.requireOutOfBandKeys = true;
+      throw new Error('--require-out-of-band-keys is now --require-supplied-keys: a key fetched from the Server is supplied, not independent of it. Pin --trust-anchor for that.');
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown flag: ${arg}`);
     } else if (!out.target) {
@@ -129,17 +166,35 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 export const HELP_TEXT = `agledger-verify: offline verifier for AGLedger audit chains
 
 Usage:
-  agledger-verify <target> [--report-format text|json] [--agent-keys <file>]
+  agledger-verify <target> [--trust-anchor sha256:<hex>]...
+                  [--distrusted-keys <list>] [--agent-keys <file>]
+                  [--report-format text|json]
                   [--keys <file>] [--require-key-id <id>]
-                  [--require-out-of-band-keys]
+                  [--require-supplied-keys]
 
 <target> is auto-detected:
-  - a directory: a full-vault NDJSON dump (audit_vault.ndjson + the four
+  - a directory: a full-vault NDJSON dump (audit_vault.ndjson + the five
     companion files) verified with the full-installation dump verifier.
   - a file: a single /audit-export JSON document (object with exportMetadata +
     entries) verified with the per-record export verifier.
 
 Options:
+  --trust-anchor              SPKI digest of a vault key you hold or took out
+                              of band, as sha256:<64 hex>. Repeatable. The
+                              installer prints the first key's digest, and the
+                              Server's signing-key-digest.js derives one from
+                              any key. The signed key statements are walked
+                              from the pins, and an entry, checkpoint or
+                              read-log row signed by a key they do not reach
+                              fails (CHAIN_SIGNING_KEY_UNANCHORED and its
+                              checkpoint and read-log counterparts). Applies
+                              to a dump directory and to an /audit-export file.
+  --distrusted-keys           The operator's VAULT_DISTRUSTED_KEYS: a comma
+                              list of sha256:<64 hex>, each optionally
+                              @<RFC 3339 instant>. Repeatable. What such a key
+                              stored from the instant on (or, with none, from
+                              its retirement) counts for nothing in the walk.
+                              Requires --trust-anchor.
   --report-format, -f         Output format. Default: text.
   --agent-keys                Path to a JSON file holding the Ed25519 public
                               keys of agent certs: a JWK, a list of JWKs, or a
@@ -153,30 +208,31 @@ Options:
                               if it does not verify. Applies to a dump
                               directory (added to the cert keys the dump
                               itself signs) and to an /audit-export file.
-  --keys, -k                  Path to a JSON file holding out-of-band public
+  --keys, -k                  Path to a JSON file holding supplied public
                               keys, for an /audit-export file. Accepts a
                               {keyId: SPKI-DER-base64} map, a
                               [{keyId, publicKey, ...}] list, or the raw
                               GET /v1/verification-keys response envelope
-                              (the .data array is unwrapped automatically).
-                              Merged over any keys embedded in the export.
+                              (the .data array is unwrapped automatically, and
+                              the key statements it carries are walked with
+                              the export's). Merged over any keys embedded in
+                              the export.
   --require-key-id            Require every entry to reference this keyId.
                               Rejects otherwise-valid exports signed by a
                               retired or unexpected key.
-  --require-out-of-band-keys  High-assurance: refuse keys embedded in the
-                              export. Verifying an export against its own
-                              embedded keys is not an independent audit;
-                              supply keys via --keys instead.
+  --require-supplied-keys     Refuse keys embedded in the export: an entry
+                              whose only key is the export's own fails. This
+                              says where a key came from, not that it is
+                              trusted; pin --trust-anchor for that.
   --help, -h                  Show this help.
 
-Without --keys, an /audit-export file is verified against the signing keys
-carried INSIDE that same export (the report notes this as key provenance
-out-of-band=0). That proves internal consistency, not independence: an
-attacker who re-signs the chain with their own embedded key still passes.
-For an independent audit, fetch the keys separately (e.g. save
-GET /v1/verification-keys) and pass --keys with --require-out-of-band-keys.
+Without --trust-anchor no key is anchored. Every key is taken from the
+artifact itself (the dump's vault_signing_keys, the export's embedded keys, or
+keys fetched from the same Server), and a key written into the Server's
+database alone would verify. Such a run can still find tampering, but it never
+reports PASS: it reports NOT ANCHORED and exits 3.
 
-The key-policy flags (--keys, --require-key-id, --require-out-of-band-keys)
+The key-policy flags (--keys, --require-key-id, --require-supplied-keys)
 apply to /audit-export files only; a dump directory carries its own signed key
 history and rejects them.
 
@@ -192,17 +248,19 @@ A dump directory must contain:
   audit_vault.ndjson
   vault_checkpoints.ndjson
   vault_signing_keys.ndjson
+  vault_key_statements.ndjson
   org_admin_reads.ndjson
   org_admin_reads_checkpoints.ndjson
 
 audit_vault.ndjson is streamed, so vault size is bounded by disk, not memory.
 
 Exit codes:
-  0  verified, no failures
-  1  verification FAILED (the chain or log does not hold up)
+  0  verified: no failures, and every signing key anchored to a pin
+  1  verification FAILED (the chain, log, or key statements do not hold up)
   2  could NOT verify (input missing, unreadable, or malformed; no verdict)
+  3  NOT ANCHORED: no failures, but no --trust-anchor was given
 
-Codes 1 and 2 mean opposite things. Treat only 1 as evidence of tampering.
+Only 1 is evidence of tampering. Only 0 is a clean verdict.
 `;
 
 /**
@@ -258,10 +316,54 @@ function agentSignatureSummary(
     : `${base} (NOT verified: none of the ${onChain} matches; pass --agent-keys with the agent cert keys to re-verify them)`;
 }
 
+/** The verdict of an /audit-export result, by the same rule as a dump's. */
+export function exportVerdict(result: VerifyExportResult): Verdict {
+  if (!result.valid) return 'failed';
+  return result.keyTrust.status === 'no_anchor' ? 'unanchored' : 'verified';
+}
+
+/**
+ * The headline. `unanchored` gets its own word so that a run which found
+ * nothing wrong but anchored nothing can never be read, or grepped, as a PASS.
+ */
+function headline(verdict: Verdict, kind: string): string[] {
+  if (verdict === 'verified') return [`[PASS] AGLedger offline verification (${kind})`];
+  if (verdict === 'failed') return [`[FAIL] AGLedger offline verification (${kind})`];
+  return [
+    `[NOT ANCHORED] AGLedger offline verification (${kind})`,
+    '  Nothing failed, but this is NOT a clean verdict: no --trust-anchor was given, so every',
+    '  signing key was taken on the word of the artifact itself, and a key written into the',
+    '  Server\'s database alone would verify. Re-run with --trust-anchor sha256:<hex>.',
+  ];
+}
+
+/** The key-anchoring section, shared by the dump and export reports. */
+function keyTrustLines(keyTrust: KeyTrustReport, indent: string): string[] {
+  if (keyTrust.status === 'no_anchor') {
+    return [`${indent}status      : NOT RUN (no --trust-anchor given; no key is anchored)`];
+  }
+  const ids = (list: readonly string[]) => (list.length === 0 ? '(none)' : list.join(', '));
+  const lines = [
+    `${indent}status      : walked from ${keyTrust.anchors.join(', ')} (${keyTrust.order === 'written' ? 'write order' : 'signed order'})`,
+    `${indent}anchored    : ${ids(keyTrust.anchoredKeyIds)}`,
+    `${indent}unanchored  : ${ids(keyTrust.unanchoredKeyIds)}`,
+  ];
+  if (keyTrust.undecidedKeyIds.length > 0) {
+    lines.push(`${indent}undecided   : ${ids(keyTrust.undecidedKeyIds)} (reached only through a signature this host cannot compute)`);
+  }
+  lines.push(`${indent}findings    : ${keyTrust.findings.length}`);
+  for (const f of keyTrust.findings) {
+    lines.push(`${indent}  [${f.code}] ${f.keyId === null ? '' : `key ${f.keyId}: `}${f.detail}`);
+  }
+  return lines;
+}
+
 export function formatDumpReportText(report: VerifyReport, options: TextReportOptions = {}): string {
   const lines: string[] = [];
-  const status = report.ok ? 'PASS' : 'FAIL';
-  lines.push(`[${status}] AGLedger offline verification (dump)`);
+  lines.push(...headline(report.verdict, 'dump'));
+  lines.push('');
+  lines.push('key anchoring');
+  lines.push(...keyTrustLines(report.keyTrust, '  '));
   lines.push('');
   lines.push('audit_vault chain');
   lines.push(`  records     : ${report.vault.recordCount}`);
@@ -293,8 +395,7 @@ export function formatExportReportText(
   options: TextReportOptions = {},
 ): string {
   const lines: string[] = [];
-  const status = result.valid ? 'PASS' : 'FAIL';
-  lines.push(`[${status}] AGLedger offline verification (audit-export)`);
+  lines.push(...headline(exportVerdict(result), 'audit-export'));
   lines.push('');
   lines.push(`  record            : ${result.recordId}`);
   lines.push(`  entries           : ${result.verifiedEntries}/${result.totalEntries} verified`);
@@ -302,17 +403,14 @@ export function formatExportReportText(
     `  signature coverage: signed=${result.signatureCoverage.signed} unsigned=${result.signatureCoverage.unsigned} skipped=${result.signatureCoverage.skipped}`,
   );
   lines.push(
-    `  key provenance    : out-of-band=${result.keyProvenance.outOfBand} embedded=${result.keyProvenance.embedded}`,
+    `  key provenance    : supplied=${result.keyProvenance.supplied} embedded=${result.keyProvenance.embedded}`,
   );
-  // verify#8: a PASS earned only against keys the export itself carries is not
-  // an independent verification; a full re-sign + key-swap would also pass.
-  // Say so next to the headline instead of leaving it encoded in the
-  // provenance counters.
-  if (result.valid && result.keyProvenance.outOfBand === 0 && result.keyProvenance.embedded > 0) {
-    lines.push(
-      '  WARNING           : verified only against keys embedded in the export itself. This proves internal consistency, not independence; supply --keys (and --require-out-of-band-keys) with keys obtained out of band.',
-    );
-  }
+  // Where a key came from is not whether it is trusted: a full re-sign with a
+  // swapped key passes against the export's own keys and against keys fetched
+  // from the same Server alike. Only the walk from a pin says a key is trusted,
+  // so that is what the report states beside the provenance counters.
+  lines.push('  key anchoring');
+  lines.push(...keyTrustLines(result.keyTrust, '    '));
   lines.push(
     `  agent signatures  : ${agentSignatureSummary(result.agentSignatures, result.optionalChecks.agent_signature, options.agentKeysSupplied ?? false)}`,
   );
@@ -397,7 +495,25 @@ export function runCli(argv: readonly string[]): CliResult {
   }
 
   const hasKeyPolicyFlags =
-    parsed.keys !== null || parsed.requireKeyId !== null || parsed.requireOutOfBandKeys;
+    parsed.keys !== null || parsed.requireKeyId !== null || parsed.requireSuppliedKeys;
+
+  // Parsed before anything is read, so a mistyped pin is a usage error and
+  // never a verdict: a run that silently dropped it would report NOT ANCHORED.
+  let trustAnchors: string[];
+  let distrustedKeys: DistrustedKey[];
+  try {
+    trustAnchors = parseTrustAnchors(parsed.trustAnchors).map((d) => `sha256:${d}`);
+    distrustedKeys = parseDistrustedKeys(parsed.distrustedKeys);
+  } catch (err) {
+    if (err instanceof TypeError) return cannotVerify(err.message.replace(/^trustAnchors entry/, '--trust-anchor').replace(/^distrustedKeys entry/, '--distrusted-keys entry'), parsed.reportFormat);
+    throw err;
+  }
+  if (distrustedKeys.length > 0 && trustAnchors.length === 0) {
+    return cannotVerify(
+      '--distrusted-keys acts only inside the key-statement walk, which runs from --trust-anchor; pass the pin as well.',
+      parsed.reportFormat,
+    );
+  }
 
   let agentKeys: AgentPublicKeyJwk[] | undefined;
   if (parsed.agentKeys !== null) {
@@ -410,7 +526,7 @@ export function runCli(argv: readonly string[]): CliResult {
   if (isDirectory(parsed.target)) {
     if (hasKeyPolicyFlags) {
       return cannotVerify(
-        '--keys / --require-key-id / --require-out-of-band-keys apply to /audit-export files only; a dump directory carries its own signed key history (vault_signing_keys.ndjson).',
+        '--keys / --require-key-id / --require-supplied-keys apply to /audit-export files only; a dump directory carries its own signed key history (vault_signing_keys.ndjson and vault_key_statements.ndjson). Pin it with --trust-anchor.',
         parsed.reportFormat,
       );
     }
@@ -418,9 +534,11 @@ export function runCli(argv: readonly string[]): CliResult {
     try {
       // Streamed, so a multi-GB audit_vault.ndjson is bounded by disk rather
       // than by Node's max string length (verify#14).
-      report = verifyDumpStreaming(parsed.target, undefined, { agentKeys });
+      report = verifyDumpStreaming(parsed.target, undefined, { agentKeys, trustAnchors, distrustedKeys });
     } catch (err) {
-      if (err instanceof DumpReadError) {
+      // A TypeError here is the walk refusing a statement file it cannot
+      // order (rows with and without created_at): no verdict was reached.
+      if (err instanceof DumpReadError || err instanceof TypeError) {
         return cannotVerify(err.message, parsed.reportFormat);
       }
       throw err;
@@ -429,11 +547,7 @@ export function runCli(argv: readonly string[]): CliResult {
       parsed.reportFormat === 'json'
         ? JSON.stringify(report, null, 2) + '\n'
         : formatDumpReportText(report, { agentKeysSupplied: agentKeys !== undefined }) + '\n';
-    return {
-      exitCode: report.ok ? EXIT_OK : EXIT_VERIFICATION_FAILED,
-      stdout,
-      stderr: '',
-    };
+    return { exitCode: EXIT_BY_VERDICT[report.verdict], stdout, stderr: '' };
   }
 
   // File -> parse JSON, branch on exportMetadata.
@@ -460,7 +574,7 @@ export function runCli(argv: readonly string[]): CliResult {
     };
   }
 
-  let publicKeys: Record<string, string> | ReadonlyArray<OutOfBandKeyEntry> | undefined;
+  let publicKeys: Record<string, string> | ReadonlyArray<SuppliedKeyEntry> | undefined;
   if (parsed.keys !== null) {
     let rawKeys: string;
     try {
@@ -480,7 +594,7 @@ export function runCli(argv: readonly string[]): CliResult {
     publicKeys = unwrapKeys(parsedKeys);
   }
 
-  // verify-core throws TypeError at the out-of-band-key boundary when the
+  // verify-core throws TypeError at the supplied-key boundary when the
   // file's shape is wrong (e.g. {keyId: 42}, [null]). Surface that as a CLI
   // usage error rather than an uncaught stack trace.
   let result: VerifyExportResult;
@@ -488,8 +602,10 @@ export function runCli(argv: readonly string[]): CliResult {
     result = verifyAuditExport(parsedJson, {
       publicKeys,
       requireKeyId: parsed.requireKeyId ?? undefined,
-      requireOutOfBandKeys: parsed.requireOutOfBandKeys,
+      requireSuppliedKeys: parsed.requireSuppliedKeys,
       agentKeys,
+      trustAnchors,
+      distrustedKeys,
     });
   } catch (err) {
     if (err instanceof TypeError) {
@@ -500,15 +616,14 @@ export function runCli(argv: readonly string[]): CliResult {
     }
     throw err;
   }
+  const verdict = exportVerdict(result);
+  // verify-core's result verbatim, plus the verdict: `valid` alone is true on
+  // a run that anchored nothing.
   const stdout =
     parsed.reportFormat === 'json'
-      ? JSON.stringify(result, null, 2) + '\n'
+      ? JSON.stringify({ verdict, ...result }, null, 2) + '\n'
       : formatExportReportText(result, { agentKeysSupplied: agentKeys !== undefined }) + '\n';
-  return {
-    exitCode: result.valid ? EXIT_OK : EXIT_VERIFICATION_FAILED,
-    stdout,
-    stderr: '',
-  };
+  return { exitCode: EXIT_BY_VERDICT[verdict], stdout, stderr: '' };
 }
 
 /**
@@ -520,16 +635,16 @@ export function runCli(argv: readonly string[]): CliResult {
  * `{keyId: base64}` map passes through untouched; verify-core then validates
  * the shape and throws on anything else.
  */
-function unwrapKeys(raw: unknown): Record<string, string> | ReadonlyArray<OutOfBandKeyEntry> {
+function unwrapKeys(raw: unknown): Record<string, string> | ReadonlyArray<SuppliedKeyEntry> {
   if (
     raw &&
     typeof raw === 'object' &&
     !Array.isArray(raw) &&
     Array.isArray((raw as { data?: unknown }).data)
   ) {
-    return (raw as { data: ReadonlyArray<OutOfBandKeyEntry> }).data;
+    return (raw as { data: ReadonlyArray<SuppliedKeyEntry> }).data;
   }
-  return raw as Record<string, string> | ReadonlyArray<OutOfBandKeyEntry>;
+  return raw as Record<string, string> | ReadonlyArray<SuppliedKeyEntry>;
 }
 
 const AGENT_KEYS_SHAPE =
