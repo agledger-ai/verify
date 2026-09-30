@@ -14,8 +14,6 @@
  * conforming producer that isn't engine code.
  */
 import { createPrivateKey, generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
-import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encode as cborEncode, rfc8949EncodeOptions } from 'cborg';
@@ -470,20 +468,10 @@ export function pinOf(key: KeyMaterial): string {
   return `sha256:${hash('sha256', Buffer.from(key.publicKeyDerB64, 'base64'), 'hex')}`;
 }
 
-/** The vault key pin of the API 1.8.0 instance the live fixtures come from. */
-export const LIVE_PIN = 'sha256:4b2f0b6374460c7604411b79ac4304827909faffce7553a75087f0a8debaa9ce';
-
-const LIVE_DUMP = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'live-1.8.0', 'dump');
-
 /**
- * A temporary copy of the live API 1.8.0 dump slice, readable by a 2.0
- * verifier. API 1.8.0 wrote no key statements, so the copy gains an empty
- * `vault_key_statements.ndjson`; the slice carries no read-log leaves, the
- * only part whose format 2.0 changed. The fixture itself stays unmodified.
+ * The live fixtures: unmodified output of a scratch AGLedger API 2.0.0
+ * instance (see the header of agent-keys.test.ts), and the pin of its vault
+ * key.
  */
-export function liveDumpCopy(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'agledger-verify-live-'));
-  cpSync(LIVE_DUMP, dir, { recursive: true });
-  writeFileSync(join(dir, 'vault_key_statements.ndjson'), '');
-  return dir;
-}
+export const LIVE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'live-2.0.0');
+export const LIVE_PIN = 'sha256:7319bc5f0f636d72778028cf069db7e7a4a62a7a44e5433ab94d66a53d9b23a4';

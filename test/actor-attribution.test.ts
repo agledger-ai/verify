@@ -8,21 +8,28 @@
  * would still verify clean, which made the attribution the export guide points
  * an auditor at unverifiable.
  *
- * The dump under `fixtures/live-1.8.0/dump` is unmodified API 1.8.0 output,
- * read through `liveDumpCopy`, and every run is pinned on that instance's key.
+ * The dump under `fixtures/live-2.0.0/dump` is unmodified API 2.0.0 output,
+ * copied per test so it can be tampered with, and every run is pinned on that
+ * instance's key.
  */
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EXIT_OK, EXIT_VERIFICATION_FAILED, runCli as runCliUnpinned } from '../src/cli.js';
 import type { VaultEntryDump, VerifyReport } from '../src/types.js';
-import { LIVE_PIN, liveDumpCopy } from './fixtures.js';
+import { LIVE_DIR, LIVE_PIN } from './fixtures.js';
 
 const runCli = (argv: readonly string[]) => runCliUnpinned([...argv, '--trust-anchor', LIVE_PIN]);
 
-const here = dirname(fileURLToPath(import.meta.url));
-const LIVE_EXPORT = join(here, 'fixtures', 'live-1.8.0', 'export-cert-lifecycle.json');
+const LIVE_DUMP = join(LIVE_DIR, 'dump');
+const LIVE_EXPORT = join(LIVE_DIR, 'export-cert-lifecycle.json');
+
+function liveDumpCopy(): string {
+  const copy = mkdtempSync(join(tmpdir(), 'agledger-verify-actor-'));
+  cpSync(LIVE_DUMP, copy, { recursive: true });
+  return copy;
+}
 
 let dir: string;
 beforeEach(() => {
