@@ -1,8 +1,9 @@
 /**
  * `--agent-keys` and the offline agent-signature check, on both surfaces.
  *
- * The live fixtures under `fixtures/live-1.8.0/` are unmodified output of an
- * API 1.8.0 instance: `export-cert-lifecycle.json` is one record driven end to
+ * The live fixtures under `fixtures/live-2.0.0/` are unmodified output of a
+ * scratch API 2.0.0 instance, driven through its HTTP API and dumped with its
+ * own `vault:dump` tool: `export-cert-lifecycle.json` is one record driven end to
  * end by an agent on an ephemeral cert that signed every request body, and
  * `agent-cert-key.json` is the key that agent sent at cert exchange. The dump
  * is a slice of a full vault dump from the same instance, cut to three whole
@@ -14,21 +15,18 @@
 import { generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_SIGNATURE_CONTEXT, ed25519JwkThumbprint, type AgentPublicKeyJwk } from '@agledger/verify-core';
 import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_VERIFICATION_FAILED, parseArgs, runCli as runCliUnpinned } from '../src/cli.js';
 import { verifyDump } from '../src/dump-verifier.js';
 import { verifyDumpStreaming } from '../src/verify-dir.js';
 import type { VaultEntryDump, VerifyReport } from '../src/types.js';
-import { LIVE_PIN, buildVaultEntry, generateKey, liveDumpCopy, pinOf, signingKeyDump } from './fixtures.js';
+import { LIVE_DIR, LIVE_PIN, buildVaultEntry, generateKey, pinOf, signingKeyDump } from './fixtures.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const LIVE = join(here, 'fixtures', 'live-1.8.0');
+const LIVE = LIVE_DIR;
 const EXPORT = join(LIVE, 'export-cert-lifecycle.json');
-const DUMP = liveDumpCopy();
-afterAll(() => rmSync(DUMP, { recursive: true, force: true }));
+const DUMP = join(LIVE, 'dump');
 const runCli = (argv: readonly string[]) => runCliUnpinned([...argv, '--trust-anchor', LIVE_PIN]);
 const KEY_FILE = join(LIVE, 'agent-cert-key.json');
 const keyEntry = JSON.parse(readFileSync(KEY_FILE, 'utf-8')) as {
@@ -223,9 +221,7 @@ describe('--agent-keys on a dump directory', () => {
       payload_binding: 'applied',
       oidc_actor: 'applied',
       actor_attribution: 'applied',
-      // An API 1.8.0 dump carries no key statements, so the pinned key has no
-      // signed window to hold entries to.
-      key_temporal: 'skipped_no_input',
+      key_temporal: 'applied',
       agent_signature: 'applied',
       key_anchoring: 'applied',
     });
@@ -269,7 +265,7 @@ describe('a row copy of on_behalf_of must equal what the entry signed (live dump
   // The cert-signed create: its signed predicate carries on_behalf_of, and the
   // engine does not copy it onto the row payload.
   const target = (r: VaultEntryDump): boolean =>
-    r.record_id === '01a0b33c-e284-7530-a9f3-d65dbdcca261' && r.chain_position === 1;
+    r.record_id === '01a0f493-d10c-7fa9-bb9d-9bbf6baac111' && r.chain_position === 1;
 
   it('the unmodified slice has no row copy and verifies', () => {
     const rows = readSlice();
@@ -290,7 +286,7 @@ describe('a row copy of on_behalf_of must equal what the entry signed (live dump
     expect(report.vault.failureCount).toBe(1);
     expect(report.vault.failures[0]).toMatchObject({
       code: 'CHAIN_PAYLOAD_BINDING_MISMATCH',
-      scopeId: '01a0b33c-e284-7530-a9f3-d65dbdcca261',
+      scopeId: '01a0f493-d10c-7fa9-bb9d-9bbf6baac111',
       position: 1,
     });
   });

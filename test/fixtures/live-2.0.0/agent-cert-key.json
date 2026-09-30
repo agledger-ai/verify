@@ -1,0 +1,9 @@
+{
+  "certId": "1884ced1-28cc-4c62-b725-24893994c628",
+  "publicKeyThumbprint": "sha256:d7fbb6c343d5c4adba5a6cfc910de7fa83636bcb769817fa826f9c7833d72da8",
+  "publicKeyJwk": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "x": "NyrpkByugKR9svIOK-v7hKegF6iuI-lkO5dVTlx-DEA"
+  }
+}
