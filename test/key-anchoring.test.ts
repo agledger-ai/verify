@@ -48,7 +48,8 @@ function planted(): { dump: Dump; pin: string } {
   dump.vaultCheckpoints = [{ ...cp, cose_sign1: resigned.cose_sign1, signing_key_id: resigned.signing_key_id }];
   const org1 = dump.orgAdminReads.filter((l) => l.org_id === 'enterprise-1');
   dump.orgAdminReadsCheckpoints = [buildOrgAdminReadsCheckpoint('enterprise-1', org1, rogue, org1.length)];
-  dump.orgAdminReads.push(buildOrgAdminRead({ orgId: 'enterprise-2', leafIndex: 1, key: rogue }));
+  const org2 = dump.orgAdminReads.find((l) => l.org_id === 'enterprise-2')!;
+  dump.orgAdminReads.push(buildOrgAdminRead({ orgId: 'enterprise-2', leafIndex: 1, key: rogue, previousHash: org2.leaf_hash }));
   return { dump, pin: pinOf(key) };
 }
 

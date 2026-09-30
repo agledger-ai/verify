@@ -305,13 +305,20 @@ caller need not add a second dependency.
 - **Vault checkpoints**: the anchor row matches the live entry at its position
   and its signature verifies under an anchored key. A checkpoint without a
   matching `audit_vault` row is evidence of out-of-band TRUNCATE/DELETE
-  (`CHECKPOINT_ROW_MISSING`).
+  (`CHECKPOINT_ROW_MISSING`). The claim signed inside the envelope must say
+  what the row says (position, tip hash, record subject, key id), or it is
+  `CHECKPOINT_CLAIM_MISMATCH`: the hash cross-check reads the columns, so a
+  rewritten column pair beside an intact envelope would otherwise pass.
 - **`org_admin_reads` chain**: leaf_hash is the RFC 9162 leaf hash of the
-  envelope, sha256(0x00 || cose_sign1); leaf_index is gap-free per org; and
-  each leaf's signature verifies under the anchored key its envelope names
+  envelope, sha256(0x00 || cose_sign1); leaf_index is gap-free per org; each
+  leaf's signed claim gives its position, the previous leaf's hash and the
+  record read, as its row does (`TENANT_READ_CLAIM_MISMATCH`); and each leaf's
+  signature verifies under the anchored key its envelope names
   (`TENANT_READ_SIGNATURE_INVALID`).
 - **STH (signed tree head) checkpoints**: the RFC 9162 root over the first
-  `tree_size` leaves matches the signed `root_hash`; signature verifies. An
+  `tree_size` leaves matches the `root_hash` column, the signed claim gives the
+  same size, root and key id (`TENANT_CHECKPOINT_CLAIM_MISMATCH`), and the
+  signature verifies. An
   inclusion proof from `GET /v1/audit/org-reads/checkpoints/{id}/proof` checks
   with the re-exported `verifyOrgReadInclusion`.
 - **Unsigned rows**, graded as the engine grades them. The install began

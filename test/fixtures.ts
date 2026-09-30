@@ -161,6 +161,11 @@ function recordSubjectFor(recordId: string): Array<{ name: string; digest: { sha
   return [{ name: 'record_id', digest: { sha256: hash('sha256', recordId, 'hex') } }];
 }
 
+/** The subject the engine signs on a checkpoint or read-log leaf: sha256 of the record UUID's 16 bytes. */
+function uuidSubject(uuid: string): Array<{ name: string; digest: { sha256: string } }> {
+  return [{ name: 'record_id', digest: { sha256: hash('sha256', uuidToBytes(uuid), 'hex') } }];
+}
+
 interface BuildVaultEntryArgs {
   recordId: string;
   position: number;
@@ -235,8 +240,8 @@ export function buildVaultCheckpoint(
   position: number,
   payloadHash: string,
   key: KeyMaterial,
+  recordUuid: string = stableUuidFromString(recordId),
 ): Dump['vaultCheckpoints'][number] {
-  const recordUuid = stableUuidFromString(recordId);
   const envelope = buildCoseSign1(
     {
       kind: 'vault-checkpoint',
@@ -247,7 +252,7 @@ export function buildVaultCheckpoint(
       actor: SHARED_ACTOR,
       chainPosition: position,
       previousHashHex: null,
-      subject: recordSubjectFor(recordId),
+      subject: uuidSubject(recordUuid),
       predicate: {
         chain_tip_hash: `sha256:${payloadHash}`,
         range: { start: 1, end: position },
@@ -273,6 +278,22 @@ interface BuildLeafArgs {
   key: KeyMaterial;
   callerKeyId?: string;
   recordId?: string;
+  /** The previous leaf's leaf_hash in this org's log; null for leaf 0. */
+  previousHash?: string | null;
+}
+
+/** `count` leaves of one org's log, each linked to the one before by its signed previous_hash. */
+export function buildOrgAdminReadLog(
+  orgId: string,
+  count: number,
+  key: KeyMaterial,
+  recordIdOf: (i: number) => string = (i) => `record-${i}`,
+): Array<Dump['orgAdminReads'][number]> {
+  const out: Array<Dump['orgAdminReads'][number]> = [];
+  for (let i = 0; i < count; i++) {
+    out.push(buildOrgAdminRead({ orgId, leafIndex: i, key, recordId: recordIdOf(i), previousHash: out[i - 1]?.leaf_hash ?? null }));
+  }
+  return out;
 }
 
 export function buildOrgAdminRead(args: BuildLeafArgs): Dump['orgAdminReads'][number] {
@@ -289,8 +310,8 @@ export function buildOrgAdminRead(args: BuildLeafArgs): Dump['orgAdminReads'][nu
       iat: 1747574000 + args.leafIndex,
       actor: SHARED_ACTOR,
       chainPosition: args.leafIndex + 1,
-      previousHashHex: null,
-      subject: recordSubjectFor(recordId),
+      previousHashHex: args.previousHash ?? null,
+      subject: uuidSubject(recordUuid),
       predicate: {
         record_id: recordUuid,
         reader_key_id: callerKeyIdHex,
@@ -303,7 +324,7 @@ export function buildOrgAdminRead(args: BuildLeafArgs): Dump['orgAdminReads'][nu
     id,
     org_id: args.orgId,
     caller_key_id: callerKeyIdHex,
-    record_id: recordId,
+    record_id: recordUuid,
     filter_applied: 'org-admin',
     read_context: 'interactive',
     export_batch_id: null,
@@ -348,9 +369,9 @@ export function buildOrgAdminReadsCheckpoint(
       sub: orgId,
       iat: 1747574999,
       actor: SHARED_ACTOR,
-      chainPosition: size > 0 ? size : 1,
+      chainPosition: size,
       previousHashHex: null,
-      subject: [{ name: 'org_id', digest: { sha256: hash('sha256', orgId, 'hex') } }],
+      subject: [{ name: 'root', digest: { sha256: rootHash } }],
       predicate: {
         chain_tip_hash: `sha256:${rootHash}`,
         range: { start: 0, end: size },
@@ -410,11 +431,7 @@ export function buildHappyDump(): HappyDumpResult {
 
   const ent1 = 'enterprise-1';
   const ent2 = 'enterprise-2';
-  const leaves1 = [
-    buildOrgAdminRead({ orgId: ent1, leafIndex: 0, key }),
-    buildOrgAdminRead({ orgId: ent1, leafIndex: 1, key }),
-    buildOrgAdminRead({ orgId: ent1, leafIndex: 2, key }),
-  ];
+  const leaves1 = buildOrgAdminReadLog(ent1, 3, key);
   const tarCp1 = buildOrgAdminReadsCheckpoint(ent1, leaves1, key, 3);
   const leaves2 = [buildOrgAdminRead({ orgId: ent2, leafIndex: 0, key })];
 

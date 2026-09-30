@@ -98,6 +98,7 @@ import type {
   VaultEntryDump,
   VerifyReport,
 } from './types.js';
+import { decodeSignedClaim, uuidSubjectDigest } from './claim.js';
 
 /** Options for the vault-chain walk. */
 export interface VaultChainOptions {
@@ -149,7 +150,11 @@ export interface DumpKeyTrust {
   /** Every `vault_signing_keys` row, marked with the walk's `trust` when one ran. */
   registry: KeyRegistry;
   report: KeyTrustReport;
-  /** When the install began signing: the earliest `activated_at` across the rows. */
+  /**
+   * When the install began signing: the earliest `activated_at` across the
+   * registry rows (retired keys included, as the engine's `min(activated_at)`
+   * reads them).
+   */
   signingSince: string | null;
 }
 
@@ -198,7 +203,8 @@ export function walkDumpKeys(
   } else if (distrusted.length > 0) {
     throw new TypeError('distrustedKeys act only inside the key-statement walk, which runs from trustAnchors; pass trustAnchors as well.');
   }
-  return { registry, report: reportKeyTrust(registry, trust, null), signingSince: signingSinceOf(signingKeys) };
+  const signingSince = earliestKeyActivation(signingKeys.map((k) => ({ activatedAt: k.activated_at ?? null })));
+  return { registry, report: reportKeyTrust(registry, trust, null), signingSince };
 }
 
 function buildVaultKeyRegistry(keys: readonly SigningKeyDump[]): KeyRegistry {
@@ -253,16 +259,6 @@ function harvestCertKeys(
   return added;
 }
 
-/**
- * When the install began signing: the earliest `activated_at` in the dump's
- * key registry, or null when no key carries one (an install that never
- * registered a key). Read from the registry rows directly rather than from a
- * built KeyRegistry, so a row the registry builder would set aside still
- * counts, as it does in the engine's `min(activated_at)`.
- */
-function signingSinceOf(keys: readonly SigningKeyDump[]): string | null {
-  return earliestKeyActivation(keys.map((k) => ({ activatedAt: k.activated_at ?? null })));
-}
 
 /**
  * The kid an unsigned COSE_Sign1 carries, as the engine writes it (eight zero
@@ -270,6 +266,25 @@ function signingSinceOf(keys: readonly SigningKeyDump[]): string | null {
  * kid is the only unsigned marker it has.
  */
 const UNSIGNED_KID = '0'.repeat(16);
+
+/**
+ * Compare an envelope's signed claim with what its row says, field by field,
+ * and name the first that differs: `null` when every one agrees. An envelope
+ * that does not decode as a claim is named as such. The row columns are what
+ * the hash and root cross-checks read, so without this a rewritten column
+ * beside an intact envelope, or a fabricated row over any envelope, passed.
+ */
+function claimDisagreement(
+  coseSign1: string,
+  expect: (claim: NonNullable<ReturnType<typeof decodeSignedClaim>>) => Array<[string, unknown, unknown]>,
+): string | null {
+  const claim = decodeSignedClaim(Buffer.from(coseSign1, 'base64'));
+  if (claim === null) return 'cose_sign1 does not decode as a signed AGLedger claim';
+  for (const [field, signed, row] of expect(claim)) {
+    if (signed !== row) return `the signed ${field} ${JSON.stringify(signed ?? null)} is not the row's ${JSON.stringify(row ?? null)}`;
+  }
+  return null;
+}
 
 /**
  * Look up the key a checkpoint or read-log row names and apply the walk's
@@ -425,6 +440,24 @@ function verifyChainCheckpoints(
       failures.push({
         code: 'CHECKPOINT_HASH_MISMATCH',
         message: `${label} pos ${cp.chain_position}: checkpoint payload_hash does not match audit_vault row`,
+        scopeId: chainKey,
+        position: cp.chain_position,
+      });
+      continue;
+    }
+
+    // Engine mirror of `checkpoint_claim_mismatch`, after the row and hash
+    // cross-checks and before anything about the key, as the engine orders it.
+    const vaultClaim = claimDisagreement(cp.cose_sign1, (c) => [
+      ['position', c.position, cp.chain_position],
+      ['chain_tip_hash', c.predicate['chain_tip_hash'], `sha256:${cp.payload_hash}`],
+      ['subject digest', c.subjectSha256, uuidSubjectDigest(cp.record_id)],
+      ['kid', c.kid, cp.signing_key_id ?? UNSIGNED_KID],
+    ]);
+    if (vaultClaim !== null) {
+      failures.push({
+        code: 'CHECKPOINT_CLAIM_MISMATCH',
+        message: `${label} pos ${cp.chain_position}: checkpoint claim does not match its row: ${vaultClaim}`,
         scopeId: chainKey,
         position: cp.chain_position,
       });
@@ -777,6 +810,23 @@ function verifyOneOrgAdminReadsLog(
       });
       return;
     }
+    // Engine mirror of `leaf_claim_mismatch`: the claim is what links each
+    // leaf to the one before it and to the record it says was read.
+    const leafClaim = claimDisagreement(leaf.cose_sign1, (c) => [
+      ['position', c.position, i + 1],
+      ['previous_hash', c.previousHash, i === 0 ? null : leaves[i - 1]!.leaf_hash],
+      ['record_id', c.predicate['record_id'], leaf.record_id],
+      ['subject digest', c.subjectSha256, uuidSubjectDigest(leaf.record_id)],
+    ]);
+    if (leafClaim !== null) {
+      failures.push({
+        code: 'TENANT_READ_CLAIM_MISMATCH',
+        message: `Org ${orgId} leaf ${leaf.leaf_index}: leaf claim does not match its row: ${leafClaim}`,
+        scopeId: orgId,
+        leafIndex: leaf.leaf_index,
+      });
+      return;
+    }
     const signatureFailure = checkLeafSignature(orgId, leaf, coseSign1Bytes, registry, mustSign);
     if (signatureFailure) {
       failures.push(signatureFailure);
@@ -803,6 +853,25 @@ function verifyOneOrgAdminReadsLog(
       failures.push({
         code: 'TENANT_CHECKPOINT_ROOT_MISMATCH',
         message: `Org ${orgId}: checkpoint ${cp.id} root_hash ${cp.root_hash.slice(0, 16)} does not match the recomputed RFC 9162 root ${root?.slice(0, 16) ?? '(none)'}`,
+        scopeId: orgId,
+        treeSize: cp.tree_size,
+      });
+      continue;
+    }
+
+    // Engine mirror of the read log's `checkpoint_claim_mismatch`, after the
+    // leaf-count and root cross-checks and before anything about the key.
+    const headClaim = claimDisagreement(cp.cose_sign1, (c) => [
+      ['position', c.position, cp.tree_size],
+      ['chain_tip_hash', c.predicate['chain_tip_hash'], `sha256:${cp.root_hash}`],
+      ['count', c.predicate['count'], cp.tree_size],
+      ['subject digest', c.subjectSha256, cp.root_hash],
+      ['kid', c.kid, cp.signing_key_id ?? UNSIGNED_KID],
+    ]);
+    if (headClaim !== null) {
+      failures.push({
+        code: 'TENANT_CHECKPOINT_CLAIM_MISMATCH',
+        message: `Org ${orgId}: checkpoint ${cp.id} claim does not match its row: ${headClaim}`,
         scopeId: orgId,
         treeSize: cp.tree_size,
       });
