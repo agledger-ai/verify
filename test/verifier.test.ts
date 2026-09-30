@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createHash, generateKeyPairSync } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadDump } from '../src/loader.js';
 import { verifyDump, verifyOrgAdminReadsChains, verifyVaultChains, walkDumpKeys } from '../src/dump-verifier.js';
 import {
   buildHappyDump,
@@ -426,5 +429,25 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
       walkDumpKeys(tampered.signingKeys),
     );
     expect(report.failures.some((f) => f.code === 'TENANT_CHECKPOINT_LEAF_COUNT_MISMATCH')).toBe(true);
+  });
+});
+
+describe('a row whose envelope is missing', () => {
+  // The engine never writes cose_sign1 null, so such a row was edited. It must
+  // fail its own check, not throw out of the walk (which the CLI would report
+  // as "could not verify" rather than as a failed verdict).
+  const VALID = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance', 'dump', 'valid');
+  it.each([
+    ['vaultCheckpoints', 'CHECKPOINT_CLAIM_MISMATCH', true],
+    ['orgAdminReads', 'TENANT_READ_LEAF_HASH_MISMATCH', false],
+    ['orgAdminReadsCheckpoints', 'TENANT_CHECKPOINT_CLAIM_MISMATCH', true],
+  ] as const)('a null cose_sign1 on %s fails %s', (table, code, hasKeyColumn) => {
+    const dump = loadDump(VALID);
+    const row = dump[table][0] as { cose_sign1: string | null; signing_key_id?: string | null };
+    row.cose_sign1 = null;
+    if (hasKeyColumn) row.signing_key_id = null;
+    const report = verifyDump(dump);
+    expect(report.ok).toBe(false);
+    expect([...report.vault.failures, ...report.orgAdminReads.failures].map((f) => f.code)).toContain(code);
   });
 });
