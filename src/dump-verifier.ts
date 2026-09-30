@@ -153,7 +153,8 @@ export interface DumpKeyTrust {
   /**
    * When the install began signing: the earliest `activated_at` across the
    * registry rows (retired keys included, as the engine's `min(activated_at)`
-   * reads them).
+   * reads them) and, once the walk ran, across the activations the anchored
+   * keys' statements sign.
    */
   signingSince: string | null;
 }
@@ -203,7 +204,15 @@ export function walkDumpKeys(
   } else if (distrusted.length > 0) {
     throw new TypeError('distrustedKeys act only inside the key-statement walk, which runs from trustAnchors; pass trustAnchors as well.');
   }
-  const signingSince = earliestKeyActivation(signingKeys.map((k) => ({ activatedAt: k.activated_at ?? null })));
+  // The registry's activated_at columns are unsigned: a writer who strips or
+  // moves them later would switch the unsigned-row rule off. With a walk, the
+  // activations the anchored keys' statements sign count too, and the earliest
+  // of all of them stands, so neither source can loosen the rule.
+  const signed = trust === null ? [] : [...trust.byDigest.values()].filter((k) => k.trusted);
+  const signingSince = earliestKeyActivation([
+    ...signingKeys.map((k) => ({ activatedAt: k.activated_at ?? null })),
+    ...signed,
+  ]);
   return { registry, report: reportKeyTrust(registry, trust, null), signingSince };
 }
 

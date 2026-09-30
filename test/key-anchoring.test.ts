@@ -121,6 +121,37 @@ describe('the key statements themselves', () => {
   });
 });
 
+describe('when the install began signing', () => {
+  // A single-entry chain: its entry has no signed entry before it, so only the
+  // install's signing-start time can make it a break once it is unsigned.
+  function strippedDump(move: 'strip' | 'later'): Dump {
+    const dump = loadDump(VALID);
+    const counts = new Map<string, number>();
+    for (const e of dump.vaultEntries) counts.set(e.chain_key!, (counts.get(e.chain_key!) ?? 0) + 1);
+    const lone = dump.vaultEntries.find((e) => counts.get(e.chain_key!) === 1)!;
+    lone.signing_key_id = null;
+    dump.vaultCheckpoints = dump.vaultCheckpoints.filter((c) => c.chain_key !== lone.chain_key);
+    for (const k of dump.signingKeys) {
+      if (move === 'strip') delete k.activated_at;
+      else k.activated_at = '2099-01-01T00:00:00.000Z';
+    }
+    return dump;
+  }
+
+  it.each(['strip', 'later'] as const)(
+    'pinned, an unsigned entry still fails when the registry activated_at column is %s',
+    (move) => {
+      const report = verifyDump(strippedDump(move), { trustAnchors: [VALID_PIN] });
+      expect(report.vault.failures.map((f) => f.code)).toContain('CHAIN_ENTRY_UNSIGNED');
+    },
+  );
+
+  it('unpinned, the same edit hides the unsigned entry, which is what the pin is for', () => {
+    const report = verifyDump(strippedDump('strip'));
+    expect(report.vault.failures.map((f) => f.code)).not.toContain('CHAIN_ENTRY_UNSIGNED');
+  });
+});
+
 describe('inputs', () => {
   it('distrustedKeys without trustAnchors is refused rather than ignored', () => {
     const { dump } = buildHappyDump();
