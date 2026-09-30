@@ -26,7 +26,8 @@ The one thing a dump cannot tell you on its own is which keys to trust: anything
 with write access to the database can add a key row and sign entries with it.
 So an independent audit pins one vault key it holds or took out of band
 (`--trust-anchor`), and the verifier trusts only keys that signed key
-statements link to it. Without a pin the report is never a PASS.
+statements link to it. Without a pin a clean run still passes, flagged as not
+anchored, and never reads as a trusted verdict.
 
 ## Install
 
@@ -71,15 +72,14 @@ input errors, so a machine consumer always gets something parseable.
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Verified. No failures, and every signing key anchored to a `--trust-anchor` pin. |
+| `0` | Verified. No failures. The verdict says whether the keys were anchored: `trusted` with a `--trust-anchor`, `unanchored` without one. |
 | `1` | Verification FAILED. The chain, log, or key statements do not hold up. |
 | `2` | Could NOT verify. The input was missing, unreadable, or malformed (a mistyped pin included); no verdict was reached. |
-| `3` | NOT ANCHORED. Nothing failed, but no `--trust-anchor` was given, so the keys were the artifact's own word. |
 
-Only `1` is evidence of tampering, and only `0` is a clean verdict. An audit
-gate wired to "nonzero means the chain is broken" would otherwise raise a
-tamper alarm over a mistyped path, and one wired to "zero means clean" is
-never handed a run that anchored nothing.
+`1` and `2` mean opposite things, so treat only `1` as evidence of tampering.
+An audit gate wired to "nonzero means the chain is broken" will otherwise raise
+a tamper alarm over a mistyped path. A gate that needs a trusted verdict reads
+`verdict` from `--report-format json`, or passes `--trust-anchor`.
 
 ### Anchoring keys
 
@@ -126,15 +126,16 @@ It needs a `--trust-anchor`.
 
 Without a pin nothing is anchored. The chains are still checked against the
 dump's own `vault_signing_keys`, so tampering that leaves the keys alone is
-still found, but a key written into the database alone would pass. The report
-says so rather than PASS:
+still found and a clean dump still passes, but a key written into the database
+alone would pass too. The report flags it:
 
-- text: the headline is `[NOT ANCHORED]`, followed by the line saying this is
-  not a clean verdict, and `key anchoring` reads `NOT RUN`;
-- JSON: `ok` is `false`, `verdict` is `"unanchored"` (`"verified"` and
+- text: the headline is `[VERIFIED, NOT ANCHORED]`, followed by lines saying
+  this is not a trusted verdict and how to get a pin from the operator, and
+  `key anchoring` reads `NOT RUN`;
+- JSON: `ok` is `true`, `verdict` is `"unanchored"` (`"trusted"` and
   `"failed"` are the others), `keyTrust.status` is `"no_anchor"`, and
   `vault.optionalChecks.key_anchoring` is `"skipped_no_input"`;
-- exit code `3`.
+- exit code `0`.
 
 An `/audit-export` file reads the same way (`verdict` beside verify-core's
 result in JSON). The flags apply to it too, and its statements come from
@@ -246,15 +247,15 @@ import { verifyDumpStreaming } from '@agledger/verify';
 const report = verifyDumpStreaming('/path/to/dump', undefined, {
   trustAnchors: ['sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e'],
 });
-console.log(report.verdict); // 'verified' | 'unanchored' | 'failed'
-if (!report.ok) {
+console.log(report.verdict); // 'trusted' | 'unanchored' | 'failed'
+if (report.verdict !== 'trusted') {
   console.error(JSON.stringify(report, null, 2));
   process.exit(1);
 }
 ```
 
-`ok` is true only for `verified`. Without `trustAnchors` the best a dump can
-do is `unanchored`, with `keyTrust.status` `no_anchor`. `distrustedKeys` takes
+`ok` is false only for `failed`. Without `trustAnchors` a clean dump is
+`unanchored`, with `keyTrust.status` `no_anchor`: a pass, not a trusted one. `distrustedKeys` takes
 the `VAULT_DISTRUSTED_KEYS` entries, as strings or parsed. A malformed anchor
 or distrusted key throws `TypeError`, as does `distrustedKeys` without
 `trustAnchors`.

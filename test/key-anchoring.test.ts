@@ -66,10 +66,10 @@ describe('rows signed by a key no statement anchors', () => {
     expect(report.vault.optionalChecks.key_anchoring).toBe('applied');
   });
 
-  it('unpinned, the same dump finds nothing wrong, which is why the verdict is not ok', () => {
+  it('unpinned, the same dump finds nothing wrong, which is why the pass is flagged unanchored', () => {
     const report = verifyDump(planted().dump);
     expect(codes(report)).toEqual([]);
-    expect(report).toMatchObject({ ok: false, verdict: 'unanchored', keyTrust: { status: 'no_anchor' } });
+    expect(report).toMatchObject({ ok: true, verdict: 'unanchored', keyTrust: { status: 'no_anchor' } });
     expect(report.vault.optionalChecks.key_anchoring).toBe('skipped_no_input');
   });
 });
@@ -88,7 +88,7 @@ describe('the key statements themselves', () => {
 
   it('a pinned run over the unmodified dump walks them in write order', () => {
     const report = verifyDump(loadDump(VALID), { trustAnchors: [VALID_PIN] });
-    expect(report).toMatchObject({ ok: true, verdict: 'verified', keyTrust: { status: 'walked', order: 'written' } });
+    expect(report).toMatchObject({ ok: true, verdict: 'trusted', keyTrust: { status: 'walked', order: 'written' } });
   });
 
   it('a statement file the walk cannot order is refused: TypeError in the API, exit 2 on the CLI', () => {

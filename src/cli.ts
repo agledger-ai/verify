@@ -10,11 +10,10 @@
  * Exit codes distinguish the two ways this can end badly, because they mean
  * opposite things to an audit gate (verify#14):
  *
- *   0  verified, no failures, every key anchored to a --trust-anchor pin
+ *   0  verified, no failures (trusted with a --trust-anchor, flagged
+ *      as not anchored without one)
  *   1  VERIFICATION FAILED, the chain or log does not hold up
  *   2  COULD NOT VERIFY, the input could not be read or parsed at all
- *   3  NOT ANCHORED, nothing failed but no --trust-anchor was given, so the
- *      keys were the artifact's own word; not a clean verdict
  *
  * Collapsing those into a single nonzero code is what made an oversized vault
  * look like a tamper alarm. A gate wired to "nonzero means the chain is broken"
@@ -42,21 +41,18 @@ import { DumpReadError } from './loader.js';
 import { verifyDumpStreaming } from './verify-dir.js';
 import type { Failure, Verdict, VerifyReport } from './types.js';
 
-/** Verified, no failures, and every signing key anchored to a pin. */
+/** Verified, no failures. The report's verdict says whether keys were anchored. */
 export const EXIT_OK = 0;
 /** The target was read and verified, and it does not hold up. */
 export const EXIT_VERIFICATION_FAILED = 1;
 /** The target could not be read, parsed, or addressed at all. No verdict was
  *  reached, which is NOT the same as a failed verdict. */
 export const EXIT_CANNOT_VERIFY = 2;
-/** Nothing failed, but no `--trust-anchor` was given, so every key was taken
- *  on the artifact's own word. Not a clean verdict, and not tamper evidence. */
-export const EXIT_UNANCHORED = 3;
 
 const EXIT_BY_VERDICT: Readonly<Record<Verdict, number>> = {
-  verified: EXIT_OK,
+  trusted: EXIT_OK,
+  unanchored: EXIT_OK,
   failed: EXIT_VERIFICATION_FAILED,
-  unanchored: EXIT_UNANCHORED,
 };
 
 /** Machine-readable shape emitted under `--report-format json` when no verdict
@@ -229,8 +225,10 @@ Options:
 Without --trust-anchor no key is anchored. Every key is taken from the
 artifact itself (the dump's vault_signing_keys, the export's embedded keys, or
 keys fetched from the same Server), and a key written into the Server's
-database alone would verify. Such a run can still find tampering, but it never
-reports PASS: it reports NOT ANCHORED and exits 3.
+database alone would verify. Such a run still finds tampering and still exits
+0 when nothing fails, but it reports VERIFIED, NOT ANCHORED (JSON verdict
+"unanchored"), never a trusted verdict. Ask the operator for the digest of a
+vault key: the installer prints it, and signing-key-digest.js derives it.
 
 The key-policy flags (--keys, --require-key-id, --require-supplied-keys)
 apply to /audit-export files only; a dump directory carries its own signed key
@@ -255,12 +253,12 @@ A dump directory must contain:
 audit_vault.ndjson is streamed, so vault size is bounded by disk, not memory.
 
 Exit codes:
-  0  verified: no failures, and every signing key anchored to a pin
+  0  verified, no failures (read the verdict: trusted with a --trust-anchor,
+     unanchored without one)
   1  verification FAILED (the chain, log, or key statements do not hold up)
   2  could NOT verify (input missing, unreadable, or malformed; no verdict)
-  3  NOT ANCHORED: no failures, but no --trust-anchor was given
 
-Only 1 is evidence of tampering. Only 0 is a clean verdict.
+Codes 1 and 2 mean opposite things. Treat only 1 as evidence of tampering.
 `;
 
 /**
@@ -319,21 +317,24 @@ function agentSignatureSummary(
 /** The verdict of an /audit-export result, by the same rule as a dump's. */
 export function exportVerdict(result: VerifyExportResult): Verdict {
   if (!result.valid) return 'failed';
-  return result.keyTrust.status === 'no_anchor' ? 'unanchored' : 'verified';
+  return result.keyTrust.status === 'no_anchor' ? 'unanchored' : 'trusted';
 }
 
 /**
- * The headline. `unanchored` gets its own word so that a run which found
- * nothing wrong but anchored nothing can never be read, or grepped, as a PASS.
+ * The headline. `unanchored` gets its own words so that a run which found
+ * nothing wrong but anchored nothing can never be read, or grepped, as a
+ * trusted PASS.
  */
 function headline(verdict: Verdict, kind: string): string[] {
-  if (verdict === 'verified') return [`[PASS] AGLedger offline verification (${kind})`];
+  if (verdict === 'trusted') return [`[PASS] AGLedger offline verification (${kind})`];
   if (verdict === 'failed') return [`[FAIL] AGLedger offline verification (${kind})`];
   return [
-    `[NOT ANCHORED] AGLedger offline verification (${kind})`,
-    '  Nothing failed, but this is NOT a clean verdict: no --trust-anchor was given, so every',
+    `[VERIFIED, NOT ANCHORED] AGLedger offline verification (${kind})`,
+    '  Nothing failed, but this is NOT a trusted verdict: no --trust-anchor was given, so every',
     '  signing key was taken on the word of the artifact itself, and a key written into the',
-    '  Server\'s database alone would verify. Re-run with --trust-anchor sha256:<hex>.',
+    '  Server\'s database alone would verify. Ask the operator for the SPKI digest of a vault',
+    '  key (the installer prints it; signing-key-digest.js derives it from any key) and',
+    '  re-run with --trust-anchor sha256:<hex>.',
   ];
 }
 
@@ -498,7 +499,7 @@ export function runCli(argv: readonly string[]): CliResult {
     parsed.keys !== null || parsed.requireKeyId !== null || parsed.requireSuppliedKeys;
 
   // Parsed before anything is read, so a mistyped pin is a usage error and
-  // never a verdict: a run that silently dropped it would report NOT ANCHORED.
+  // never a verdict: a run that silently dropped it would read as unanchored.
   let trustAnchors: string[];
   let distrustedKeys: DistrustedKey[];
   try {

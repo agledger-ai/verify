@@ -24,7 +24,7 @@ describe('verifyDump: happy path', () => {
   it('pinned on its key, reports ok=true and surfaces no failures on a clean dump', () => {
     const { dump, key } = buildHappyDump();
     const report = verifyDump(dump, { trustAnchors: [pinOf(key)] });
-    expect(report.verdict).toBe('verified');
+    expect(report.verdict).toBe('trusted');
     expect(report.ok).toBe(true);
     expect(report.keyTrust.findings).toEqual([]);
     expect(report.vault.failures).toEqual([]);

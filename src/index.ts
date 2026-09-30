@@ -42,7 +42,6 @@ export {
   EXIT_OK,
   EXIT_VERIFICATION_FAILED,
   EXIT_CANNOT_VERIFY,
-  EXIT_UNANCHORED,
 } from './cli.js';
 export type { CliResult, ParsedArgs, CannotVerifyReport, TextReportOptions } from './cli.js';
 

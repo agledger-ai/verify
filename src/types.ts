@@ -245,18 +245,18 @@ export interface TenantAdminReadsReport {
 /**
  * The overall verdict.
  *
- *   - `verified`: every check ran clean, and every signing key was anchored by
+ *   - `trusted`: every check ran clean, and every signing key was anchored by
  *     signed key statements to a `trustAnchors` pin.
- *   - `unanchored`: nothing failed, but no `trustAnchors` were given, so every
- *     key was taken from the dump's own `vault_signing_keys`. A key written into
- *     the database alone would pass. Not a clean verdict.
+ *   - `unanchored`: every check ran clean, but no `trustAnchors` were given,
+ *     so every key was taken from the dump's own `vault_signing_keys` and a key
+ *     written into the database alone would pass. A pass, not a trusted one.
  *   - `failed`: at least one failure (see `failureCount` on each section and
  *     `keyTrust.findings`).
  */
-export type Verdict = 'verified' | 'unanchored' | 'failed';
+export type Verdict = 'trusted' | 'unanchored' | 'failed';
 
 export interface VerifyReport {
-  /** True only for the `verified` verdict. */
+  /** False only for the `failed` verdict. Read `verdict` for whether keys were anchored. */
   ok: boolean;
   verdict: Verdict;
   /**

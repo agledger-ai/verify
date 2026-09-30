@@ -22,7 +22,7 @@
  * fail CHAIN_SIGNING_KEY_UNANCHORED, CHECKPOINT_KEY_UNANCHORED,
  * TENANT_READ_KEY_UNANCHORED and TENANT_CHECKPOINT_KEY_UNANCHORED, as the
  * engine's scan grades them. Without anchors no walk runs, the registry rows
- * are taken as they stand, and the report's verdict is `unanchored`.
+ * are taken as they stand, and a pass carries the verdict `unanchored`.
  *
  * What stays LOCAL to this package is the dump-structural work the core does
  * not model: the vault-checkpoint cross-check against the live chain, and the
@@ -50,8 +50,8 @@
  *     we do not parse it best-effort.
  *   - Temporal key-validity is enforced by feeding each entry's created_at and
  *     each key's window (signed, once anchored) into verifyChain.
- *   - A report with no `trustAnchors` is never `ok`: its verdict is
- *     `unanchored` even when nothing failed.
+ *   - A report with no `trustAnchors` never reads as trusted: a pass without
+ *     them carries the verdict `unanchored`.
  */
 import {
   applyKeyTrust,
@@ -126,7 +126,7 @@ export interface KeyTrustOptions {
    * `signing-key-digest.js` derives one from any key. The dump's key
    * statements are walked from them, and a key they do not reach anchors
    * nothing it signed. Nothing in the dump is ever an anchor. Omitted or
-   * empty, no walk runs and the verdict is `unanchored`.
+   * empty, no walk runs and a pass carries the verdict `unanchored`.
    */
   trustAnchors?: readonly string[];
   /**
@@ -903,7 +903,7 @@ export function verifyOrgAdminReadsChains(
  * Combine the two halves and the key walk into the report shape, including
  * the verdict. Shared with the streaming directory entry point in
  * `verify-dir.ts`. A key-statement finding fails the dump like any other; with
- * no anchors and nothing failed the verdict is `unanchored`, never `ok`.
+ * no anchors and nothing failed the dump passes with the verdict `unanchored`.
  */
 export function assembleReport(
   vault: VaultChainsReport,
@@ -911,9 +911,9 @@ export function assembleReport(
   keys: DumpKeyTrust,
 ): VerifyReport {
   const failed = vault.failureCount > 0 || orgAdminReads.failureCount > 0 || keys.report.findings.length > 0;
-  const verdict = failed ? 'failed' : keys.report.status === 'no_anchor' ? 'unanchored' : 'verified';
+  const verdict = failed ? 'failed' : keys.report.status === 'no_anchor' ? 'unanchored' : 'trusted';
   return {
-    ok: verdict === 'verified',
+    ok: !failed,
     verdict,
     keyTrust: keys.report,
     vault,
