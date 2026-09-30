@@ -8,25 +8,28 @@
  * is a slice of a full vault dump from the same instance, cut to three whole
  * record chains: that cert-signed lifecycle (6 agent signatures), a lifecycle
  * signed under a different cert whose key was never kept (6), and an unsigned
- * API-key lifecycle.
+ * API-key lifecycle. Every run is pinned on that instance's vault key, so a
+ * clean run is a PASS rather than NOT ANCHORED.
  */
 import { generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_SIGNATURE_CONTEXT, ed25519JwkThumbprint, type AgentPublicKeyJwk } from '@agledger/verify-core';
-import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_VERIFICATION_FAILED, parseArgs, runCli } from '../src/cli.js';
+import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_VERIFICATION_FAILED, parseArgs, runCli as runCliUnpinned } from '../src/cli.js';
 import { verifyDump } from '../src/dump-verifier.js';
 import { verifyDumpStreaming } from '../src/verify-dir.js';
 import type { VaultEntryDump, VerifyReport } from '../src/types.js';
-import { buildVaultEntry, generateKey, signingKeyDump } from './fixtures.js';
+import { LIVE_PIN, buildVaultEntry, generateKey, liveDumpCopy, pinOf, signingKeyDump } from './fixtures.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const LIVE = join(here, 'fixtures', 'live-1.8.0');
 const EXPORT = join(LIVE, 'export-cert-lifecycle.json');
-const DUMP = join(LIVE, 'dump');
+const DUMP = liveDumpCopy();
+afterAll(() => rmSync(DUMP, { recursive: true, force: true }));
+const runCli = (argv: readonly string[]) => runCliUnpinned([...argv, '--trust-anchor', LIVE_PIN]);
 const KEY_FILE = join(LIVE, 'agent-cert-key.json');
 const keyEntry = JSON.parse(readFileSync(KEY_FILE, 'utf-8')) as {
   publicKeyThumbprint: string;
@@ -220,8 +223,11 @@ describe('--agent-keys on a dump directory', () => {
       payload_binding: 'applied',
       oidc_actor: 'applied',
       actor_attribution: 'applied',
-      key_temporal: 'applied',
+      // An API 1.8.0 dump carries no key statements, so the pinned key has no
+      // signed window to hold entries to.
+      key_temporal: 'skipped_no_input',
       agent_signature: 'applied',
+      key_anchoring: 'applied',
     });
     expect(report.vault.agentSignatures).toEqual({ present: 12, verified: 6 });
   });
@@ -233,7 +239,7 @@ describe('--agent-keys on a dump directory', () => {
   });
 
   it('without keys reports the check as not run and changes no verdict', () => {
-    const report = verifyDumpStreaming(DUMP);
+    const report = verifyDumpStreaming(DUMP, undefined, { trustAnchors: [LIVE_PIN] });
     expect(report.ok).toBe(true);
     expect(report.vault.optionalChecks.agent_signature).toBe('skipped_no_input');
     expect(report.vault.agentSignatures).toEqual({ present: 12, verified: 0 });
@@ -335,23 +341,24 @@ describe('a sealed agent signature that does not verify fails the dump', () => {
       vaultEntries: [entry],
       vaultCheckpoints: [],
       signingKeys: [signingKeyDump(vaultKey)],
+      keyStatements: [],
       orgAdminReads: [],
       orgAdminReadsCheckpoints: [],
     };
-    return { dump, jwk };
+    return { dump, jwk, trustAnchors: [pinOf(vaultKey)] };
   }
 
   it('a good one verifies', () => {
-    const { dump, jwk } = agentSigned({ badSignature: false });
-    const report = verifyDump(dump, { agentKeys: [jwk] });
+    const { dump, jwk, trustAnchors } = agentSigned({ badSignature: false });
+    const report = verifyDump(dump, { agentKeys: [jwk], trustAnchors });
     expect(report.ok).toBe(true);
     expect(report.vault.agentSignatures).toEqual({ present: 1, verified: 1 });
   });
 
   it('a bad one fails CHAIN_AGENT_SIGNATURE_INVALID only when its key is supplied', () => {
-    const { dump, jwk } = agentSigned({ badSignature: true });
-    expect(verifyDump(dump).ok).toBe(true);
-    const report = verifyDump(dump, { agentKeys: [jwk] });
+    const { dump, jwk, trustAnchors } = agentSigned({ badSignature: true });
+    expect(verifyDump(dump, { trustAnchors }).ok).toBe(true);
+    const report = verifyDump(dump, { agentKeys: [jwk], trustAnchors });
     expect(report.ok).toBe(false);
     expect(report.vault.optionalChecks.agent_signature).toBe('applied');
     expect(report.vault.agentSignatures).toEqual({ present: 1, verified: 0 });

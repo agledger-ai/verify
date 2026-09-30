@@ -13,11 +13,22 @@
  * temporal key-validity (CHAIN_KEY_NOT_YET_ACTIVE / CHAIN_KEY_EXPIRED) all come
  * from the core for free.
  *
+ * Key anchoring is verify-core's walk too (`walkDumpKeys`). With
+ * `trustAnchors`, the dump's `vault_key_statements` are walked in write order
+ * (`created_at`, then the producer's `id` order) from the pinned SPKI digests,
+ * and each key in the registry is marked anchored, unanchored or undecided, an
+ * anchored key carrying the window its statements sign. Entries, vault
+ * checkpoints, read-log leaves and read-log checkpoints under an unanchored key
+ * fail CHAIN_SIGNING_KEY_UNANCHORED, CHECKPOINT_KEY_UNANCHORED,
+ * TENANT_READ_KEY_UNANCHORED and TENANT_CHECKPOINT_KEY_UNANCHORED, as the
+ * engine's scan grades them. Without anchors no walk runs, the registry rows
+ * are taken as they stand, and the report's verdict is `unanchored`.
+ *
  * What stays LOCAL to this package is the dump-structural work the core does
  * not model: the vault-checkpoint cross-check against the live chain, and the
- * org_admin_reads Merkle log + signed-tree-head + fork-detection passes. They
- * use verify-core primitives (merkleRoot, verifyCoseSign1, sha256Hex) and emit
- * the canonical CHECKPOINT_* / TENANT_* codes.
+ * org_admin_reads log (RFC 9162 leaf hashes and tree heads, via verify-core's
+ * orgReadLeafHash / orgReadMerkleRoot) with its signed-tree-head and
+ * fork-detection passes. They emit the canonical CHECKPOINT_* / TENANT_* codes.
  *
  * Unsigned rows follow the engine's one rule everywhere: the instant the
  * install began signing is the earliest `activated_at` in
@@ -38,11 +49,15 @@
  *   - A vault entry lacking `cose_sign1` is a pre-2.0 shape -> UNSUPPORTED_FORMAT;
  *     we do not parse it best-effort.
  *   - Temporal key-validity is enforced by feeding each entry's created_at and
- *     each key's activated_at/retired_at into verifyChain.
+ *     each key's window (signed, once anchored) into verifyChain.
+ *   - A report with no `trustAnchors` is never `ok`: its verdict is
+ *     `unanchored` even when nothing failed.
  */
 import {
+  applyKeyTrust,
   buildAgentKeyRegistry,
   buildKeyRegistry,
+  computeKeyTrust,
   decodeCoseSign1,
   decodePredicate,
   describeUnsupportedAlgorithm,
@@ -50,15 +65,22 @@ import {
   ed25519JwkThumbprint,
   ed25519JwkToSpki,
   extractKid,
-  merkleRoot,
-  sha256Hex,
+  keyStatementFromDumpRow,
+  orgReadLeafHash,
+  orgReadMerkleRoot,
+  reportKeyTrust,
+  trustKeyFromDumpRow,
   verifyChain,
   verifyCoseSign1,
   writtenWhileSigning,
   type AgentPublicKeyJwk,
   type ChainResult,
   type CheckApplicability,
+  type DistrustedKey,
+  type FailureCode,
   type KeyRegistry,
+  type KeyTrust,
+  type KeyTrustReport,
   type NormalizedEntry,
   type OptionalCheck,
   type VerificationKey,
@@ -66,6 +88,7 @@ import {
 import type {
   Dump,
   Failure,
+  KeyStatementDump,
   SigningKeyDump,
   OrgAdminReadDump,
   OrgAdminReadsCheckpointDump,
@@ -77,7 +100,7 @@ import type {
 } from './types.js';
 
 /** Options for the vault-chain walk. */
-export interface VerifyDumpOptions {
+export interface VaultChainOptions {
   /**
    * Ed25519 public keys of agent ephemeral certs, as JWKs: the `publicKeyJwk`
    * an agent sent to `POST /v1/auth/oidc/cert`, also the `cnf.jwk` claim inside
@@ -93,6 +116,41 @@ export interface VerifyDumpOptions {
    * Anything that is not an Ed25519 JWK throws `TypeError`.
    */
   agentKeys?: ReadonlyArray<AgentPublicKeyJwk>;
+}
+
+/** Inputs to the key-statement walk (see {@link walkDumpKeys}). */
+export interface KeyTrustOptions {
+  /**
+   * SPKI digests of vault keys held or taken out of band, `sha256:<64 hex>`:
+   * the installer prints the first key's, and the Server's
+   * `signing-key-digest.js` derives one from any key. The dump's key
+   * statements are walked from them, and a key they do not reach anchors
+   * nothing it signed. Nothing in the dump is ever an anchor. Omitted or
+   * empty, no walk runs and the verdict is `unanchored`.
+   */
+  trustAnchors?: readonly string[];
+  /**
+   * The operator's `VAULT_DISTRUSTED_KEYS`: `sha256:<64 hex>`, optionally
+   * `@<RFC 3339 instant>`, as strings or parsed entries. What such a key
+   * stored from the instant on (with none, from the retirement a trusted key
+   * signed for it) counts for nothing in the walk. Requires `trustAnchors`.
+   */
+  distrustedKeys?: ReadonlyArray<string | DistrustedKey>;
+}
+
+/** Options for {@link verifyDump} and `verifyDumpStreaming`. */
+export interface VerifyDumpOptions extends VaultChainOptions, KeyTrustOptions {}
+
+/**
+ * The dump's key registry after the trust walk, shared by the vault and
+ * read-log passes so both grade against the same verdict on each key.
+ */
+export interface DumpKeyTrust {
+  /** Every `vault_signing_keys` row, marked with the walk's `trust` when one ran. */
+  registry: KeyRegistry;
+  report: KeyTrustReport;
+  /** When the install began signing: the earliest `activated_at` across the rows. */
+  signingSince: string | null;
 }
 
 /**
@@ -113,6 +171,36 @@ class FailureSink {
   }
 }
 
+/**
+ * Build the dump's key registry and, given `trustAnchors`, run verify-core's
+ * trust walk over its key statements in write order, marking each key
+ * anchored, unanchored or undecided. Throws `TypeError` on a malformed anchor
+ * or distrusted key, on `distrustedKeys` without `trustAnchors`, and on a
+ * statement file the walk cannot order (rows with and without `created_at`).
+ */
+export function walkDumpKeys(
+  signingKeys: readonly SigningKeyDump[],
+  keyStatements: readonly KeyStatementDump[] = [],
+  options: KeyTrustOptions = {},
+): DumpKeyTrust {
+  const anchors = options.trustAnchors ?? [];
+  const distrusted = options.distrustedKeys ?? [];
+  let registry = buildVaultKeyRegistry(signingKeys);
+  let trust: KeyTrust | null = null;
+  if (anchors.length > 0) {
+    trust = computeKeyTrust({
+      keys: signingKeys.map(trustKeyFromDumpRow),
+      statements: keyStatements.map(keyStatementFromDumpRow),
+      trustAnchors: anchors,
+      distrustedKeys: distrusted,
+    });
+    registry = applyKeyTrust(registry, trust);
+  } else if (distrusted.length > 0) {
+    throw new TypeError('distrustedKeys act only inside the key-statement walk, which runs from trustAnchors; pass trustAnchors as well.');
+  }
+  return { registry, report: reportKeyTrust(registry, trust, null), signingSince: signingSinceOf(signingKeys) };
+}
+
 function buildVaultKeyRegistry(keys: readonly SigningKeyDump[]): KeyRegistry {
   const verificationKeys: VerificationKey[] = keys.map((k) => ({
     keyId: k.key_id,
@@ -128,13 +216,6 @@ function buildVaultKeyRegistry(keys: readonly SigningKeyDump[]): KeyRegistry {
   return buildKeyRegistry(verificationKeys);
 }
 
-/**
- * When the install began signing: the earliest `activated_at` in the dump's
- * key registry, or null when no key carries one (an install that never
- * registered a key). Read from the registry rows directly rather than from a
- * built KeyRegistry, so a row the registry builder would set aside still
- * counts, as it does in the engine's `min(activated_at)`.
- */
 /** The entry type that records a cert's issuance, with its public key signed in. */
 const CERT_ISSUED = 'EPHEMERAL_CERT_ISSUED';
 
@@ -172,6 +253,13 @@ function harvestCertKeys(
   return added;
 }
 
+/**
+ * When the install began signing: the earliest `activated_at` in the dump's
+ * key registry, or null when no key carries one (an install that never
+ * registered a key). Read from the registry rows directly rather than from a
+ * built KeyRegistry, so a row the registry builder would set aside still
+ * counts, as it does in the engine's `min(activated_at)`.
+ */
 function signingSinceOf(keys: readonly SigningKeyDump[]): string | null {
   return earliestKeyActivation(keys.map((k) => ({ activatedAt: k.activated_at ?? null })));
 }
@@ -183,12 +271,34 @@ function signingSinceOf(keys: readonly SigningKeyDump[]): string | null {
  */
 const UNSIGNED_KID = '0'.repeat(16);
 
-function indexKeys(keys: readonly SigningKeyDump[]): Map<string, SigningKeyDump> {
-  const map = new Map<string, SigningKeyDump>();
-  for (const k of keys) {
-    map.set(k.key_id, k);
+/**
+ * Look up the key a checkpoint or read-log row names and apply the walk's
+ * verdict on it, in the engine's order: a key the registry does not hold, then
+ * one nothing anchors, then one only a signature this host cannot compute
+ * reaches. Returns the key to verify under, or the failure to report.
+ */
+function signingKeyFor(
+  registry: KeyRegistry,
+  keyId: string,
+  unanchoredCode: FailureCode,
+  at: string,
+  what: string,
+): VerificationKey | { code: FailureCode; message: string } {
+  const key = registry.get(keyId);
+  if (!key) return { code: 'CHAIN_SIGNATURE_MISSING_KEY', message: `${at}: ${what} "${keyId}" not in dumped key registry` };
+  if (key.trust === 'unanchored') {
+    return {
+      code: unanchoredCode,
+      message: `${at}: ${what} "${keyId}" is in the dumped key registry, but no signed key statement links it to a trust anchor, so a row written into the database alone could have put it there`,
+    };
   }
-  return map;
+  if (key.trust === 'undecided') {
+    return {
+      code: 'CHAIN_UNSUPPORTED_ALGORITHM',
+      message: `${at}: the signature could NOT BE CHECKED. Key ${keyId} is reached only through a key statement signed under an algorithm this host cannot compute; verify the dump on a host that can`,
+    };
+  }
+  return key;
 }
 
 /**
@@ -294,10 +404,10 @@ function collectChainFailures(scopeId: string, result: ChainResult, failures: Fa
 function verifyChainCheckpoints(
   chain: readonly VaultEntryDump[],
   checkpoints: readonly VaultCheckpointDump[],
-  keys: Map<string, SigningKeyDump>,
-  signingSince: string | null,
+  keys: DumpKeyTrust,
   failures: FailureSink,
 ): void {
+  const { signingSince } = keys;
   for (const cp of checkpoints) {
     const chainKey = checkpointChainKeyOf(cp);
     const label = chainLabel(chainKey);
@@ -336,37 +446,37 @@ function verifyChainCheckpoints(
         });
       }
     } else {
-      const key = keys.get(cp.signing_key_id);
-      if (!key) {
+      const key = signingKeyFor(
+        keys.registry,
+        cp.signing_key_id,
+        'CHECKPOINT_KEY_UNANCHORED',
+        `${label} pos ${cp.chain_position}`,
+        'checkpoint signing_key_id',
+      );
+      if ('code' in key) {
+        failures.push({ ...key, scopeId: chainKey, position: cp.chain_position, signingKeyId: cp.signing_key_id });
+        continue;
+      }
+      const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
+      const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
+      // Fail closed on ANY non-ok outcome. 'unsigned' (an all-zero signature
+      // on a checkpoint that CLAIMS a signing key) is tampering, not benign:
+      // the engine never writes a signing_key_id it did not sign with. An
+      // unsupported key algorithm is an upgrade signal, never a pass.
+      if (outcome !== 'ok') {
         failures.push({
-          code: 'CHAIN_SIGNATURE_MISSING_KEY',
-          message: `${label} pos ${cp.chain_position}: checkpoint signing_key_id "${cp.signing_key_id}" not in dumped key registry`,
+          code:
+            outcome === 'unsupported-key-algorithm'
+              ? 'CHAIN_UNSUPPORTED_ALGORITHM'
+              : 'CHECKPOINT_SIGNATURE_INVALID',
+          message:
+            outcome === 'unsupported-key-algorithm'
+              ? `${label} pos ${cp.chain_position}: this checkpoint's signature could NOT BE CHECKED. Its signing key ${cp.signing_key_id} ${describeUnsupportedAlgorithm(key.spkiBase64)}`
+              : `${label} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
           scopeId: chainKey,
           position: cp.chain_position,
           signingKeyId: cp.signing_key_id,
         });
-      } else {
-        const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
-        const outcome = verifyCoseSign1(coseSign1Bytes, key.public_key);
-        // Fail closed on ANY non-ok outcome. 'unsigned' (an all-zero signature
-        // on a checkpoint that CLAIMS a signing key) is tampering, not benign:
-        // the engine never writes a signing_key_id it did not sign with. An
-        // unsupported key algorithm is an upgrade signal, never a pass.
-        if (outcome !== 'ok') {
-          failures.push({
-            code:
-              outcome === 'unsupported-key-algorithm'
-                ? 'CHAIN_UNSUPPORTED_ALGORITHM'
-                : 'CHECKPOINT_SIGNATURE_INVALID',
-            message:
-              outcome === 'unsupported-key-algorithm'
-                ? `${label} pos ${cp.chain_position}: this checkpoint's signature could NOT BE CHECKED. Its signing key ${cp.signing_key_id} ${describeUnsupportedAlgorithm(key.public_key)}`
-                : `${label} pos ${cp.chain_position}: checkpoint COSE_Sign1 signature does not verify (${outcome})`,
-            scopeId: chainKey,
-            position: cp.chain_position,
-            signingKeyId: cp.signing_key_id,
-          });
-        }
       }
     }
   }
@@ -394,13 +504,11 @@ function verifyChainCheckpoints(
 export function verifyVaultChains(
   entries: Iterable<VaultEntryDump>,
   checkpoints: readonly VaultCheckpointDump[],
-  signingKeys: readonly SigningKeyDump[],
-  options: VerifyDumpOptions = {},
+  keys: DumpKeyTrust,
+  options: VaultChainOptions = {},
 ): VaultChainsReport {
   const failures = new FailureSink();
-  const keyRegistry = buildVaultKeyRegistry(signingKeys);
-  const keyIndex = indexKeys(signingKeys);
-  const signingSince = signingSinceOf(signingKeys);
+  const { registry: keyRegistry, signingSince } = keys;
   // Caller keys first, then the cert keys each clean chain signs. A chain can
   // only use keys harvested from chains closed before it; the producer sorts
   // the platform-ops chain (the all-zero record id) first, so on a dump in
@@ -418,6 +526,7 @@ export function verifyVaultChains(
     actor_attribution: 'skipped_no_input',
     key_temporal: 'skipped_no_input',
     agent_signature: 'skipped_no_input',
+    key_anchoring: keys.report.status === 'walked' ? 'applied' : 'skipped_no_input',
   };
   const agentSignatures = { present: 0, verified: 0 };
 
@@ -466,7 +575,7 @@ export function verifyVaultChains(
     agentSignatures.verified += result.agentSignatures.verified;
     const failuresBefore = failures.count;
     collectChainFailures(chainKey, result, failures);
-    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keyIndex, signingSince, failures);
+    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keys, failures);
     checkpointsByChain.delete(chainKey);
     if (result.valid && failures.count === failuresBefore) {
       certKeysFromChain += harvestCertKeys(chain, result, agentKeys);
@@ -532,7 +641,7 @@ export function verifyVaultChains(
   // with the same code as a short chain, since both mean the anchor outlived
   // its rows.
   for (const orphaned of checkpointsByChain.values()) {
-    verifyChainCheckpoints([], orphaned, keyIndex, signingSince, failures);
+    verifyChainCheckpoints([], orphaned, keys, failures);
   }
 
   return report(chainCount);
@@ -579,7 +688,7 @@ function checkLeafSignature(
   orgId: string,
   leaf: OrgAdminReadDump,
   coseSign1Bytes: Buffer,
-  keys: Map<string, SigningKeyDump>,
+  registry: KeyRegistry,
   mustSign: { signedBefore: boolean; signingSince: string | null },
 ): Failure | null {
   const at = `Org ${orgId} leaf ${leaf.leaf_index}`;
@@ -613,17 +722,9 @@ function checkLeafSignature(
         };
   }
   mustSign.signedBefore = true;
-  const key = keys.get(kid);
-  if (!key) {
-    return {
-      code: 'CHAIN_SIGNATURE_MISSING_KEY',
-      message: `${at}: leaf kid "${kid}" not in dumped key registry`,
-      scopeId: orgId,
-      leafIndex: leaf.leaf_index,
-      signingKeyId: kid,
-    };
-  }
-  const outcome = verifyCoseSign1(coseSign1Bytes, key.public_key);
+  const key = signingKeyFor(registry, kid, 'TENANT_READ_KEY_UNANCHORED', at, 'leaf kid');
+  if ('code' in key) return { ...key, scopeId: orgId, leafIndex: leaf.leaf_index, signingKeyId: kid };
+  const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
   // Fail closed on ANY non-ok outcome; an all-zero signature under a real kid
   // ('unsigned') is a wiped signature, as the engine grades it.
   if (outcome === 'ok') return null;
@@ -631,7 +732,7 @@ function checkLeafSignature(
     code: outcome === 'unsupported-key-algorithm' ? 'CHAIN_UNSUPPORTED_ALGORITHM' : 'TENANT_READ_SIGNATURE_INVALID',
     message:
       outcome === 'unsupported-key-algorithm'
-        ? `${at}: this leaf's signature could NOT BE CHECKED. Its signing key ${kid} ${describeUnsupportedAlgorithm(key.public_key)}`
+        ? `${at}: this leaf's signature could NOT BE CHECKED. Its signing key ${kid} ${describeUnsupportedAlgorithm(key.spkiBase64)}`
         : `${at}: COSE_Sign1 signature does not verify (${outcome})`,
     scopeId: orgId,
     leafIndex: leaf.leaf_index,
@@ -643,10 +744,10 @@ function verifyOneOrgAdminReadsLog(
   orgId: string,
   leaves: OrgAdminReadDump[],
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
-  keys: Map<string, SigningKeyDump>,
-  signingSince: string | null,
+  keys: DumpKeyTrust,
   failures: FailureSink,
 ): void {
+  const { registry, signingSince } = keys;
   leaves.sort((a, b) => a.leaf_index - b.leaf_index);
   const mustSign = { signedBefore: false, signingSince };
 
@@ -664,19 +765,19 @@ function verifyOneOrgAdminReadsLog(
       });
       return;
     }
-    // leaf_hash is sha256(cose_sign1) post-cutover.
+    // leaf_hash is the RFC 9162 leaf hash of the envelope bytes.
     const coseSign1Bytes = Buffer.from(leaf.cose_sign1, 'base64');
-    const recomputed = sha256Hex(coseSign1Bytes);
+    const recomputed = orgReadLeafHash(coseSign1Bytes);
     if (recomputed !== leaf.leaf_hash) {
       failures.push({
         code: 'TENANT_READ_LEAF_HASH_MISMATCH',
-        message: `Org ${orgId} leaf ${leaf.leaf_index}: sha256(cose_sign1) does not match stored leaf_hash`,
+        message: `Org ${orgId} leaf ${leaf.leaf_index}: the RFC 9162 leaf hash of cose_sign1, sha256(0x00 || bytes), does not match stored leaf_hash`,
         scopeId: orgId,
         leafIndex: leaf.leaf_index,
       });
       return;
     }
-    const signatureFailure = checkLeafSignature(orgId, leaf, coseSign1Bytes, keys, mustSign);
+    const signatureFailure = checkLeafSignature(orgId, leaf, coseSign1Bytes, registry, mustSign);
     if (signatureFailure) {
       failures.push(signatureFailure);
       return;
@@ -695,11 +796,13 @@ function verifyOneOrgAdminReadsLog(
       });
       continue;
     }
-    const root = merkleRoot(leafHashes.slice(0, cp.tree_size));
+    // Every leaf hash has been recomputed above, so a null root cannot occur
+    // here; it is compared, and fails, like any other wrong root.
+    const root = orgReadMerkleRoot(leafHashes.slice(0, cp.tree_size));
     if (root !== cp.root_hash) {
       failures.push({
         code: 'TENANT_CHECKPOINT_ROOT_MISMATCH',
-        message: `Org ${orgId}: checkpoint ${cp.id} root_hash ${cp.root_hash.slice(0, 16)} does not match recomputed root ${root.slice(0, 16)}`,
+        message: `Org ${orgId}: checkpoint ${cp.id} root_hash ${cp.root_hash.slice(0, 16)} does not match the recomputed RFC 9162 root ${root?.slice(0, 16) ?? '(none)'}`,
         scopeId: orgId,
         treeSize: cp.tree_size,
       });
@@ -720,34 +823,34 @@ function verifyOneOrgAdminReadsLog(
         });
       }
     } else {
-      const key = keys.get(cp.signing_key_id);
-      if (!key) {
+      const key = signingKeyFor(
+        registry,
+        cp.signing_key_id,
+        'TENANT_CHECKPOINT_KEY_UNANCHORED',
+        `Org ${orgId}: checkpoint ${cp.id}`,
+        'signing_key_id',
+      );
+      if ('code' in key) {
+        failures.push({ ...key, scopeId: orgId, treeSize: cp.tree_size, signingKeyId: cp.signing_key_id });
+        continue;
+      }
+      const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
+      const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
+      // Fail closed on ANY non-ok outcome; see the vault-checkpoint site.
+      if (outcome !== 'ok') {
         failures.push({
-          code: 'CHAIN_SIGNATURE_MISSING_KEY',
-          message: `Org ${orgId}: checkpoint ${cp.id} signing_key_id "${cp.signing_key_id}" not in dumped key registry`,
+          code:
+            outcome === 'unsupported-key-algorithm'
+              ? 'CHAIN_UNSUPPORTED_ALGORITHM'
+              : 'TENANT_CHECKPOINT_SIGNATURE_INVALID',
+          message:
+            outcome === 'unsupported-key-algorithm'
+              ? `Org ${orgId}: checkpoint ${cp.id}'s signature could NOT BE CHECKED. Its signing key ${cp.signing_key_id} ${describeUnsupportedAlgorithm(key.spkiBase64)}`
+              : `Org ${orgId}: checkpoint ${cp.id} COSE_Sign1 signature does not verify (${outcome})`,
           scopeId: orgId,
           treeSize: cp.tree_size,
           signingKeyId: cp.signing_key_id,
         });
-      } else {
-        const coseSign1Bytes = Buffer.from(cp.cose_sign1, 'base64');
-        const outcome = verifyCoseSign1(coseSign1Bytes, key.public_key);
-        // Fail closed on ANY non-ok outcome; see the vault-checkpoint site.
-        if (outcome !== 'ok') {
-          failures.push({
-            code:
-              outcome === 'unsupported-key-algorithm'
-                ? 'CHAIN_UNSUPPORTED_ALGORITHM'
-                : 'TENANT_CHECKPOINT_SIGNATURE_INVALID',
-            message:
-              outcome === 'unsupported-key-algorithm'
-                ? `Org ${orgId}: checkpoint ${cp.id}'s signature could NOT BE CHECKED. Its signing key ${cp.signing_key_id} ${describeUnsupportedAlgorithm(key.public_key)}`
-                : `Org ${orgId}: checkpoint ${cp.id} COSE_Sign1 signature does not verify (${outcome})`,
-            scopeId: orgId,
-            treeSize: cp.tree_size,
-            signingKeyId: cp.signing_key_id,
-          });
-        }
       }
     }
   }
@@ -756,11 +859,9 @@ function verifyOneOrgAdminReadsLog(
 export function verifyOrgAdminReadsChains(
   reads: readonly OrgAdminReadDump[],
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
-  signingKeys: readonly SigningKeyDump[],
+  keys: DumpKeyTrust,
 ): TenantAdminReadsReport {
   const failures = new FailureSink();
-  const keys = indexKeys(signingKeys);
-  const signingSince = signingSinceOf(signingKeys);
   const leavesByOrg = groupByOrg(reads);
   const checkpointsByOrg = groupByOrg(checkpoints);
 
@@ -775,7 +876,6 @@ export function verifyOrgAdminReadsChains(
       leavesByOrg.get(orgId) ?? [],
       checkpointsByOrg.get(orgId) ?? [],
       keys,
-      signingSince,
       failures,
     );
   }
@@ -799,22 +899,33 @@ export function verifyOrgAdminReadsChains(
   };
 }
 
-/** Combine the two halves into the report shape, including the `ok` verdict.
- *  Shared with the streaming directory entry point in `verify-dir.ts`. */
+/**
+ * Combine the two halves and the key walk into the report shape, including
+ * the verdict. Shared with the streaming directory entry point in
+ * `verify-dir.ts`. A key-statement finding fails the dump like any other; with
+ * no anchors and nothing failed the verdict is `unanchored`, never `ok`.
+ */
 export function assembleReport(
   vault: VaultChainsReport,
   orgAdminReads: TenantAdminReadsReport,
+  keys: DumpKeyTrust,
 ): VerifyReport {
+  const failed = vault.failureCount > 0 || orgAdminReads.failureCount > 0 || keys.report.findings.length > 0;
+  const verdict = failed ? 'failed' : keys.report.status === 'no_anchor' ? 'unanchored' : 'verified';
   return {
-    ok: vault.failureCount === 0 && orgAdminReads.failureCount === 0,
+    ok: verdict === 'verified',
+    verdict,
+    keyTrust: keys.report,
     vault,
     orgAdminReads,
   };
 }
 
 export function verifyDump(dump: Dump, options: VerifyDumpOptions = {}): VerifyReport {
+  const keys = walkDumpKeys(dump.signingKeys, dump.keyStatements, options);
   return assembleReport(
-    verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, dump.signingKeys, options),
-    verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, dump.signingKeys),
+    verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, keys, options),
+    verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, keys),
+    keys,
   );
 }

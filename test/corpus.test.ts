@@ -5,13 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { EXIT_CANNOT_VERIFY, runCli } from '../src/cli.js';
+import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_UNANCHORED, runCli } from '../src/cli.js';
 import {
+  spkiSha256,
   verifyAuditExport,
   type RecordAuditExportInput,
   type VerifyExportOptions,
 } from '@agledger/verify-core';
-import type { Failure, FailureCode } from '../src/types.js';
+import type { Failure, FailureCode, VerifyReport } from '../src/types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CONFORMANCE = join(here, '..', 'testdata', 'conformance');
@@ -19,7 +20,10 @@ const CONFORMANCE = join(here, '..', 'testdata', 'conformance');
 interface VectorOptions {
   keysFile?: string;
   requireKeyId?: string;
+  /** The engine's pre-2.0 name for `requireSuppliedKeys`, which the manifest keeps. */
   requireOutOfBandKeys?: boolean;
+  /** `sha256:<hex>` pins the dump's key statements are walked from. */
+  trustAnchors?: string[];
   /**
    * A JSON array of agent cert public keys (JWKs). Unmapped, a vector that
    * expects `CHAIN_AGENT_SIGNATURE_INVALID` runs with no agent keys, the check
@@ -62,8 +66,28 @@ const exportManifest = JSON.parse(
 
 const exportVectors = exportManifest.vectors.filter((v) => v.kind === 'export');
 
-function allFailures(report: ReturnType<typeof verifyDump>): Failure[] {
+function allFailures(report: VerifyReport): Failure[] {
   return [...report.vault.failures, ...report.orgAdminReads.failures];
+}
+
+/** Every code a dump report carries, the key-statement findings included. */
+function allCodes(report: VerifyReport): FailureCode[] {
+  return [...allFailures(report).map((f) => f.code), ...report.keyTrust.findings.map((f) => f.code)];
+}
+
+/**
+ * The pin an operator hands an auditor: the Server's current key, the most
+ * recently activated key some statement admits (a planted row has none). The
+ * same rule verify-core's own dump runner uses.
+ */
+function currentPin(dir: string): string {
+  const d = loadDump(join(CONFORMANCE, dir));
+  const admitted = new Set(d.keyStatements.filter((st) => st.kind !== 'closure').map((st) => st.subject_key_id));
+  const key = d.signingKeys
+    .filter((k) => admitted.has(k.key_id))
+    .sort((a, b) => Date.parse(b.activated_at ?? '') - Date.parse(a.activated_at ?? ''))[0];
+  if (!key) throw new Error(`${dir}: no admitted key`);
+  return `sha256:${spkiSha256(key.public_key)}`;
 }
 
 describe('DUMP conformance corpus (manifest-dump.json)', () => {
@@ -84,30 +108,37 @@ describe('DUMP conformance corpus (manifest-dump.json)', () => {
     expect(dumpVectors.some((v) => v.expect === 'pass')).toBe(true);
   });
 
+  // A vector without trustAnchors is verified with no walk, so the most a
+  // pass can be is `unanchored`: nothing failed, and nothing was anchored.
   for (const vector of dumpVectors) {
-    it(`${vector.file} -> ${vector.expect}${vector.failureCode ? ` (${vector.failureCode})` : ''}`, () => {
+    const anchors = vector.options?.trustAnchors;
+    const pinned = anchors ? ` pinned on ${anchors.map((a) => a.slice(7, 23)).join(',')}` : '';
+    it(`${vector.file}${pinned} -> ${vector.expect}${vector.failureCode ? ` (${vector.failureCode})` : ''}`, () => {
       const dumpDir = join(CONFORMANCE, vector.file);
-      const report = verifyDump(loadDump(dumpDir));
+      const report = verifyDump(loadDump(dumpDir), anchors ? { trustAnchors: anchors } : {});
+      const codes = allCodes(report);
 
       if (vector.expect === 'pass') {
-        expect(report.ok, `expected pass but got failures: ${JSON.stringify(allFailures(report))}`).toBe(true);
+        expect(codes, 'expected pass').toEqual([]);
+        expect(report.verdict).toBe(anchors ? 'verified' : 'unanchored');
         return;
       }
 
-      expect(report.ok, `expected fail but verified clean`).toBe(false);
-      const codes = allFailures(report).map((f) => f.code);
+      expect(report.verdict, `expected fail but verified clean`).toBe('failed');
       expect(codes, `expected ${vector.failureCode} in [${codes.join(', ')}]`).toContain(
         vector.failureCode,
       );
     });
   }
 
-  it('CLI verifies the valid dump directory and exits 0', () => {
-    const valid = dumpVectors.find((v) => v.expect === 'pass');
-    expect(valid).toBeDefined();
-    const result = runCli([join(CONFORMANCE, valid!.file)]);
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatch(/^\[PASS\]/);
+  it('CLI verifies the valid dump directory: exit 3 unpinned, exit 0 pinned', () => {
+    const dir = join(CONFORMANCE, 'dump', 'valid');
+    const unpinned = runCli([dir]);
+    expect(unpinned.exitCode).toBe(EXIT_UNANCHORED);
+    expect(unpinned.stdout).toMatch(/^\[NOT ANCHORED\]/);
+    const pinned = runCli([dir, '--trust-anchor', currentPin('dump/valid')]);
+    expect(pinned.exitCode).toBe(EXIT_OK);
+    expect(pinned.stdout).toMatch(/^\[PASS\]/);
   });
 
   it('CLI exits nonzero on a failing dump directory and names the code', () => {
@@ -116,6 +147,48 @@ describe('DUMP conformance corpus (manifest-dump.json)', () => {
     const result = runCli([join(CONFORMANCE, failing!.file)]);
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toContain('CHAIN_EMPTY');
+  });
+});
+
+describe('DUMP corpus pinned on the Server\'s current key', () => {
+  // Every pass vector whose registry columns are the engine's own, as
+  // verify-core's dump runner holds them.
+  it.each(['dump/valid', 'dump/valid-es256', 'dump/valid-identity', 'dump/valid-unsigned-history-then-signed'])(
+    '%s verifies with every key anchored',
+    (dir) => {
+      const report = verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [currentPin(dir)] });
+      expect(allCodes(report)).toEqual([]);
+      expect(report.verdict).toBe('verified');
+      expect(report.keyTrust.order).toBe('written');
+      expect(report.keyTrust.unanchoredKeyIds).toEqual([]);
+    },
+  );
+
+  it('dump/chain-signing-key-unanchored pinned on the vault key fails the planted entry', () => {
+    const dir = 'dump/chain-signing-key-unanchored';
+    const report = verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [currentPin(dir)] });
+    expect(allCodes(report)).toContain('CHAIN_SIGNING_KEY_UNANCHORED');
+  });
+
+  it('the registry column edits read as drift from the signed window once pinned, not as the key-window codes their manifest names', () => {
+    // These vectors move a vault_signing_keys column and leave the statements
+    // alone. Unpinned, entries are held to the column and each vector gives
+    // its manifest verdict (above). Pinned, entries are held to the signed
+    // window, so the column is drift, as verify-core reads them too. The
+    // engine is regenerating these three to test the signed window.
+    const pinnedCodes = (dir: string) => allCodes(verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [currentPin(dir)] }));
+    expect(pinnedCodes('dump/valid-rotation-boundary')).toEqual(['CHAIN_KEY_WINDOW_DRIFT']);
+    expect(pinnedCodes('dump/chain-key-not-yet-active')).toEqual(['CHAIN_KEY_WINDOW_DRIFT']);
+    // A retired row no closure signs is the engine's key_closure_invalid.
+    expect(pinnedCodes('dump/chain-key-expired')).toEqual(['KEY_CLOSURE_INVALID']);
+  });
+
+  it('a distrusted key with no cutoff anchors nothing, so the dump signed under it fails', () => {
+    const dir = 'dump/valid';
+    const pin = currentPin(dir);
+    const report = verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [pin], distrustedKeys: [pin] });
+    expect(report.verdict).toBe('failed');
+    expect(allCodes(report)).toContain('CHAIN_SIGNING_KEY_UNANCHORED');
   });
 });
 
@@ -128,7 +201,7 @@ function loadKeys(options: VectorOptions | undefined): VerifyExportOptions {
   }
   if (options?.requireKeyId !== undefined) out.requireKeyId = options.requireKeyId;
   if (options?.requireOutOfBandKeys !== undefined) {
-    out.requireOutOfBandKeys = options.requireOutOfBandKeys;
+    out.requireSuppliedKeys = options.requireOutOfBandKeys;
   }
   if (options?.agentKeysFile) {
     out.agentKeys = JSON.parse(
@@ -200,10 +273,14 @@ describe('EXPORT conformance corpus (manifest-export.json)', () => {
   it('CLI verifies a valid export file and exits 0', () => {
     const valid = exportVectors.find((v) => v.expect === 'pass' && !v.options?.requireKeyId);
     expect(valid).toBeDefined();
-    const result = runCli([join(CONFORMANCE, valid!.file), '--report-format=json']);
-    expect(result.exitCode).toBe(0);
-    const parsed = JSON.parse(result.stdout) as { valid: boolean };
-    expect(parsed.valid).toBe(true);
+    const unpinned = runCli([join(CONFORMANCE, valid!.file), '--report-format=json']);
+    expect(unpinned.exitCode).toBe(EXIT_UNANCHORED);
+    expect(JSON.parse(unpinned.stdout)).toMatchObject({ valid: true, verdict: 'unanchored', keyTrust: { status: 'no_anchor' } });
+    const anchoredFrom = (JSON.parse(readFileSync(join(CONFORMANCE, valid!.file), 'utf-8')) as RecordAuditExportInput)
+      .exportMetadata.anchoredFrom!;
+    const pinned = runCli([join(CONFORMANCE, valid!.file), '--report-format=json', '--trust-anchor', anchoredFrom]);
+    expect(pinned.exitCode).toBe(EXIT_OK);
+    expect(JSON.parse(pinned.stdout)).toMatchObject({ valid: true, verdict: 'verified', keyTrust: { status: 'walked', anchoredFromPinned: true } });
   });
 
   it('CLI exits nonzero on a failing export file and names the code', () => {

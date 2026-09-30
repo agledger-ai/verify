@@ -29,12 +29,14 @@ describe('loadDump', () => {
       vaultEntries: [{ id: 'a', record_id: 'm', chain_position: 1 }],
       vaultCheckpoints: [],
       signingKeys: [{ key_id: 'k', public_key: 'pk' }],
+      keyStatements: [{ id: 's', kind: 'genesis', subject_key_id: 'k', endorser_key_id: null, statement: [], created_at: '2026-01-01T00:00:00.000Z' }],
       orgAdminReads: [],
       orgAdminReadsCheckpoints: [],
     });
     const dump = loadDump(dir);
     expect(dump.vaultEntries).toHaveLength(1);
     expect(dump.signingKeys).toHaveLength(1);
+    expect(dump.keyStatements).toHaveLength(1);
     expect(dump.orgAdminReads).toHaveLength(0);
   });
 
@@ -42,6 +44,7 @@ describe('loadDump', () => {
     writeFileSync(join(dir, DEFAULT_FILENAMES.vaultEntries), '{"id":"a"}\n\n{"id":"b"}\n');
     writeFileSync(join(dir, DEFAULT_FILENAMES.vaultCheckpoints), '');
     writeFileSync(join(dir, DEFAULT_FILENAMES.signingKeys), '');
+    writeFileSync(join(dir, DEFAULT_FILENAMES.keyStatements), '');
     writeFileSync(join(dir, DEFAULT_FILENAMES.orgAdminReads), '');
     writeFileSync(join(dir, DEFAULT_FILENAMES.orgAdminReadsCheckpoints), '');
     const dump = loadDump(dir);
@@ -52,10 +55,17 @@ describe('loadDump', () => {
     expect(() => loadDump(dir)).toThrow(/Required dump file not found/);
   });
 
+  it('requires vault_key_statements.ndjson, which every API 2.0 dump writes', () => {
+    for (const name of Object.values(DEFAULT_FILENAMES)) writeFileSync(join(dir, name), '');
+    rmSync(join(dir, DEFAULT_FILENAMES.keyStatements));
+    expect(() => loadDump(dir)).toThrow(/vault_key_statements\.ndjson/);
+  });
+
   it('reports the line number on malformed JSON', () => {
     writeFileSync(join(dir, DEFAULT_FILENAMES.vaultEntries), '{"id":"a"}\n{not json\n');
     writeFileSync(join(dir, DEFAULT_FILENAMES.vaultCheckpoints), '');
     writeFileSync(join(dir, DEFAULT_FILENAMES.signingKeys), '');
+    writeFileSync(join(dir, DEFAULT_FILENAMES.keyStatements), '');
     writeFileSync(join(dir, DEFAULT_FILENAMES.orgAdminReads), '');
     writeFileSync(join(dir, DEFAULT_FILENAMES.orgAdminReadsCheckpoints), '');
     expect(() => loadDump(dir)).toThrow(/Invalid JSON on line 2/);

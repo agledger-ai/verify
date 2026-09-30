@@ -2,11 +2,11 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-09-29T03:24:31.869Z",
+  "generatedAt": "2026-09-30T22:06:10.743Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "cea0f7d5",
-    "apiVersion": "1.8.0",
+    "apiGitSha": "e690979c",
+    "apiVersion": "2.0.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -307,6 +307,39 @@
         "skipped": 3
       },
       "note": "Engine booted without a signing key: every row has signing_key_id=NULL and an all-zero signature slot. Chain integrity holds via hash links; the signature check is skipped (no key), never folded into a cryptographically-signed verdict."
+    },
+    {
+      "file": "export/unsigned-history-then-signed.json",
+      "kind": "export",
+      "expect": "pass",
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "expectSignatureCoverage": {
+        "signed": 1,
+        "unsigned": 0,
+        "skipped": 2
+      },
+      "note": "Two unsigned entries written before the install registered its first key, then one signed entry. Unsigned history from before the earliest activatedAt, with no signed entry before it, is reduced coverage, not CHAIN_ENTRY_UNSIGNED: an unsigned entry breaks the chain only after a signed one or at or after the first activation."
+    },
+    {
+      "file": "export/entry-unsigned-after-signed.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_ENTRY_UNSIGNED",
+      "brokenAt": 2,
+      "options": {
+        "keysFile": "export/keys-oob.json"
+      },
+      "note": "Entry 1 signed, entry 2 written by a process holding no key (signingKeyId null, all-zero signature), entry 3 signed again. An unsigned entry after a signed one in the same chain is the engine signature_missing; a verifier must break at 2 and not resume at the signed entry 3."
+    },
+    {
+      "file": "export/entry-unsigned-after-activation.json",
+      "kind": "export",
+      "expect": "fail",
+      "failureCode": "CHAIN_ENTRY_UNSIGNED",
+      "brokenAt": 1,
+      "note": "Every entry unsigned, written by a process holding no key after the install began signing. No entry is signed, so only the earliest activatedAt in exportMetadata.signingKeyWindows (the whole key set, not only keys this chain uses) places it: the engine signature_missing at the first entry."
     },
     {
       "file": "export/valid-es256.json",

@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { AGENT_SIGNATURE_CONTEXT, ed25519JwkThumbprint, type AgentPublicKeyJwk } from '@agledger/verify-core';
 import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { runCli } from '../src/cli.js';
+import { EXIT_UNANCHORED, runCli } from '../src/cli.js';
 import type { Dump } from '../src/types.js';
 import { buildVaultEntry, generateKey, signingKeyDump } from './fixtures.js';
 
@@ -34,7 +34,7 @@ function identity(): Dump {
 describe('a full dump re-verifies agent signatures from its own cert keys', () => {
   it('valid-identity verifies its sealed agent signature with no --agent-keys', () => {
     const report = verifyDump(identity());
-    expect(report.ok).toBe(true);
+    expect(report.verdict).toBe('unanchored');
     // Three issuances, one agent key: counted once.
     expect(report.vault.certKeysFromChain).toBe(1);
     expect(report.vault.optionalChecks.agent_signature).toBe('applied');
@@ -43,7 +43,7 @@ describe('a full dump re-verifies agent signatures from its own cert keys', () =
 
   it('says where the key came from in the text report', () => {
     const r = runCli([join(DUMPS, 'valid-identity')]);
-    expect(r.exitCode).toBe(0);
+    expect(r.exitCode).toBe(EXIT_UNANCHORED);
     expect(r.stdout).toContain('agent sigs  : present=1 verified=1 (all re-verified against the 1 cert key the dump signs)');
   });
 
@@ -52,7 +52,7 @@ describe('a full dump re-verifies agent signatures from its own cert keys', () =
     dump.vaultEntries = dump.vaultEntries.filter((e) => e.chain_key !== PLATFORM);
     dump.vaultCheckpoints = dump.vaultCheckpoints.filter((c) => c.chain_key !== PLATFORM);
     const report = verifyDump(dump);
-    expect(report.ok).toBe(true);
+    expect(report.verdict).toBe('unanchored');
     expect(report.vault.certKeysFromChain).toBe(0);
     expect(report.vault.optionalChecks.agent_signature).toBe('skipped_no_input');
     expect(report.vault.agentSignatures).toEqual({ present: 1, verified: 0 });
@@ -96,7 +96,7 @@ describe('a key is used only from a chain the verifier has verified', () => {
     );
     dump.signingKeys[0]!.activated_at = new Date(firstRecordAt - 1).toISOString();
     const report = verifyDump(dump);
-    expect(report.ok, JSON.stringify(report.vault.failures)).toBe(true);
+    expect(report.verdict, JSON.stringify(report.vault.failures)).toBe('unanchored');
     expect(report.vault.certKeysFromChain).toBe(0);
     expect(report.vault.agentSignatures).toEqual({ present: 1, verified: 0 });
   });
@@ -158,6 +158,7 @@ describe('a harvested key decides a verdict the way a supplied one does', () => 
       vaultEntries: opts.certChainFirst === false ? [record, issued] : [issued, record],
       vaultCheckpoints: [],
       signingKeys: [signingKeyDump(vaultKey)],
+      keyStatements: [],
       orgAdminReads: [],
       orgAdminReadsCheckpoints: [],
     };
@@ -165,7 +166,7 @@ describe('a harvested key decides a verdict the way a supplied one does', () => 
 
   it('a good agent signature verifies', () => {
     const report = verifyDump(synthetic({ badSignature: false }));
-    expect(report.ok).toBe(true);
+    expect(report.verdict).toBe('unanchored');
     expect(report.vault.agentSignatures).toEqual({ present: 1, verified: 1 });
   });
 
@@ -183,13 +184,13 @@ describe('a harvested key decides a verdict the way a supplied one does', () => 
 
   it('a publicKeyJwk under any other entry type is not a cert key', () => {
     const report = verifyDump(synthetic({ badSignature: true, issuedType: 'AUTH_KEY_ROTATED' }));
-    expect(report.ok).toBe(true);
+    expect(report.verdict).toBe('unanchored');
     expect(report.vault.certKeysFromChain).toBe(0);
   });
 
   it('a record chain met before the cert chain goes unchecked, never misjudged', () => {
     const report = verifyDump(synthetic({ badSignature: true, certChainFirst: false }));
-    expect(report.ok).toBe(true);
+    expect(report.verdict).toBe('unanchored');
     expect(report.vault.certKeysFromChain).toBe(1);
     expect(report.vault.agentSignatures).toEqual({ present: 1, verified: 0 });
   });
