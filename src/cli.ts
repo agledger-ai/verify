@@ -23,7 +23,7 @@
  * NDJSON), including for input errors, so a machine consumer always gets
  * parseable output.
  */
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import {
   buildAgentKeyRegistry,
   parseDistrustedKeys,
@@ -72,7 +72,7 @@ export interface ParsedArgs {
   agentKeys: string | null;
   /** `--trust-anchor` values, in the order given. */
   trustAnchors: string[];
-  /** `--distrusted-keys` values, each a single entry or a comma list. */
+  /** `--distrusted-key` values, one entry each, in the order given. */
   distrustedKeys: string[];
 }
 
@@ -137,13 +137,15 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       const value = arg.slice('--trust-anchor='.length);
       if (!value) throw new Error('--trust-anchor requires a value');
       out.trustAnchors.push(value);
-    } else if (arg === '--distrusted-keys') {
-      out.distrustedKeys.push(takeValue('--distrusted-keys', argv[i + 1]));
+    } else if (arg === '--distrusted-key') {
+      out.distrustedKeys.push(takeValue('--distrusted-key', argv[i + 1]));
       i++;
-    } else if (arg.startsWith('--distrusted-keys=')) {
-      const value = arg.slice('--distrusted-keys='.length);
-      if (!value) throw new Error('--distrusted-keys requires a value');
+    } else if (arg.startsWith('--distrusted-key=')) {
+      const value = arg.slice('--distrusted-key='.length);
+      if (!value) throw new Error('--distrusted-key requires a value');
       out.distrustedKeys.push(value);
+    } else if (arg === '--distrusted-keys' || arg.startsWith('--distrusted-keys=')) {
+      throw new Error(PLURAL_DISTRUSTED);
     } else if (arg === '--require-supplied-keys') {
       out.requireSuppliedKeys = true;
     } else if (arg === '--require-out-of-band-keys') {
@@ -159,11 +161,15 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   return out;
 }
 
+const PLURAL_DISTRUSTED =
+  '--distrusted-keys is now --distrusted-key, given once per key: --distrusted-key sha256:<hex>[@<RFC 3339 instant>].';
+
 export const HELP_TEXT = `agledger-verify: offline verifier for AGLedger audit chains
 
 Usage:
   agledger-verify <target> [--trust-anchor sha256:<hex>]...
-                  [--distrusted-keys <list>] [--agent-keys <file>]
+                  [--distrusted-key sha256:<hex>[@<instant>]]...
+                  [--agent-keys <file>]
                   [--report-format text|json]
                   [--keys <file>] [--require-key-id <id>]
                   [--require-supplied-keys]
@@ -185,12 +191,13 @@ Options:
                               fails (CHAIN_SIGNING_KEY_UNANCHORED and its
                               checkpoint and read-log counterparts). Applies
                               to a dump directory and to an /audit-export file.
-  --distrusted-keys           The operator's VAULT_DISTRUSTED_KEYS: a comma
-                              list of sha256:<64 hex>, each optionally
-                              @<RFC 3339 instant>. Repeatable. What such a key
-                              stored from the instant on (or, with none, from
-                              its retirement) counts for nothing in the walk.
-                              Requires --trust-anchor.
+  --distrusted-key            A key the operator distrusts, as in the Server's
+                              VAULT_DISTRUSTED_KEYS: sha256:<64 hex>,
+                              optionally @<RFC 3339 instant>. Repeat it once
+                              per key. What such a key stored from the
+                              instant on (or, with none, from its retirement)
+                              counts for nothing in the walk. Requires
+                              --trust-anchor.
   --report-format, -f         Output format. Default: text.
   --agent-keys                Path to a JSON file holding the Ed25519 public
                               keys of agent certs: a JWK, a list of JWKs, or a
@@ -326,8 +333,20 @@ export function exportVerdict(result: VerifyExportResult): Verdict {
  * trusted PASS.
  */
 function headline(verdict: Verdict, kind: string): string[] {
-  if (verdict === 'trusted') return [`[PASS] AGLedger offline verification (${kind})`];
-  if (verdict === 'failed') return [`[FAIL] AGLedger offline verification (${kind})`];
+  if (verdict === 'trusted') {
+    return [
+      `[PASS] AGLedger offline verification (${kind})`,
+      '  Nothing failed, and every signature was checked under a key the signed key statements',
+      '  link to a --trust-anchor you gave.',
+    ];
+  }
+  if (verdict === 'failed') {
+    return [
+      `[FAIL] AGLedger offline verification (${kind})`,
+      '  Verification FAILED: the chain, the read log or the key statements do not hold up.',
+      '  Each finding is listed below.',
+    ];
+  }
   return [
     `[VERIFIED, NOT ANCHORED] AGLedger offline verification (${kind})`,
     '  Nothing failed, but this is NOT a trusted verdict: no --trust-anchor was given, so every',
@@ -476,6 +495,14 @@ function cannotVerify(message: string, format: ParsedArgs['reportFormat']): CliR
   return { exitCode: EXIT_CANNOT_VERIFY, stdout: '', stderr: `${message}\n` };
 }
 
+/** A pin parser's message, named by the flag that carried the value. */
+function flagMessage(message: string): string {
+  return message
+    .replace(/^trustAnchors entry /, '--trust-anchor ')
+    .replace(/^distrustedKeys entry /, '--distrusted-key ')
+    .replace(/^distrustedKeys names /, '--distrusted-key names ');
+}
+
 export function runCli(argv: readonly string[]): CliResult {
   let parsed: ParsedArgs;
   try {
@@ -506,14 +533,17 @@ export function runCli(argv: readonly string[]): CliResult {
     trustAnchors = parseTrustAnchors(parsed.trustAnchors).map((d) => `sha256:${d}`);
     distrustedKeys = parseDistrustedKeys(parsed.distrustedKeys);
   } catch (err) {
-    if (err instanceof TypeError) return cannotVerify(err.message.replace(/^trustAnchors entry/, '--trust-anchor').replace(/^distrustedKeys entry/, '--distrusted-keys entry'), parsed.reportFormat);
+    if (err instanceof TypeError) return cannotVerify(flagMessage(err.message), parsed.reportFormat);
     throw err;
   }
   if (distrustedKeys.length > 0 && trustAnchors.length === 0) {
     return cannotVerify(
-      '--distrusted-keys acts only inside the key-statement walk, which runs from --trust-anchor; pass the pin as well.',
+      '--distrusted-key acts only inside the key-statement walk, which runs from --trust-anchor; pass the pin as well.',
       parsed.reportFormat,
     );
+  }
+  if (!existsSync(parsed.target)) {
+    return cannotVerify(`Cannot read ${parsed.target}: no such file or directory.`, parsed.reportFormat);
   }
 
   let agentKeys: AgentPublicKeyJwk[] | undefined;

@@ -106,14 +106,22 @@ describe('parseArgs', () => {
     });
   });
 
-  it('collects every --trust-anchor and --distrusted-keys, in either form', () => {
+  it('collects every --trust-anchor and --distrusted-key, in either form', () => {
     const a = `sha256:${'a'.repeat(64)}`;
     const b = `sha256:${'b'.repeat(64)}`;
-    expect(parseArgs(['/d', '--trust-anchor', a, `--trust-anchor=${b}`, '--distrusted-keys', `${b}@2026-09-01T00:00:00Z`])).toMatchObject({
+    expect(parseArgs(['/d', '--trust-anchor', a, `--trust-anchor=${b}`, '--distrusted-key', `${b}@2026-09-01T00:00:00Z`, `--distrusted-key=${a}`])).toMatchObject({
       trustAnchors: [a, b],
-      distrustedKeys: [`${b}@2026-09-01T00:00:00Z`],
+      distrustedKeys: [`${b}@2026-09-01T00:00:00Z`, a],
     });
     expect(() => parseArgs(['/d', '--trust-anchor'])).toThrow(/--trust-anchor requires a value/);
+  });
+
+  it('names the renamed --distrusted-keys flag', () => {
+    for (const argv of [['/d', '--distrusted-keys', 'x'], ['/d', '--distrusted-keys=x']]) {
+      expect(() => parseArgs(argv)).toThrow(
+        '--distrusted-keys is now --distrusted-key, given once per key: --distrusted-key sha256:<hex>[@<RFC 3339 instant>].',
+      );
+    }
   });
 
   it('names the renamed --require-out-of-band-keys flag', () => {
@@ -245,16 +253,24 @@ describe('runCli (dump-dir end-to-end)', () => {
     }
   });
 
-  it('exits 2 on a malformed pin or a distrusted key without one, before reading anything', () => {
-    const bad = runCli(['/nonexistent', '--trust-anchor', 'abc', '-f', 'json']);
-    expect(bad.exitCode).toBe(EXIT_CANNOT_VERIFY);
-    expect((JSON.parse(bad.stdout) as { error: { message: string } }).error.message).toMatch(/^--trust-anchor "abc" is not sha256:<64 hex>/);
-    const lone = runCli(['/nonexistent', '--distrusted-keys', `sha256:${'a'.repeat(64)}`]);
-    expect(lone.exitCode).toBe(EXIT_CANNOT_VERIFY);
-    expect(lone.stderr).toContain('pass the pin as well');
-    const date = runCli(['/nonexistent', '--trust-anchor', `sha256:${'a'.repeat(64)}`, '--distrusted-keys', `sha256:${'a'.repeat(64)}@2026-02-30T00:00:00Z`]);
-    expect(date.exitCode).toBe(EXIT_CANNOT_VERIFY);
-    expect(date.stderr).toContain('--distrusted-keys entry');
+  // The same inputs, messages and exit codes as the Python agledger-verify and
+  // `agledger verify`: each is refused before the target is read.
+  const PIN = `sha256:${'a'.repeat(64)}`;
+  it.each([
+    [['/nonexistent', '--trust-anchor', 'abc'], '--trust-anchor "abc" is not sha256:<64 hex>. Each anchor is the full SHA-256'],
+    [['/nonexistent', '--trust-anchor', `${PIN},${PIN}`], `--trust-anchor "${PIN},${PIN}" is not sha256:<64 hex>.`],
+    [['/nonexistent', '--trust-anchor', PIN, '--distrusted-key', `${PIN}@2026-02-30T00:00:00Z`], `--distrusted-key "${PIN}@2026-02-30T00:00:00Z" is not sha256:<64 hex>, optionally followed by @<RFC 3339 instant>`],
+    [['/nonexistent', '--trust-anchor', PIN, '--distrusted-key', PIN, '--distrusted-key', PIN], `--distrusted-key names ${PIN} twice.`],
+    [['/nonexistent', '--distrusted-key', PIN], '--distrusted-key acts only inside the key-statement walk, which runs from --trust-anchor; pass the pin as well.'],
+    [['/nonexistent', '--trust-anchor', PIN], 'Cannot read /nonexistent: no such file or directory.'],
+    [['/nonexistent', '--distrusted-keys', PIN], '--distrusted-keys is now --distrusted-key, given once per key: --distrusted-key sha256:<hex>[@<RFC 3339 instant>].'],
+  ])('exits 2 on %j with the shared message', (argv, message) => {
+    const text = runCli(argv);
+    expect(text.exitCode).toBe(EXIT_CANNOT_VERIFY);
+    expect(text.stderr.startsWith(message)).toBe(true);
+    const json = runCli([...argv, '-f', 'json']);
+    expect(json.exitCode).toBe(EXIT_CANNOT_VERIFY);
+    if (json.stdout) expect((JSON.parse(json.stdout) as { error: { message: string } }).error.message.startsWith(message)).toBe(true);
   });
 
   it('exits 1 on a tampered dump and lists the failure code', () => {

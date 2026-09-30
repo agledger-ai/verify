@@ -51,7 +51,8 @@ Node 24 or newer.
 
 ```bash
 agledger-verify <target> [--trust-anchor sha256:<hex>]...
-                [--distrusted-keys <list>] [--agent-keys <file>]
+                [--distrusted-key sha256:<hex>[@<instant>]]...
+                [--agent-keys <file>]
                 [--report-format text|json]
                 [--keys <file>] [--require-key-id <id>]
                 [--require-supplied-keys]
@@ -118,11 +119,22 @@ the signed window). A key reached only through a statement this host cannot
 compute (Ed25519 history on a FIPS host) is `undecided`, and what it signed is
 `CHAIN_UNSUPPORTED_ALGORITHM`, not tamper.
 
-When a key has leaked, pass the operator's `VAULT_DISTRUSTED_KEYS` as
-`--distrusted-keys`: a comma list of `sha256:<hex>`, each optionally
-`@<RFC 3339 instant>`. What such a key stored from that instant on (or, with no
-instant, from the retirement a trusted key signed for it) counts for nothing.
-It needs a `--trust-anchor`.
+When a key has leaked, pass each entry of the operator's
+`VAULT_DISTRUSTED_KEYS` as a `--distrusted-key`: `sha256:<hex>`, optionally
+`@<RFC 3339 instant>`, one flag per key. What such a key stored from that
+instant on (or, with no instant, from the retirement a trusted key signed for
+it) counts for nothing. It needs a `--trust-anchor`.
+
+```bash
+# Exits 1 when the key signed anything stored from that instant on.
+agledger-verify ./dump --trust-anchor sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e \
+  --distrusted-key sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e@2026-09-30T22:06:09Z
+```
+
+A malformed pin or distrusted key, a key named twice, `--distrusted-key`
+without `--trust-anchor`, and a target that does not exist are each refused
+with exit `2` before anything is read. The Python `agledger-verify` and
+`agledger verify` refuse them with the same words and the same code.
 
 Without a pin nothing is anchored. The chains are still checked against the
 dump's own `vault_signing_keys`, so tampering that leaves the keys alone is
@@ -131,7 +143,8 @@ alone would pass too. The report flags it:
 
 - text: the headline is `[VERIFIED, NOT ANCHORED]`, followed by lines saying
   this is not a trusted verdict and how to get a pin from the operator, and
-  `key anchoring` reads `NOT RUN`;
+  `key anchoring` reads `NOT RUN` (a trusted pass is `[PASS]` and a failure
+  `[FAIL]`, each with one line saying what it means);
 - JSON: `ok` is `true`, `verdict` is `"unanchored"` (`"trusted"` and
   `"failed"` are the others), `keyTrust.status` is `"no_anchor"`, and
   `vault.optionalChecks.key_anchoring` is `"skipped_no_input"`;
