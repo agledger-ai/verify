@@ -46,7 +46,7 @@
  *
  * Fail-closed posture (security review):
  *   - A dump with zero vault entries is CHAIN_EMPTY, never a silent pass.
- *   - A vault entry lacking `cose_sign1` is a pre-2.0 shape -> UNSUPPORTED_FORMAT;
+ *   - A vault entry lacking `cose_sign1` carries no signed envelope -> UNSUPPORTED_FORMAT;
  *     we do not parse it best-effort.
  *   - Temporal key-validity is enforced by feeding each entry's created_at and
  *     each key's window (signed, once anchored) into verifyChain.
@@ -659,14 +659,15 @@ export function verifyVaultChains(
   for (const e of entries) {
     entryCount++;
 
-    // Format gate: format 2.0 requires the canonical COSE_Sign1 envelope on
-    // every vault row. A row lacking it is a pre-cutover shape, so fail closed
-    // rather than parse best-effort. Stops the walk: one such row means the
-    // whole dump came from a pre-cutover engine.
+    // Format gate: export format 2.0 carries the canonical COSE_Sign1 envelope
+    // on every vault row. A row without one was written by an engine that
+    // predates the envelope, or had the column removed; either way there is
+    // nothing signed to verify, so fail closed rather than parse best-effort.
+    // Stops the walk.
     if (!e.cose_sign1) {
       failures.push({
         code: 'UNSUPPORTED_FORMAT',
-        message: `audit_vault row ${e.id} lacks cose_sign1, a pre-2.0 dump shape. This verifier reads exportFormatVersion 2.0 / RFC8949-CDE; re-export from a current AGLedger instance.`,
+        message: `audit_vault row ${e.id} has no cose_sign1. Every vault row in export format 2.0 (RFC 8949 CDE) carries its COSE_Sign1 envelope, so this row was written by an engine that predates the envelope or had the column removed. Re-export from a current AGLedger instance.`,
         scopeId: e.record_id ?? undefined,
         position: e.chain_position,
       });

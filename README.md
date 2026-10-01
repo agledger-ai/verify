@@ -352,8 +352,10 @@ caller need not add a second dependency.
 
 - An **empty or truncated vault** (zero entries) does NOT verify clean. It
   reports `CHAIN_EMPTY`.
-- A vault row lacking `cose_sign1` is a **pre-2.0 dump shape** and is rejected
-  with `UNSUPPORTED_FORMAT` rather than parsed best-effort.
+- A vault row with no `cose_sign1` carries no signed envelope (every row in
+  export format 2.0 has one, so it was written by an engine that predates the
+  envelope or had the column removed). It fails `UNSUPPORTED_FORMAT` rather than
+  being parsed best-effort.
 
 ## What is NOT verified
 
