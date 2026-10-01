@@ -301,9 +301,12 @@ function agentSignatureSummary(
   check: CheckApplicability,
   keysSupplied: boolean,
   keysFromChain = 0,
+  failed = false,
 ): string {
-  const base = `present=${counts.present} verified=${counts.verified}`;
-  if (counts.present === 0) return `${base} (none on the chain)`;
+  // verify-core stops reading a chain at its first break, so on a failed run
+  // the counts cover only what came before it.
+  const base = `present=${counts.present} verified=${counts.verified}${failed ? ', counted up to the first break in each chain' : ''}`;
+  if (counts.present === 0) return failed ? `${base} (none before it)` : `${base} (none on the chain)`;
   const unverified = counts.present - counts.verified;
   const onChain = `${keysFromChain} cert key${keysFromChain === 1 ? '' : 's'} the dump signs`;
   if (check === 'applied') {
@@ -399,7 +402,7 @@ export function formatDumpReportText(report: VerifyReport, options: TextReportOp
   lines.push(`  entries     : ${report.vault.entryCount}`);
   lines.push(`  checkpoints : ${report.vault.checkpointCount}`);
   lines.push(
-    `  agent sigs  : ${agentSignatureSummary(report.vault.agentSignatures, report.vault.optionalChecks.agent_signature, options.agentKeysSupplied ?? false, report.vault.certKeysFromChain)}`,
+    `  agent sigs  : ${agentSignatureSummary(report.vault.agentSignatures, report.vault.optionalChecks.agent_signature, options.agentKeysSupplied ?? false, report.vault.certKeysFromChain, report.vault.failureCount > 0)}`,
   );
   lines.push(`  failures    : ${report.vault.failureCount}`);
   lines.push(...failureLines(report.vault.failures, report.vault.failureCount, '    '));
@@ -441,7 +444,7 @@ export function formatExportReportText(
   lines.push('  key anchoring');
   lines.push(...keyTrustLines(result.keyTrust, '    '));
   lines.push(
-    `  agent signatures  : ${agentSignatureSummary(result.agentSignatures, result.optionalChecks.agent_signature, options.agentKeysSupplied ?? false)}`,
+    `  agent signatures  : ${agentSignatureSummary(result.agentSignatures, result.optionalChecks.agent_signature, options.agentKeysSupplied ?? false, 0, !result.valid)}`,
   );
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
@@ -634,9 +637,11 @@ export function runCli(argv: readonly string[]): CliResult {
     publicKeys = unwrapKeys(parsedKeys);
   }
 
-  // verify-core throws TypeError at the supplied-key boundary when the
-  // file's shape is wrong (e.g. {keyId: 42}, [null]). Surface that as a CLI
-  // usage error rather than an uncaught stack trace.
+  // verify-core throws TypeError when an input's shape is wrong: the --keys
+  // file (e.g. {keyId: 42}, [null]), or the export itself (e.g. a
+  // signingKeyStatements array). Surface it as a could-not-verify rather than a
+  // stack trace, and add the --keys shape only when the --keys file is what
+  // verify-core refused.
   let result: VerifyExportResult;
   try {
     result = verifyAuditExport(parsedJson, {
@@ -649,8 +654,11 @@ export function runCli(argv: readonly string[]): CliResult {
     });
   } catch (err) {
     if (err instanceof TypeError) {
+      const keysFileRefused = publicKeys !== undefined && err.message.startsWith('verifyAuditExport: publicKeys');
       return cannotVerify(
-        `${err.message}\nThe --keys file must be a {keyId: SPKI-DER-base64} map or a list of {keyId, publicKey, ...} entries (the .data list from /v1/verification-keys).`,
+        keysFileRefused
+          ? `${err.message}\nThe --keys file must be a {keyId: SPKI-DER-base64} map or a list of {keyId, publicKey, ...} entries (the .data list from /v1/verification-keys).`
+          : `${parsed.target}: ${err.message}`,
         parsed.reportFormat,
       );
     }
