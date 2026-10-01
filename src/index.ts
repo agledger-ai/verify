@@ -13,6 +13,7 @@ export {
   verifyOrgAdminReadsChains,
   assembleReport,
   walkDumpKeys,
+  MAX_REPORTED_FAILURES,
 } from './dump-verifier.js';
 export type { DumpKeyTrust, KeyTrustOptions, VaultChainOptions, VerifyDumpOptions } from './dump-verifier.js';
 // Streams audit_vault.ndjson instead of materializing it. Prefer this over
@@ -77,6 +78,7 @@ export type {
   DistrustedKey,
   KeyTrust,
   KeyTrustReport,
+  KeyTrustStatus,
   RecordAuditExportInput,
   VerifyExportResult,
 } from '@agledger/verify-core';

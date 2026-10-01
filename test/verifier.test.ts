@@ -77,7 +77,7 @@ describe('verifyVaultChains: fail-closed fixes (security review)', () => {
     expect(report.vault.failures.some((f) => f.code === 'CHAIN_EMPTY')).toBe(true);
   });
 
-  it('UNSUPPORTED_FORMAT when a vault row lacks cose_sign1 (pre-2.0 shape)', () => {
+  it('UNSUPPORTED_FORMAT when a vault row lacks cose_sign1 (no signed envelope)', () => {
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     // Strip the canonical envelope to simulate a pre-cutover dump shape.

@@ -14,8 +14,9 @@
  * fields. Post-2.0, those are replaced by a single `cose_sign1` field
  * carrying the base64-encoded canonical COSE_Sign1 envelope (RFC 9052) over
  * an in-toto v1 Statement payload, the chain trust root. A vault entry that
- * lacks `cose_sign1` is a pre-2.0 shape this verifier refuses to parse
- * best-effort (UNSUPPORTED_FORMAT).
+ * lacks `cose_sign1` carries no signed envelope (an engine that predates it,
+ * or a removed column); this verifier refuses to parse it best-effort
+ * (UNSUPPORTED_FORMAT).
  */
 import type {
   CheckApplicability,
