@@ -6,11 +6,14 @@
  * own `vault:dump` tool: `export-cert-lifecycle.json` is one record driven end to
  * end by an agent on an ephemeral cert that signed every request body, and
  * `agent-cert-key.json` is the key that agent sent at cert exchange. The dump
- * is a slice of a full vault dump from the same instance, cut to three whole
+ * is a slice of a full vault dump from the same instance, cut to seven whole
  * record chains: that cert-signed lifecycle (6 agent signatures), a lifecycle
- * signed under a different cert whose key was never kept (6), and an unsigned
- * API-key lifecycle. Every run is pinned on that instance's vault key, so a
- * clean run is a trusted PASS.
+ * signed under a second cert whose key was never kept (6), an unsigned API-key
+ * lifecycle, a bound delegated create on the kept cert (1), an unbound one on
+ * an API key, and a delegation root on the kept cert (1) with the child the
+ * second cert delegated under it (1). The same records' exports sit beside
+ * the dump. Every run is pinned on that instance's vault key, so a clean run
+ * is a trusted PASS.
  */
 import { generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -94,6 +97,19 @@ describe('--agent-keys on an /audit-export file', () => {
     expect(out.agentSignatures).toEqual({ present: 6, verified: 6 });
   });
 
+  it.each([
+    ['a bound delegated create on the kept cert', 'export-delegated-bound.json', { present: 1, verified: 1 }],
+    ['an unbound delegated create on an API key', 'export-delegated-unbound.json', { present: 0, verified: 0 }],
+    ['a delegation root opened on the kept cert', 'export-delegation-parent.json', { present: 1, verified: 1 }],
+    ['the child the second cert delegated under it', 'export-delegation-child.json', { present: 1, verified: 0 }],
+  ])('verifies %s, checking only what the kept key signed', (_label, file, signatures) => {
+    const r = runCli([join(LIVE, file), '--agent-keys', KEY_FILE, '-f', 'json']);
+    expect(r.exitCode).toBe(EXIT_OK);
+    const out = json<ExportJson>(r.stdout);
+    expect(out.valid).toBe(true);
+    expect(out.agentSignatures).toEqual(signatures);
+  });
+
   it('says so in the text report', () => {
     const r = runCli([EXPORT, '--agent-keys', KEY_FILE]);
     expect(r.exitCode).toBe(EXIT_OK);
@@ -159,7 +175,7 @@ describe('the agent-signature line never reads as covering unverified signatures
 
   it('dump, unmatched key names the mismatch', () => {
     const r = runCli([DUMP, '--agent-keys', writeJson('k.json', otherJwk())]);
-    expect(r.stdout).toContain('agent sigs  : present=12 verified=0 (NOT verified: none of the supplied keys matches');
+    expect(r.stdout).toContain('agent sigs  : present=15 verified=0 (NOT verified: none of the supplied keys matches');
   });
 });
 
@@ -216,7 +232,7 @@ describe('--agent-keys on a dump directory', () => {
     expect(r.exitCode).toBe(EXIT_OK);
     const report = json<VerifyReport>(r.stdout);
     expect(report.ok).toBe(true);
-    expect(report.vault.entryCount).toBe(27);
+    expect(report.vault.entryCount).toBe(31);
     expect(report.vault.optionalChecks).toEqual({
       payload_binding: 'applied',
       oidc_actor: 'applied',
@@ -225,25 +241,25 @@ describe('--agent-keys on a dump directory', () => {
       agent_signature: 'applied',
       key_anchoring: 'applied',
     });
-    expect(report.vault.agentSignatures).toEqual({ present: 12, verified: 6 });
+    expect(report.vault.agentSignatures).toEqual({ present: 15, verified: 8 });
   });
 
   it('says which signatures were checked in the text report', () => {
     const r = runCli([DUMP, '--agent-keys', KEY_FILE]);
-    expect(r.stdout).toContain('agent sigs  : present=12 verified=6 (6 NOT verified: no key for their cert');
-    expect(runCli([DUMP]).stdout).toContain('agent sigs  : present=12 verified=0 (NOT verified: pass --agent-keys');
+    expect(r.stdout).toContain('agent sigs  : present=15 verified=8 (7 NOT verified: no key for their cert');
+    expect(runCli([DUMP]).stdout).toContain('agent sigs  : present=15 verified=0 (NOT verified: pass --agent-keys');
   });
 
   it('without keys reports the check as not run and changes no verdict', () => {
     const report = verifyDumpStreaming(DUMP, undefined, { trustAnchors: [LIVE_PIN] });
     expect(report.ok).toBe(true);
     expect(report.vault.optionalChecks.agent_signature).toBe('skipped_no_input');
-    expect(report.vault.agentSignatures).toEqual({ present: 12, verified: 0 });
+    expect(report.vault.agentSignatures).toEqual({ present: 15, verified: 0 });
   });
 
   it('the library entry point takes the keys directly', () => {
     const report = verifyDumpStreaming(DUMP, undefined, { agentKeys: [JWK] });
-    expect(report.vault.agentSignatures).toEqual({ present: 12, verified: 6 });
+    expect(report.vault.agentSignatures).toEqual({ present: 15, verified: 8 });
   });
 });
 
@@ -264,8 +280,8 @@ function writeSlice(rows: readonly VaultEntryDump[]): string {
 describe('a row copy of on_behalf_of must equal what the entry signed (live dump)', () => {
   // The cert-signed create: its signed predicate carries on_behalf_of, and the
   // engine does not copy it onto the row payload.
-  const target = (r: VaultEntryDump): boolean =>
-    r.record_id === '01a0f493-d10c-7fa9-bb9d-9bbf6baac111' && r.chain_position === 1;
+  const kept = (JSON.parse(readFileSync(EXPORT, 'utf-8')) as { recordId: string }).recordId;
+  const target = (r: VaultEntryDump): boolean => r.record_id === kept && r.chain_position === 1;
 
   it('the unmodified slice has no row copy and verifies', () => {
     const rows = readSlice();
@@ -286,7 +302,7 @@ describe('a row copy of on_behalf_of must equal what the entry signed (live dump
     expect(report.vault.failureCount).toBe(1);
     expect(report.vault.failures[0]).toMatchObject({
       code: 'CHAIN_PAYLOAD_BINDING_MISMATCH',
-      scopeId: '01a0f493-d10c-7fa9-bb9d-9bbf6baac111',
+      scopeId: kept,
       position: 1,
     });
   });
