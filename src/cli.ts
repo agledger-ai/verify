@@ -324,7 +324,7 @@ function agentSignatureSummary(
 /** The verdict of an /audit-export result, by the same rule as a dump's. */
 export function exportVerdict(result: VerifyExportResult): Verdict {
   if (!result.valid) return 'failed';
-  return result.keyTrust.status === 'no_anchor' ? 'unanchored' : 'trusted';
+  return result.keyTrust.status === 'walked' ? 'trusted' : 'unanchored';
 }
 
 /**
@@ -332,7 +332,7 @@ export function exportVerdict(result: VerifyExportResult): Verdict {
  * nothing wrong but anchored nothing can never be read, or grepped, as a
  * trusted PASS.
  */
-function headline(verdict: Verdict, kind: string): string[] {
+function headline(verdict: Verdict, kind: string, keyTrust: KeyTrustReport): string[] {
   if (verdict === 'trusted') {
     return [
       `[PASS] AGLedger offline verification (${kind})`,
@@ -345,6 +345,14 @@ function headline(verdict: Verdict, kind: string): string[] {
       `[FAIL] AGLedger offline verification (${kind})`,
       '  Verification FAILED: the chain, the read log or the key statements do not hold up.',
       '  Each finding is listed below.',
+    ];
+  }
+  if (keyTrust.status === 'no_anchored_signature') {
+    return [
+      `[VERIFIED, NOT ANCHORED] AGLedger offline verification (${kind})`,
+      '  Nothing failed, but this is NOT a trusted verdict: the --trust-anchor was walked, but no',
+      '  signature here verified under a key it anchors. An entry written before the install',
+      '  began signing carries no signature, and proves nothing about who wrote it.',
     ];
   }
   return [
@@ -363,8 +371,9 @@ function keyTrustLines(keyTrust: KeyTrustReport, indent: string): string[] {
     return [`${indent}status      : NOT RUN (no --trust-anchor given; no key is anchored)`];
   }
   const ids = (list: readonly string[]) => (list.length === 0 ? '(none)' : list.join(', '));
+  const unsignedOnly = keyTrust.status === 'no_anchored_signature' ? '; NO signature verified under an anchored key' : '';
   const lines = [
-    `${indent}status      : walked from ${keyTrust.anchors.join(', ')} (${keyTrust.order === 'written' ? 'write order' : 'signed order'})`,
+    `${indent}status      : walked from ${keyTrust.anchors.join(', ')} (${keyTrust.order === 'written' ? 'write order' : 'signed order'})${unsignedOnly}`,
     `${indent}anchored    : ${ids(keyTrust.anchoredKeyIds)}`,
     `${indent}unanchored  : ${ids(keyTrust.unanchoredKeyIds)}`,
   ];
@@ -380,7 +389,7 @@ function keyTrustLines(keyTrust: KeyTrustReport, indent: string): string[] {
 
 export function formatDumpReportText(report: VerifyReport, options: TextReportOptions = {}): string {
   const lines: string[] = [];
-  lines.push(...headline(report.verdict, 'dump'));
+  lines.push(...headline(report.verdict, 'dump', report.keyTrust));
   lines.push('');
   lines.push('key anchoring');
   lines.push(...keyTrustLines(report.keyTrust, '  '));
@@ -415,7 +424,7 @@ export function formatExportReportText(
   options: TextReportOptions = {},
 ): string {
   const lines: string[] = [];
-  lines.push(...headline(exportVerdict(result), 'audit-export'));
+  lines.push(...headline(exportVerdict(result), 'audit-export', result.keyTrust));
   lines.push('');
   lines.push(`  record            : ${result.recordId}`);
   lines.push(`  entries           : ${result.verifiedEntries}/${result.totalEntries} verified`);

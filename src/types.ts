@@ -222,6 +222,12 @@ export interface VaultChainsReport {
    */
   agentSignatures: { present: number; verified: number };
   /**
+   * Vault entries whose signature verified. Under a key walk each verified
+   * under an anchored key; with none, the report's key trust is
+   * `no_anchored_signature` and a pass is `unanchored`.
+   */
+  signedEntries: number;
+  /**
    * Cert public keys taken from the dump itself: the `publicKeyJwk` each
    * `EPHEMERAL_CERT_ISSUED` entry signs on the platform-ops chain, counted
    * once per key and only from a chain that verified clean. Used beside any

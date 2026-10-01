@@ -92,12 +92,16 @@ describe('the key statements themselves', () => {
     expect(report).toMatchObject({ ok: true, verdict: 'trusted', keyTrust: { status: 'walked', order: 'written' } });
   });
 
-  it('a statement file the walk cannot order is refused: TypeError in the API, exit 2 on the CLI', () => {
+  it('a statement row with no write time cannot be placed: KEY_STATEMENT_INVALID, exit 1 on the CLI', () => {
     const dump = loadDump(VALID);
     const extra = { ...dump.keyStatements[0]!, id: 'no-write-time' } as Partial<Dump['keyStatements'][number]>;
     delete extra.created_at;
     dump.keyStatements.push(extra as Dump['keyStatements'][number]);
-    expect(() => verifyDump(dump, { trustAnchors: [VALID_PIN] })).toThrow(TypeError);
+    const report = verifyDump(dump, { trustAnchors: [VALID_PIN] });
+    expect(report.verdict).toBe('failed');
+    expect(report.keyTrust.findings).toContainEqual(expect.objectContaining({
+      code: 'KEY_STATEMENT_INVALID', statementId: 'no-write-time', detail: 'the row has no parseable created_at to order it by',
+    }));
 
     const dir = mkdtempSync(join(tmpdir(), 'agledger-verify-anchor-'));
     try {
@@ -113,8 +117,8 @@ describe('the key statements themselves', () => {
         writeFileSync(join(dir, name), files[k].map((r) => JSON.stringify(r)).join('\n') + '\n');
       }
       const r = runCli([dir, '--trust-anchor', VALID_PIN]);
-      expect(r.exitCode).toBe(EXIT_CANNOT_VERIFY);
-      expect(r.stderr).toContain('createdAt');
+      expect(r.exitCode).toBe(EXIT_VERIFICATION_FAILED);
+      expect(r.stdout).toContain('the row has no parseable created_at to order it by');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
