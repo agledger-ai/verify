@@ -252,12 +252,15 @@ describe('vault_checkpoints: CHECKPOINT_UNSIGNED', () => {
     expect(only(verifyDump(dump)).code).toBe('CHECKPOINT_UNSIGNED');
   });
 
-  it('an unsigned checkpoint with no write time cannot be placed and stays what it was', () => {
-    const dump = validDump();
-    const cp = dump.vaultCheckpoints[0]!;
-    unsign(cp);
-    delete cp.created_at;
-    expect(verifyDump(dump).verdict).toBe('unanchored');
+  it('an unsigned checkpoint with no write time cannot be placed before signing began, and fails closed', () => {
+    for (const blank of [undefined, null, 'garbage']) {
+      const dump = validDump();
+      const cp = dump.vaultCheckpoints[0]!;
+      unsign(cp);
+      if (blank === undefined) delete cp.created_at;
+      else (cp as { created_at?: unknown }).created_at = blank;
+      expect(only(verifyDump(dump)).code).toBe('CHECKPOINT_UNSIGNED');
+    }
   });
 
   it('a diverged or orphaned unsigned checkpoint keeps its own code', () => {

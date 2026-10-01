@@ -84,7 +84,8 @@ export function decodeSignedClaim(coseSign1: Uint8Array): SignedClaim | null {
 }
 
 /** sha256 of a UUID's 16 bytes, the digest the engine signs as a record's subject. */
-export function uuidSubjectDigest(uuid: string): string | null {
+export function uuidSubjectDigest(uuid: unknown): string | null {
+  if (typeof uuid !== 'string') return null;
   const h = uuid.replace(/-/g, '').toLowerCase();
   return /^[0-9a-f]{32}$/.test(h) ? sha256Hex(Buffer.from(h, 'hex')) : null;
 }

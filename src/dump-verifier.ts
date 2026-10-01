@@ -69,6 +69,7 @@ import {
   orgReadLeafHash,
   orgReadMerkleRoot,
   reportKeyTrust,
+  settleKeyTrust,
   trustKeyFromDumpRow,
   verifyChain,
   verifyCoseSign1,
@@ -347,12 +348,10 @@ function signingKeyFor(
  * dumps reconstructs it from record_id + payload.orgId.
  */
 function chainKeyOf(e: VaultEntryDump): string {
-  return (
-    e.chain_key ??
-    (e.record_id !== null
-      ? e.record_id
-      : `schema:${(e.payload?.['orgId'] as string | undefined) ?? '__platform__'}`)
-  );
+  if (e.chain_key != null) return String(e.chain_key);
+  if (e.record_id != null) return String(e.record_id);
+  const orgId = e.payload !== null && typeof e.payload === 'object' ? e.payload['orgId'] : undefined;
+  return `schema:${orgId == null ? '__platform__' : String(orgId)}`;
 }
 
 /**
@@ -365,7 +364,24 @@ function chainKeyOf(e: VaultEntryDump): string {
  * correct for every chain except schema chains.
  */
 function checkpointChainKeyOf(cp: VaultCheckpointDump): string {
-  return cp.chain_key ?? cp.record_id;
+  // A checkpoint with neither key is malformed; it groups under '' so it
+  // still surfaces as an orphan rather than joining a real chain.
+  return String(cp.chain_key ?? cp.record_id ?? '');
+}
+
+/**
+ * The order rows are walked in: by `column` where it is a safe integer, a row
+ * whose value is not after every one whose is, ties in file order. Such a row
+ * then fails its position or index check where it lands.
+ */
+function byIntegerColumn<T>(rows: T[], column: (row: T) => unknown): void {
+  const key = (row: T): number => {
+    const v = column(row);
+    return Number.isSafeInteger(v) ? (v as number) : Number.POSITIVE_INFINITY;
+  };
+  const keyed = rows.map((row, at) => ({ row, at, k: key(row) }));
+  keyed.sort((a, b) => (a.k === b.k ? a.at - b.at : a.k < b.k ? -1 : 1));
+  keyed.forEach(({ row }, i) => { rows[i] = row; });
 }
 
 /**
@@ -577,9 +593,11 @@ export function verifyVaultChains(
     actor_attribution: 'skipped_no_input',
     key_temporal: 'skipped_no_input',
     agent_signature: 'skipped_no_input',
-    key_anchoring: keys.report.status === 'walked' ? 'applied' : 'skipped_no_input',
+    // With a walk, `not_checked` until an entry reaches the anchoring check.
+    key_anchoring: keys.report.status === 'walked' ? 'not_checked' : 'skipped_no_input',
   };
   const agentSignatures = { present: 0, verified: 0 };
+  let signedEntries = 0;
 
   const checkpointsByChain = new Map<string, VaultCheckpointDump[]>();
   for (const cp of checkpoints) {
@@ -606,6 +624,7 @@ export function verifyVaultChains(
     optionalChecks,
     agentSignatures,
     certKeysFromChain,
+    signedEntries,
   });
 
   const closeChain = (chainKey: string): void => {
@@ -614,7 +633,7 @@ export function verifyVaultChains(
     open.delete(chainKey);
     closed.add(chainKey);
     chainCount++;
-    chain.sort((a, b) => a.chain_position - b.chain_position);
+    byIntegerColumn(chain, (r) => r.chain_position);
     const normalized = chain.map((e) => toNormalizedEntry(chainKey, e));
     // `signingSince` is passed rather than left for the core to derive from
     // `keyRegistry`, so it is the same instant the checkpoint pass uses.
@@ -622,6 +641,7 @@ export function verifyVaultChains(
     for (const check of Object.keys(optionalChecks) as OptionalCheck[]) {
       if (result.optionalChecks[check] === 'applied') optionalChecks[check] = 'applied';
     }
+    signedEntries += result.signatureCoverage.signed;
     agentSignatures.present += result.agentSignatures.present;
     agentSignatures.verified += result.agentSignatures.verified;
     const failuresBefore = failures.count;
@@ -799,7 +819,7 @@ function verifyOneOrgAdminReadsLog(
   failures: FailureSink,
 ): void {
   const { registry, signingSince } = keys;
-  leaves.sort((a, b) => a.leaf_index - b.leaf_index);
+  byIntegerColumn(leaves, (r) => r.leaf_index);
   const mustSign = { signedBefore: false, signingSince };
 
   // One finding per org, the first met in leaf order, then the walk stops
@@ -855,7 +875,7 @@ function verifyOneOrgAdminReadsLog(
   const leafHashes = leaves.map((l) => l.leaf_hash);
 
   for (const cp of checkpoints) {
-    if (cp.tree_size > leafHashes.length) {
+    if (!Number.isSafeInteger(cp.tree_size) || cp.tree_size > leafHashes.length) {
       failures.push({
         code: 'TENANT_CHECKPOINT_LEAF_COUNT_MISMATCH',
         message: `Org ${orgId}: checkpoint ${cp.id} signs tree_size ${cp.tree_size} but dump contains only ${leafHashes.length} leaves`,
@@ -870,7 +890,7 @@ function verifyOneOrgAdminReadsLog(
     if (root !== cp.root_hash) {
       failures.push({
         code: 'TENANT_CHECKPOINT_ROOT_MISMATCH',
-        message: `Org ${orgId}: checkpoint ${cp.id} root_hash ${cp.root_hash.slice(0, 16)} does not match the recomputed RFC 9162 root ${root?.slice(0, 16) ?? '(none)'}`,
+        message: `Org ${orgId}: checkpoint ${cp.id} root_hash ${String(cp.root_hash).slice(0, 16)} does not match the recomputed RFC 9162 root ${root?.slice(0, 16) ?? '(none)'}`,
         scopeId: orgId,
         treeSize: cp.tree_size,
       });
@@ -997,12 +1017,16 @@ export function assembleReport(
   orgAdminReads: TenantAdminReadsReport,
   keys: DumpKeyTrust,
 ): VerifyReport {
-  const failed = vault.failureCount > 0 || orgAdminReads.failureCount > 0 || keys.report.findings.length > 0;
-  const verdict = failed ? 'failed' : keys.report.status === 'no_anchor' ? 'unanchored' : 'trusted';
+  // Under a walk every key a vault signature verifies against is anchored, so
+  // the signed entries are the anchored signatures; with none, the pin proves
+  // nothing and a pass is not trusted.
+  const keyTrust = settleKeyTrust(keys.report, vault.signedEntries);
+  const failed = vault.failureCount > 0 || orgAdminReads.failureCount > 0 || keyTrust.findings.length > 0;
+  const verdict = failed ? 'failed' : keyTrust.status === 'walked' ? 'trusted' : 'unanchored';
   return {
     ok: !failed,
     verdict,
-    keyTrust: keys.report,
+    keyTrust,
     vault,
     orgAdminReads,
   };
