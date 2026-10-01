@@ -43,6 +43,21 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
   };
 }
 
+describe('agent-signature counts on a failed run', () => {
+  it('says the counts stop at the first break rather than that the chain carries none', () => {
+    const failed = formatExportReportText(exportResult({ valid: false }));
+    expect(failed).toContain('present=0 verified=0, counted up to the first break in each chain (none before it)');
+    expect(failed).not.toContain('none on the chain');
+    expect(formatExportReportText(exportResult())).toContain('present=0 verified=0 (none on the chain)');
+    const { dump } = buildHappyDump();
+    const tampered = cloneDump(dump);
+    tampered.vaultEntries[0]!.payload = { tampered: true };
+    const report = verifyDump(tampered);
+    expect(report.vault.failureCount).toBeGreaterThan(0);
+    expect(formatDumpReportText(report)).toContain('counted up to the first break in each chain');
+  });
+});
+
 describe('parseArgs', () => {
   const parsedDefaults = {
     keys: null,
@@ -368,6 +383,28 @@ describe('runCli key-policy flags (verify#8, conformance corpus)', () => {
       expect(result.stderr).toContain('--keys file must be');
     } finally {
       rmSync(badPath, { force: true });
+    }
+  });
+
+  it('a malformed export with no --keys is refused without blaming a --keys file', () => {
+    const doc = JSON.parse(readFileSync(validExport, 'utf-8')) as { exportMetadata: Record<string, unknown> };
+    doc.exportMetadata.signingKeyStatements = [];
+    const path = join(tmpdir(), `agledger-verify-arraystatements-${process.pid}.json`);
+    writeFileSync(path, JSON.stringify(doc));
+    try {
+      const text = runCli([path, '--trust-anchor', PIN]);
+      expect(text.exitCode).toBe(EXIT_CANNOT_VERIFY);
+      expect(text.stderr).toContain('signingKeyStatements must be an object keyed by key id.');
+      expect(text.stderr).not.toContain('--keys');
+      const json = runCli([path, '--trust-anchor', PIN, '-f', 'json']);
+      expect(json.exitCode).toBe(EXIT_CANNOT_VERIFY);
+      const body = JSON.parse(json.stdout) as { error: { message: string } };
+      expect(body.error.message).toContain('signingKeyStatements must be an object keyed by key id.');
+      expect(body.error.message).not.toContain('--keys');
+      // With a good --keys file the export is still what was refused.
+      expect(runCli([path, '--keys', oobKeys, '--trust-anchor', PIN]).stderr).not.toContain('--keys file must be');
+    } finally {
+      rmSync(path, { force: true });
     }
   });
 
