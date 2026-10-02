@@ -2,10 +2,10 @@
   "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of the NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-09-30T22:06:10.744Z",
+  "generatedAt": "2026-10-02T15:03:56.031Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "e690979c",
+    "apiGitSha": "63649593",
     "apiVersion": "2.0.0",
     "formatVersion": "2.0"
   },
@@ -63,20 +63,35 @@
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_KEY_EXPIRED",
-      "note": "The signing key was retired one hour before the earliest entry was written — a retired key produced this entry (the retired-key fail-open fix)."
+      "options": {
+        "trustAnchors": [
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "The vault key admitted a successor, and the successor signed an unforced closure retiring the vault key one hour before its earliest entry was written: every entry the vault key signed lies after the retirement its closure signs. The vault key's genesis dates its activation three hours before that entry, and every registry column carries the signed value."
     },
     {
       "file": "dump/valid-rotation-boundary",
       "kind": "dump",
       "expect": "pass",
-      "note": "The signing key activated at exactly the instant the earliest entry was written — the boundary every key rotation produces, since the KEY_ROTATED entry and the key row share one transaction_timestamp(). The temporal window is inclusive at both ends; this must verify clean."
+      "options": {
+        "trustAnchors": [
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "The vault key's genesis signs its activation at exactly the instant, at millisecond precision, the earliest entry was written, and the registry column carries the same value. The temporal window is inclusive at both ends; this must verify clean."
     },
     {
       "file": "dump/chain-key-not-yet-active",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_KEY_NOT_YET_ACTIVE",
-      "note": "The signing key activates one hour after the earliest entry was written — an entry signed before its key existed, which is backdating or clock skew rather than a retention question."
+      "options": {
+        "trustAnchors": [
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "The vault key's genesis signs its activation one hour after the earliest entry was written, and the registry column carries the same value: an entry signed before its key existed, which is backdating or clock skew rather than a retention question."
     },
     {
       "file": "dump/chain-signing-key-drift",
