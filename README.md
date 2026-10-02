@@ -125,8 +125,11 @@ When a key has leaked, pass each entry of the operator's
 instant on (or, with no instant, from the retirement a trusted key signed for
 it) counts for nothing. On an export file, a key statement such a key signed
 counts for nothing at any instant, because the write times an export carries
-are not signed; a dump's write times are the database's own, and are read as
-the Server reads them. It needs a `--trust-anchor`.
+are not signed. A dump's write times are read as the Server reads them, which
+holds only for a dump taken from the Server itself. Entry `createdAt` is not
+signed either, so the holder of a leaked key can still sign entries dated
+before its cutoff, and no offline verifier can tell those from history inside
+the key's legitimate window. It needs a `--trust-anchor`.
 
 ```bash
 # Exits 1 when the key signed anything stored from that instant on.
