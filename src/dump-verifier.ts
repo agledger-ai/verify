@@ -55,6 +55,8 @@
  */
 import {
   applyKeyTrust,
+  assertKnownOptions,
+  assertNotPinnedAndDistrusted,
   buildAgentKeyRegistry,
   buildKeyRegistry,
   computeKeyTrust,
@@ -71,6 +73,7 @@ import {
   reportKeyTrust,
   settleKeyTrust,
   trustKeyFromDumpRow,
+  verdictOf,
   verifyChain,
   verifyCoseSign1,
   writtenWhileSigning,
@@ -143,6 +146,16 @@ export interface KeyTrustOptions {
 /** Options for {@link verifyDump} and `verifyDumpStreaming`. */
 export interface VerifyDumpOptions extends VaultChainOptions, KeyTrustOptions {}
 
+const DUMP_OPTIONS = ['agentKeys', 'trustAnchors', 'distrustedKeys'] as const satisfies ReadonlyArray<keyof VerifyDumpOptions>;
+
+/**
+ * Throw `TypeError` on an option {@link verifyDump} does not read, so a
+ * misspelt one cannot switch a check off without a word.
+ */
+export function assertDumpOptions(fn: string, options: unknown): void {
+  assertKnownOptions(fn, options, DUMP_OPTIONS);
+}
+
 /**
  * The dump's key registry after the trust walk, shared by the vault and
  * read-log passes so both grade against the same verdict on each key.
@@ -182,7 +195,8 @@ class FailureSink {
  * Build the dump's key registry and, given `trustAnchors`, run verify-core's
  * trust walk over its key statements in write order, marking each key
  * anchored, unanchored or undecided. Throws `TypeError` on a malformed anchor
- * or distrusted key, on `distrustedKeys` without `trustAnchors`, and on a
+ * or distrusted key, on `distrustedKeys` without `trustAnchors`, on a key both
+ * pinned and distrusted (the Server refuses to start with that pair), and on a
  * statement file the walk cannot order (rows with and without `created_at`).
  */
 export function walkDumpKeys(
@@ -195,6 +209,7 @@ export function walkDumpKeys(
   let registry = buildVaultKeyRegistry(signingKeys);
   let trust: KeyTrust | null = null;
   if (anchors.length > 0) {
+    assertNotPinnedAndDistrusted(anchors, distrusted);
     trust = computeKeyTrust({
       keys: signingKeys.map(trustKeyFromDumpRow),
       statements: keyStatements.map(keyStatementFromDumpRow),
@@ -1023,7 +1038,7 @@ export function assembleReport(
   // nothing and a pass is not trusted.
   const keyTrust = settleKeyTrust(keys.report, vault.signedEntries);
   const failed = vault.failureCount > 0 || orgAdminReads.failureCount > 0 || keyTrust.findings.length > 0;
-  const verdict = failed ? 'failed' : keyTrust.status === 'walked' ? 'trusted' : 'unanchored';
+  const verdict = verdictOf({ valid: !failed, keyTrust });
   return {
     ok: !failed,
     verdict,
@@ -1034,6 +1049,7 @@ export function assembleReport(
 }
 
 export function verifyDump(dump: Dump, options: VerifyDumpOptions = {}): VerifyReport {
+  assertDumpOptions('verifyDump', options);
   const keys = walkDumpKeys(dump.signingKeys, dump.keyStatements, options);
   return assembleReport(
     verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, keys, options),

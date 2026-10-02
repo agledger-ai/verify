@@ -6,6 +6,7 @@
  * in-memory fixtures.
  */
 import {
+  assertDumpOptions,
   verifyOrgAdminReadsChains,
   verifyVaultChains,
   assembleReport,
@@ -30,14 +31,16 @@ import type { VerifyReport } from './types.js';
  *
  * `options.trustAnchors` (with `options.distrustedKeys`) runs the key walk,
  * and `options.agentKeys` enables the offline agent-signature check (see
- * `VerifyDumpOptions`). Throws `TypeError` on a malformed anchor or
- * distrusted key, and `DumpReadError` on a file that cannot be read.
+ * `VerifyDumpOptions`). Throws `TypeError` on an option it does not read, a
+ * malformed anchor or distrusted key, or a key both pinned and distrusted,
+ * and `DumpReadError` on a file that cannot be read.
  */
 export function verifyDumpStreaming(
   dumpDir: string,
   filenames: DumpFiles = DEFAULT_FILENAMES,
   options: VerifyDumpOptions = {},
 ): VerifyReport {
+  assertDumpOptions('verifyDumpStreaming', options);
   const companions = loadCompanions(dumpDir, filenames);
   const keys = walkDumpKeys(companions.signingKeys, companions.keyStatements, options);
   return assembleReport(

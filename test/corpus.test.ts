@@ -196,12 +196,40 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
     }
   });
 
-  it('a distrusted key with no cutoff anchors nothing, so the dump signed under it fails', () => {
-    const dir = 'dump/valid';
-    const pin = currentPin(dir);
-    const report = verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [pin], distrustedKeys: [pin] });
+  it('a key distrusted from before the entry it signed fails that entry, pinned on its successor', () => {
+    const d = loadDump(join(CONFORMANCE, 'dump/valid-key-succession'));
+    const [previous, current] = [d.signingKeys.find((k) => k.status === 'retired')!, d.signingKeys.find((k) => k.status === 'active')!];
+    const pin = `sha256:${spkiSha256(current.public_key)}`;
+    expect(verifyDump(d, { trustAnchors: [pin] }).verdict).toBe('trusted');
+    const entry = d.vaultEntries.find((e) => e.signing_key_id === previous.key_id)!;
+    const cutoff = new Date(Date.parse(entry.created_at!) - 1).toISOString();
+    const report = verifyDump(d, { trustAnchors: [pin], distrustedKeys: [`sha256:${spkiSha256(previous.public_key)}@${cutoff}`] });
     expect(report.verdict).toBe('failed');
-    expect(allCodes(report)).toContain('CHAIN_SIGNING_KEY_UNANCHORED');
+    expect(allCodes(report)).toContain('CHAIN_KEY_EXPIRED');
+  });
+
+  it('pinned on the genesis key of a rotation, the closure its unanchored successor signed is KEY_CLOSURE_INVALID, as the engine scan grades it', () => {
+    // The successor is reached but not anchored from the genesis pin, and no
+    // key surface publishes it, so its closure of the genesis key is one an
+    // offline walk over the published statements cannot verify.
+    const d = loadDump(join(CONFORMANCE, 'dump/valid-key-succession'));
+    const [previous, current] = [d.signingKeys.find((k) => k.status === 'retired')!, d.signingKeys.find((k) => k.status === 'active')!];
+    const report = verifyDump(d, { trustAnchors: [`sha256:${spkiSha256(previous.public_key)}`] });
+    expect(report.verdict).toBe('failed');
+    expect(report.keyTrust.unanchoredKeyIds).toContain(current.key_id);
+    const closure = d.keyStatements.find((st) => st.kind === 'closure')!;
+    expect(report.keyTrust.findings).toEqual([expect.objectContaining({ code: 'KEY_CLOSURE_INVALID', keyId: previous.key_id, statementId: closure.id })]);
+    expect(report.keyTrust.findings[0]!.detail).toContain(`${current.key_id}, which is reached but not anchored`);
+  });
+
+  it('refuses a key both pinned and distrusted, as the Server refuses to start with it', () => {
+    const pin = currentPin('dump/valid');
+    expect(() => verifyDump(loadDump(join(CONFORMANCE, 'dump/valid')), { trustAnchors: [pin], distrustedKeys: [pin] })).toThrow(/both a trust anchor and a distrusted key/);
+  });
+
+  it('refuses an option it does not read', () => {
+    const dump = loadDump(join(CONFORMANCE, 'dump/valid'));
+    expect(() => verifyDump(dump, { trustAnchor: [currentPin('dump/valid')] } as never)).toThrow(/verifyDump: unknown option trustAnchor\. It reads agentKeys, trustAnchors, distrustedKeys/);
   });
 });
 
