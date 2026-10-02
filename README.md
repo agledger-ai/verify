@@ -123,7 +123,10 @@ When a key has leaked, pass each entry of the operator's
 `VAULT_DISTRUSTED_KEYS` as a `--distrusted-key`: `sha256:<hex>`, optionally
 `@<RFC 3339 instant>`, one flag per key. What such a key stored from that
 instant on (or, with no instant, from the retirement a trusted key signed for
-it) counts for nothing. It needs a `--trust-anchor`.
+it) counts for nothing. On an export file, a key statement such a key signed
+counts for nothing at any instant, because the write times an export carries
+are not signed; a dump's write times are the database's own, and are read as
+the Server reads them. It needs a `--trust-anchor`.
 
 ```bash
 # Exits 1 when the key signed anything stored from that instant on.
