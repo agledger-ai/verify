@@ -57,7 +57,8 @@ entrypoints). Together they are one corpus.
       "options": {                          // optional verify options for this vector
         "keysFile": "export/keys-oob.json", // out-of-band publicKeys to load
         "requireKeyId": "vault-key-1",
-        "requireOutOfBandKeys": true
+        "requireSuppliedKeys": true,
+        "trustAnchors": ["sha256:<64 hex>"] // pinned anchors for the walk
       },
       "expectSignatureCoverage": { "signed": 0, "unsigned": 3, "skipped": 0 }, // optional assertion
       "note": "human description of what is tampered and why it must fail"
@@ -97,10 +98,10 @@ import { verifyAuditExport, verifyChain, buildKeyRegistry,
          type VerificationKey, type NormalizedEntry, type FailureCode } from '@agledger/verify-core';
 
 // export path:
-const r = verifyAuditExport(exportJson, { publicKeys?, requireKeyId?, requireOutOfBandKeys? });
+const r = verifyAuditExport(exportJson, { publicKeys?, requireKeyId?, requireSuppliedKeys?, trustAnchors? });
 // r: { valid, totalEntries, verifiedEntries, brokenAt?{position,code,detail}, entries[], recordId,
 //      signatureCoverage{signed,unsigned,skipped,total}, optionalChecks{payload_binding,oidc_actor,key_temporal},
-//      keyProvenance{outOfBand,embedded} }
+//      keyProvenance{supplied,embedded}, keyTrust{status,anchors,findings,...} }
 
 // dump path builds NormalizedEntry[] WITH binding/oidcActor/createdAt + keys with
 // activatedAt/retiredAt windows, then calls verifyChain(entries, keyRegistry, opts) per chain.
@@ -125,7 +126,7 @@ canonicalization vector), `CHAIN_EMPTY`. Plus policy/compound: a valid chain tha
 `fail`s `CHAIN_KEY_POLICY_VIOLATION` under `requireKeyId`; a key-substitution
 fixture (tampered entry re-signed with the attacker key, attacker key present in
 embedded set) that PASSES with no options (documents the embedded-key trust
-assumption) and FAILs `CHAIN_KEY_POLICY_VIOLATION` under `requireOutOfBandKeys`;
+assumption) and FAILs `CHAIN_KEY_POLICY_VIOLATION` under `requireSuppliedKeys`;
 an unsigned chain (all-zero 64-byte sig) that PASSES with
 `expectSignatureCoverage {signed:0, unsigned:N}` (proves unsigned is reported as
 hash-chain-only, never as cryptographically signed).

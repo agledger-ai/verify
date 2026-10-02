@@ -2,10 +2,10 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-09-30T22:06:10.743Z",
+  "generatedAt": "2026-10-02T15:03:56.030Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "e690979c",
+    "apiGitSha": "63649593",
     "apiVersion": "2.0.0",
     "formatVersion": "2.0"
   },
@@ -139,7 +139,7 @@
       "file": "export/key-substitution.json",
       "kind": "export",
       "expect": "pass",
-      "note": "Entry 2 re-signed with the attacker key (identical predicate, consistent kid+column swap) and embedded in signingPublicKeys. With no options it PASSES, documenting that embedded keys are trusted by default. The requireOutOfBandKeys vector below is the same fixture failing closed."
+      "note": "Entry 2 re-signed with the attacker key (identical predicate, consistent kid+column swap) and embedded in signingPublicKeys. With no options it PASSES only as unanchored: an embedded key verifies the signature and nothing admits it. Pinned on `anchoredFrom` (trustAnchors) the same fixture fails CHAIN_SIGNING_KEY_UNANCHORED, the stronger statement of what this documents; the requireSuppliedKeys vector below fails it closed on key policy."
     },
     {
       "file": "export/key-substitution.json",
@@ -149,9 +149,9 @@
       "brokenAt": 2,
       "options": {
         "keysFile": "export/keys-oob.json",
-        "requireOutOfBandKeys": true
+        "requireSuppliedKeys": true
       },
-      "note": "Same consistent-key-swap fixture under requireOutOfBandKeys: entry 2 attacker key is embedded-only, so it fails closed. The vault key is supplied out of band, so entries 1 and 3 pass; the policy break surfaces at position 2."
+      "note": "Same consistent-key-swap fixture under requireSuppliedKeys: entry 2 attacker key is embedded-only, so it fails closed. The vault key is supplied in keysFile, so entries 1 and 3 pass; the policy break surfaces at position 2."
     },
     {
       "file": "export/key-substitution-kid-drift.json",

@@ -20,8 +20,7 @@ const CONFORMANCE = join(here, '..', 'testdata', 'conformance');
 interface VectorOptions {
   keysFile?: string;
   requireKeyId?: string;
-  /** The engine's pre-2.0 name for `requireSuppliedKeys`, which the manifest keeps. */
-  requireOutOfBandKeys?: boolean;
+  requireSuppliedKeys?: boolean;
   /** `sha256:<hex>` pins the dump's key statements are walked from. */
   trustAnchors?: string[];
   /**
@@ -89,6 +88,18 @@ function currentPin(dir: string): string {
   if (!key) throw new Error(`${dir}: no admitted key`);
   return `sha256:${spkiSha256(key.public_key)}`;
 }
+
+// An option the runner does not map runs the vector without it, and a renamed
+// key (requireOutOfBandKeys became requireSuppliedKeys) then passes or fails for
+// the wrong reason. Fail on any key VectorOptions does not name.
+const MAPPED_OPTIONS = new Set(['keysFile', 'requireKeyId', 'requireSuppliedKeys', 'trustAnchors', 'agentKeysFile']);
+
+describe('every manifest option is mapped', () => {
+  it('names no option the runner ignores', () => {
+    const used = new Set([...dumpVectors, ...exportVectors].flatMap((v) => Object.keys(v.options ?? {})));
+    expect([...used].filter((k) => !MAPPED_OPTIONS.has(k))).toEqual([]);
+  });
+});
 
 describe('DUMP conformance corpus (manifest-dump.json)', () => {
   it('manifest carries the full required failure-code set', () => {
@@ -170,17 +181,19 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
     expect(allCodes(report)).toContain('CHAIN_SIGNING_KEY_UNANCHORED');
   });
 
-  it('the registry column edits read as drift from the signed window once pinned, not as the key-window codes their manifest names', () => {
-    // These vectors move a vault_signing_keys column and leave the statements
-    // alone. Unpinned, entries are held to the column and each vector gives
-    // its manifest verdict (above). Pinned, entries are held to the signed
-    // window, so the column is drift, as verify-core reads them too. The
-    // engine is regenerating these three to test the signed window.
-    const pinnedCodes = (dir: string) => allCodes(verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [currentPin(dir)] }));
-    expect(pinnedCodes('dump/valid-rotation-boundary')).toEqual(['CHAIN_KEY_WINDOW_DRIFT']);
-    expect(pinnedCodes('dump/chain-key-not-yet-active')).toEqual(['CHAIN_KEY_WINDOW_DRIFT']);
-    // A retired row no closure signs is the engine's key_closure_invalid.
-    expect(pinnedCodes('dump/chain-key-expired')).toEqual(['KEY_CLOSURE_INVALID']);
+  it('the key-window vectors sign the window they test, so pinned they give the verdict their manifest names', () => {
+    // The engine regenerates these three by moving the window the vault key's
+    // statements sign, not a vault_signing_keys column, so the walk from a pin
+    // reaches the same verdict as the unpinned run and reports no drift.
+    for (const dir of ['dump/valid-rotation-boundary', 'dump/chain-key-not-yet-active', 'dump/chain-key-expired']) {
+      const vector = dumpVectors.find((v) => v.file === dir);
+      expect(vector, dir).toBeDefined();
+      const report = verifyDump(loadDump(join(CONFORMANCE, dir)), { trustAnchors: [currentPin(dir)] });
+      const codes = allCodes(report);
+      expect(codes, dir).not.toContain('CHAIN_KEY_WINDOW_DRIFT');
+      if (vector!.expect === 'pass') expect(codes, dir).toEqual([]);
+      else expect(codes, dir).toContain(vector!.failureCode);
+    }
   });
 
   it('a distrusted key with no cutoff anchors nothing, so the dump signed under it fails', () => {
@@ -200,8 +213,8 @@ function loadKeys(options: VectorOptions | undefined): VerifyExportOptions {
     ) as Record<string, string>;
   }
   if (options?.requireKeyId !== undefined) out.requireKeyId = options.requireKeyId;
-  if (options?.requireOutOfBandKeys !== undefined) {
-    out.requireSuppliedKeys = options.requireOutOfBandKeys;
+  if (options?.requireSuppliedKeys !== undefined) {
+    out.requireSuppliedKeys = options.requireSuppliedKeys;
   }
   if (options?.agentKeysFile) {
     out.agentKeys = JSON.parse(
