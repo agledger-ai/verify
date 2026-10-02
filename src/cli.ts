@@ -387,6 +387,9 @@ function keyTrustLines(keyTrust: KeyTrustReport, indent: string): string[] {
   for (const f of keyTrust.findings) {
     lines.push(`${indent}  [${f.code}] ${f.keyId === null ? '' : `key ${f.keyId}: `}${f.detail}`);
   }
+  for (const n of keyTrust.notes) {
+    lines.push(`${indent}  note: ${n.keyId === null ? '' : `key ${n.keyId}: `}${n.detail}`);
+  }
   return lines;
 }
 

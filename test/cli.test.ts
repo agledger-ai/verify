@@ -238,6 +238,14 @@ describe('runCli (dump-dir end-to-end)', () => {
     expect(result.stderr).toContain('Missing <target>');
   });
 
+  it('lists a key note under key anchoring when an honest rotation off a key distrusted after it is voided', () => {
+    const fx = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'distrusted-rotation');
+    const { pin, distrust } = JSON.parse(readFileSync(join(fx, 'meta.json'), 'utf-8')) as { pin: string; distrust: string };
+    const result = runCli([join(fx, 'export.json'), '--keys', join(fx, 'keys.json'), '--trust-anchor', pin, '--distrusted-key', distrust]);
+    expect(result.exitCode).toBe(EXIT_OK);
+    expect(result.stdout).toMatch(/note: key [0-9a-f]{16}: a succession by [0-9a-f]{16}, which distrustedKeys distrusts/);
+  });
+
   it('exits 0 on a clean dump directory pinned on its key', () => {
     const { dump, key } = buildHappyDump();
     writeDump(dump);
