@@ -46,20 +46,27 @@ function writeDump(dump: Dump): string {
 
 describe('a vault row with no readable created_at fails closed', () => {
   it('nulling every write time does not pass a distrusted key past its cutoff', () => {
-    const plain = loadDump(VALID);
-    const pin = pinOf(plain);
-    const mid = plain.vaultEntries[Math.floor(plain.vaultEntries.length / 2)]!.created_at;
-    expect(codes(verifyDump(plain, { trustAnchors: [pin], distrustedKeys: [`${pin}@${mid}`] }))).toContain('CHAIN_KEY_EXPIRED');
+    // Pinned on the current key; the key it succeeded is distrusted from just
+    // before the entry that key signed.
+    const succession = join(CONFORMANCE, 'valid-key-succession');
+    const plain = loadDump(succession);
+    const previous = plain.signingKeys.find((k) => k.status === 'retired')!;
+    const current = plain.signingKeys.find((k) => k.status === 'active')!;
+    const pin = `sha256:${spkiSha256(current.public_key)}`;
+    const entry = plain.vaultEntries.find((e) => e.signing_key_id === previous.key_id)!;
+    const cutoff = new Date(Date.parse(entry.created_at!) - 1).toISOString();
+    const distrust = `sha256:${spkiSha256(previous.public_key)}@${cutoff}`;
+    expect(codes(verifyDump(plain, { trustAnchors: [pin], distrustedKeys: [distrust] }))).toContain('CHAIN_KEY_EXPIRED');
 
-    const dump = loadDump(VALID);
+    const dump = loadDump(succession);
     for (const e of dump.vaultEntries) (e as { created_at: unknown }).created_at = null;
-    const report = verifyDump(dump, { trustAnchors: [pin], distrustedKeys: [`${pin}@${mid}`] });
+    const report = verifyDump(dump, { trustAnchors: [pin], distrustedKeys: [distrust] });
     expect(report.verdict).toBe('failed');
     expect(codes(report)).toContain('CHAIN_MALFORMED_ENTRY');
 
     const dir = writeDump(dump);
     try {
-      const r = runCli([dir, '--trust-anchor', pin, '--distrusted-key', `${pin}@${mid}`]);
+      const r = runCli([dir, '--trust-anchor', pin, '--distrusted-key', distrust]);
       expect(r.exitCode).toBe(EXIT_VERIFICATION_FAILED);
       expect(r.stdout).toContain('Entry has no parseable createdAt, so it cannot be placed inside key');
     } finally {

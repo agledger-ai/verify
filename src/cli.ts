@@ -26,6 +26,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import {
   buildAgentKeyRegistry,
+  assertNotPinnedAndDistrusted,
   parseDistrustedKeys,
   parseTrustAnchors,
   verifyAuditExport,
@@ -324,12 +325,6 @@ function agentSignatureSummary(
     : `${base} (NOT verified: none of the ${onChain} matches; pass --agent-keys with the agent cert keys to re-verify them)`;
 }
 
-/** The verdict of an /audit-export result, by the same rule as a dump's. */
-export function exportVerdict(result: VerifyExportResult): Verdict {
-  if (!result.valid) return 'failed';
-  return result.keyTrust.status === 'walked' ? 'trusted' : 'unanchored';
-}
-
 /**
  * The headline. `unanchored` gets its own words so that a run which found
  * nothing wrong but anchored nothing can never be read, or grepped, as a
@@ -430,7 +425,7 @@ export function formatExportReportText(
   options: TextReportOptions = {},
 ): string {
   const lines: string[] = [];
-  lines.push(...headline(exportVerdict(result), 'audit-export', result.keyTrust));
+  lines.push(...headline(result.verdict, 'audit-export', result.keyTrust));
   lines.push('');
   lines.push(`  record            : ${result.recordId}`);
   lines.push(`  entries           : ${result.verifiedEntries}/${result.totalEntries} verified`);
@@ -515,7 +510,8 @@ function flagMessage(message: string): string {
   return message
     .replace(/^trustAnchors entry /, '--trust-anchor ')
     .replace(/^distrustedKeys entry /, '--distrusted-key ')
-    .replace(/^distrustedKeys names /, '--distrusted-key names ');
+    .replace(/^distrustedKeys names /, '--distrusted-key names ')
+    .replace(/^(sha256:[0-9a-f]{64}) is both a trust anchor and a distrusted key\./, '$1 is both a --trust-anchor and a --distrusted-key.');
 }
 
 export function runCli(argv: readonly string[]): CliResult {
@@ -556,6 +552,12 @@ export function runCli(argv: readonly string[]): CliResult {
       '--distrusted-key acts only inside the key-statement walk, which runs from --trust-anchor; pass the pin as well.',
       parsed.reportFormat,
     );
+  }
+  try {
+    assertNotPinnedAndDistrusted(trustAnchors, distrustedKeys);
+  } catch (err) {
+    if (err instanceof TypeError) return cannotVerify(flagMessage(err.message), parsed.reportFormat);
+    throw err;
   }
   if (!existsSync(parsed.target)) {
     return cannotVerify(`Cannot read ${parsed.target}: no such file or directory.`, parsed.reportFormat);
@@ -667,12 +669,12 @@ export function runCli(argv: readonly string[]): CliResult {
     }
     throw err;
   }
-  const verdict = exportVerdict(result);
-  // verify-core's result verbatim, plus the verdict: `valid` alone is true on
-  // a run that anchored nothing.
+  // verify-core's result verbatim, verdict first: `valid` alone is true on a
+  // run that anchored nothing.
+  const { verdict, ...rest } = result;
   const stdout =
     parsed.reportFormat === 'json'
-      ? JSON.stringify({ verdict, ...result }, null, 2) + '\n'
+      ? JSON.stringify({ verdict, ...rest }, null, 2) + '\n'
       : formatExportReportText(result, { agentKeysSupplied: agentKeys !== undefined }) + '\n';
   return { exitCode: EXIT_BY_VERDICT[verdict], stdout, stderr: '' };
 }

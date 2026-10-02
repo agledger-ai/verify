@@ -285,6 +285,7 @@ describe('runCli (dump-dir end-to-end)', () => {
     [['/nonexistent', '--trust-anchor', PIN, '--distrusted-key', `${PIN}@2026-02-30T00:00:00Z`], `--distrusted-key "${PIN}@2026-02-30T00:00:00Z" is not sha256:<64 hex>, optionally followed by @<RFC 3339 instant>`],
     [['/nonexistent', '--trust-anchor', PIN, '--distrusted-key', PIN, '--distrusted-key', PIN], `--distrusted-key names ${PIN} twice.`],
     [['/nonexistent', '--distrusted-key', PIN], '--distrusted-key acts only inside the key-statement walk, which runs from --trust-anchor; pass the pin as well.'],
+    [['/nonexistent', '--trust-anchor', PIN, '--distrusted-key', `${PIN}@2026-09-01T00:00:00Z`], `${PIN} is both a --trust-anchor and a --distrusted-key. Pin a key you trust and distrust one that leaked, never the same key`],
     [['/nonexistent', '--trust-anchor', PIN], 'Cannot read /nonexistent: no such file or directory.'],
     [['/nonexistent', '--distrusted-keys', PIN], '--distrusted-keys is now --distrusted-key, given once per key: --distrusted-key sha256:<hex>[@<RFC 3339 instant>].'],
   ])('exits 2 on %j with the shared message', (argv, message) => {

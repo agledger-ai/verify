@@ -114,7 +114,9 @@ Findings about the statements themselves fail the dump too, and are listed
 under `key anchoring` in the text report and in `keyTrust.findings` in JSON:
 `KEY_STATEMENT_INVALID` (a statement that does not verify or disagrees with
 what it is filed under), `KEY_CLOSURE_INVALID` (a retired key with no closure
-that counts), and `CHAIN_KEY_WINDOW_DRIFT` (a registry column that differs from
+that counts, or a closure by a key the walk reaches but does not anchor that
+retires an anchored key earlier, or with force, than any published closure, as
+the engine's scan grades it), and `CHAIN_KEY_WINDOW_DRIFT` (a registry column that differs from
 the signed window). A key reached only through a statement this host cannot
 compute (Ed25519 history on a FIPS host) is `undecided`, and what it signed is
 `CHAIN_UNSUPPORTED_ALGORITHM`, not tamper.
@@ -132,14 +134,18 @@ before its cutoff, and no offline verifier can tell those from history inside
 the key's legitimate window. It needs a `--trust-anchor`.
 
 ```bash
-# Exits 1 when the key signed anything stored from that instant on.
-agledger-verify ./dump --trust-anchor sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e \
+# Pinned on the key that succeeded the leaked one. Exits 1 when the leaked key
+# signed anything stored from that instant on.
+agledger-verify ./dump --trust-anchor sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675 \
   --distrusted-key sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e@2026-09-30T22:06:09Z
 ```
 
 A malformed pin or distrusted key, a key named twice, `--distrusted-key`
-without `--trust-anchor`, and a target that does not exist are each refused
-with exit `2` before anything is read. The Python `agledger-verify` and
+without `--trust-anchor`, a key given to both (the Server refuses to start
+with that pair: pin the successor of a key that leaked), and a target that
+does not exist are each refused with exit `2` before anything is read; the
+library throws `TypeError` for the same inputs, and for an option
+`verifyDump` does not read. The Python `agledger-verify` and
 `agledger verify` refuse them with the same words and the same code.
 
 Without a pin nothing is anchored. The chains are still checked against the
