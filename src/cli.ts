@@ -561,19 +561,52 @@ const OPTION_FLAGS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bagentKeys\b/g, '--agent-keys'],
 ];
 
-/** One string from a report, its option names given as this CLI's flags. */
+/** One prose string from a report, its option names given as this CLI's flags. */
 export function flagWording(text: string): string {
   return OPTION_FLAGS.reduce((s, [pattern, flag]) => s.replace(pattern, flag), text);
 }
 
-/** A copy of a report with every string in it worded by {@link flagWording}. */
-function withFlagWording<T>(value: T): T {
-  if (typeof value === 'string') return flagWording(value) as T;
-  if (Array.isArray(value)) return value.map((v: unknown) => withFlagWording(v)) as T;
-  if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withFlagWording(v)])) as T;
-  }
-  return value;
+/**
+ * The prose a key-trust report carries, worded by {@link flagWording}: its
+ * detail and each finding, note and accounted-for detail. Ids, digests and
+ * instants are data and pass through as they are.
+ */
+function keyTrustWithFlags(keyTrust: KeyTrustReport): KeyTrustReport {
+  const prose = <T extends { detail: string }>(item: T): T => ({ ...item, detail: flagWording(item.detail) });
+  return {
+    ...keyTrust,
+    detail: flagWording(keyTrust.detail),
+    findings: keyTrust.findings.map(prose),
+    notes: keyTrust.notes.map(prose),
+    accounted: keyTrust.accounted.map(prose),
+  };
+}
+
+/** An export result with its prose (the details verify-core writes) worded by {@link flagWording}. */
+export function exportResultWithFlags(result: VerifyExportResult): VerifyExportResult {
+  const detail = <T extends { detail?: string }>(item: T): T =>
+    item.detail === undefined ? item : { ...item, detail: flagWording(item.detail) };
+  return {
+    ...result,
+    ...(result.brokenAt ? { brokenAt: detail(result.brokenAt) } : {}),
+    entries: result.entries.map(detail),
+    keyTrust: keyTrustWithFlags(result.keyTrust),
+  };
+}
+
+/** A dump report with its prose (failure messages and details) worded by {@link flagWording}. */
+export function dumpReportWithFlags(report: VerifyReport): VerifyReport {
+  const failure = (f: Failure): Failure => ({ ...f, message: flagWording(f.message) });
+  return {
+    ...report,
+    keyTrust: keyTrustWithFlags(report.keyTrust),
+    vault: {
+      ...report.vault,
+      failures: report.vault.failures.map(failure),
+      accounted: report.vault.accounted.map((a) => ({ ...a, detail: flagWording(a.detail) })),
+    },
+    orgAdminReads: { ...report.orgAdminReads, failures: report.orgAdminReads.failures.map(failure) },
+  };
 }
 
 export function runCli(argv: readonly string[]): CliResult {
@@ -653,7 +686,7 @@ export function runCli(argv: readonly string[]): CliResult {
       }
       throw err;
     }
-    report = withFlagWording(report);
+    report = dumpReportWithFlags(report);
     const stdout =
       parsed.reportFormat === 'json'
         ? JSON.stringify(report, null, 2) + '\n'
@@ -734,7 +767,7 @@ export function runCli(argv: readonly string[]): CliResult {
   }
   // verify-core's result, verdict first (`valid` alone is true on a run that
   // anchored nothing), with its advice naming the flags.
-  result = withFlagWording(result);
+  result = exportResultWithFlags(result);
   const { verdict, ...rest } = result;
   const stdout =
     parsed.reportFormat === 'json'

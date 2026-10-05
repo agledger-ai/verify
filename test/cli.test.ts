@@ -9,6 +9,7 @@ import {
   EXIT_CANNOT_VERIFY,
   EXIT_OK,
   EXIT_VERIFICATION_FAILED,
+  dumpReportWithFlags,
   flagWording,
   formatDumpReportText,
   formatExportReportText,
@@ -16,6 +17,7 @@ import {
   runCli,
 } from '../src/cli.js';
 import { verifyDump } from '../src/dump-verifier.js';
+import type { VerifyReport } from '../src/types.js';
 import { reportKeyTrust, verifyAuditExport, type RecordAuditExportInput, type VerifyExportResult } from '@agledger/verify-core';
 import { buildHappyDump, cloneDump, pinOf } from './fixtures.js';
 
@@ -488,6 +490,25 @@ describe('runCli on an export after a dated distrust entry', () => {
     expect(text.stdout).toContain(`note: key b649db0ec7c5c0fd: ${note}`);
   });
 
+  it('rewords prose only: a data field that spells an option name passes through as it is', () => {
+    const doc = JSON.parse(readFileSync(fixture, 'utf-8')) as RecordAuditExportInput & { verificationGuide?: { unsignedFields?: string[] } };
+    doc.exportMetadata.recordId = 'distrustedKeys';
+    doc.verificationGuide = { ...doc.verificationGuide, unsignedFields: ['trustAnchors', 'requireKeyId'] };
+    const path = join(tmpdir(), `agledger-verify-datafield-${process.pid}.json`);
+    writeFileSync(path, JSON.stringify(doc));
+    try {
+      const out = runCli([path, '--trust-anchor', F, '-f', 'json']);
+      expect(out.exitCode).toBe(EXIT_VERIFICATION_FAILED);
+      const json = JSON.parse(out.stdout) as Json;
+      expect(json.recordId).toBe('distrustedKeys');
+      expect(json.unsignedProjectionFields).toEqual(['trustAnchors', 'requireKeyId']);
+      expect(json.brokenAt!.detail).toContain(`give --distrusted-key ${K}@${FROM}.`);
+      expect(json.keyTrust.findings[0]!.detail).toContain(`give --distrusted-key ${K}@${FROM}.`);
+    } finally {
+      rmSync(path, { force: true });
+    }
+  });
+
   it('leaves the library result in verify-core\'s option names', () => {
     const doc = JSON.parse(readFileSync(fixture, 'utf-8')) as RecordAuditExportInput;
     expect(verifyAuditExport(doc, { trustAnchors: [F] }).brokenAt!.detail).toContain(`give distrustedKeys ${K}@${FROM}.`);
@@ -506,5 +527,32 @@ describe('flagWording', () => {
     ['distrustedFrom and VAULT_DISTRUSTED_KEYS stay as they are', 'distrustedFrom and VAULT_DISTRUSTED_KEYS stay as they are'],
   ])('%s', (from, to) => {
     expect(flagWording(from)).toBe(to);
+  });
+});
+
+describe('dumpReportWithFlags', () => {
+  it('rewords failure messages and details, never ids, scopes or codes', () => {
+    const keyTrust = reportKeyTrust(new Map(), null, null);
+    const report = {
+      ok: false,
+      verdict: 'failed' as const,
+      keyTrust: { ...keyTrust, findings: [{ code: 'KEY_CLOSURE_INVALID' as const, keyId: 'trustAnchors', statementId: 'distrustedKeys', detail: 'give distrustedKeys sha256:ab@x' }] },
+      vault: {
+        recordCount: 1, entryCount: 1, checkpointCount: 0, failureCount: 1, accountedCount: 1, signedEntries: 0, certKeysFromChain: 0,
+        failures: [{ code: 'CHAIN_KEY_EXPIRED' as const, message: 'the instant distrustedKeys gives', scopeId: 'distrustedKeys', signingKeyId: 'trustAnchors' }],
+        accounted: [{ code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY' as const, chain: 'record' as const, recordId: 'distrustedKeys', orgId: 'trustAnchors', scopeId: 'requireKeyId', position: 0, keyId: 'agentKeys', detail: 'which distrustedKeys names' }],
+        optionalChecks: {} as VerifyReport['vault']['optionalChecks'],
+        agentSignatures: { present: 0, verified: 0 },
+      },
+      orgAdminReads: { orgCount: 1, leafCount: 0, checkpointCount: 0, witnessCosignedCheckpoints: [], failureCount: 1, failures: [{ code: 'TENANT_READ_KEY_UNANCHORED' as const, message: 'pin it in trustAnchors', scopeId: 'trustAnchors' }] },
+    } satisfies VerifyReport;
+    const before = JSON.stringify(report);
+    const out = dumpReportWithFlags(report);
+    expect(JSON.stringify(report)).toBe(before);
+    expect(out.keyTrust.detail).toMatch(/^No --trust-anchor was given/);
+    expect(out.keyTrust.findings[0]).toEqual({ code: 'KEY_CLOSURE_INVALID', keyId: 'trustAnchors', statementId: 'distrustedKeys', detail: 'give --distrusted-key sha256:ab@x' });
+    expect(out.vault.failures[0]).toEqual({ code: 'CHAIN_KEY_EXPIRED', message: 'the instant --distrusted-key gives', scopeId: 'distrustedKeys', signingKeyId: 'trustAnchors' });
+    expect(out.vault.accounted[0]).toMatchObject({ recordId: 'distrustedKeys', orgId: 'trustAnchors', scopeId: 'requireKeyId', keyId: 'agentKeys', detail: 'which --distrusted-key names' });
+    expect(out.orgAdminReads.failures[0]).toEqual({ code: 'TENANT_READ_KEY_UNANCHORED', message: 'pin it with --trust-anchor', scopeId: 'trustAnchors' });
   });
 });
