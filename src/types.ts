@@ -19,6 +19,7 @@
  * (UNSUPPORTED_FORMAT).
  */
 import type {
+  AccountedEntry,
   CheckApplicability,
   DumpKeyStatementRow,
   FailureCode as CoreFailureCode,
@@ -206,6 +207,17 @@ export interface VaultChainsReport {
   failures: Failure[];
   /** Total failures found, including any beyond the cap. */
   failureCount: number;
+  /**
+   * Capped sample, oldest first, of entries a distrusted key signed that its
+   * `distrustedKeys` entry and a retirement signed by a key the walk trusts
+   * account for (`CHAIN_SIGNED_BY_DISTRUSTED_KEY`), as the engine's scan lists
+   * them in `distrustedEntries`. They are not verified, they fail nothing, and
+   * they do not count toward `signedEntries`. Empty without `distrustedKeys`.
+   * Capped at MAX_REPORTED_FAILURES, as `failures` is.
+   */
+  accounted: AccountedEntry[];
+  /** Total accounted entries, including any beyond the cap. */
+  accountedCount: number;
   /**
    * Which input-gated checks ran. A check is `applied` when it ran on at least
    * one chain. `agent_signature` is `applied` once a cert key, from

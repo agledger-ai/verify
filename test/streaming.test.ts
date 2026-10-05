@@ -122,6 +122,23 @@ describe('readLines chunk handling', () => {
   });
 });
 
+describe('verifyDumpStreaming checks its key options before it reads the directory', () => {
+  const PIN = `sha256:${'a'.repeat(64)}`;
+  it.each([
+    [{ trustAnchors: ['abc'] }, /^trustAnchors entry "abc" is not sha256:<64 hex>/],
+    [{ trustAnchors: [PIN], distrustedKeys: ['sha256:zz'] }, /^distrustedKeys entry "sha256:zz" is not sha256:<64 hex>/],
+    [{ distrustedKeys: [PIN] }, /^distrustedKeys act only inside the key-statement walk/],
+    [{ trustAnchors: [PIN], distrustedKeys: [PIN] }, /^sha256:a{64} is a trust anchor and a distrusted key with no instant,/],
+  ])('throws TypeError on %j, not DumpReadError, for a directory that does not exist', (options, message) => {
+    expect(() => verifyDumpStreaming('/nonexistent-agledger-dump', undefined, options)).toThrow(TypeError);
+    expect(() => verifyDumpStreaming('/nonexistent-agledger-dump', undefined, options)).toThrow(message);
+  });
+
+  it('takes a pin beside a dated distrust entry for the same key, and then reads the directory', () => {
+    expect(() => verifyDumpStreaming('/nonexistent-agledger-dump', undefined, { trustAnchors: [PIN], distrustedKeys: [`${PIN}@2026-09-01T00:00:00Z`] })).toThrow(DumpReadError);
+  });
+});
+
 describe('streaming verification matches the in-memory path', () => {
   it.each(VECTORS)('produces an identical report for the %s vector', (vector) => {
     const source = join(CORPUS_DUMPS, vector);

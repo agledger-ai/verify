@@ -70,6 +70,7 @@ import {
   keyStatementFromDumpRow,
   orgReadLeafHash,
   orgReadMerkleRoot,
+  parseTrustAnchors,
   reportKeyTrust,
   settleKeyTrust,
   trustKeyFromDumpRow,
@@ -77,6 +78,7 @@ import {
   verifyChain,
   verifyCoseSign1,
   writtenWhileSigning,
+  type AccountedEntry,
   type AgentPublicKeyJwk,
   type ChainResult,
   type CheckApplicability,
@@ -157,6 +159,23 @@ export function assertDumpOptions(fn: string, options: unknown): void {
 }
 
 /**
+ * Throw `TypeError` on a malformed anchor or distrusted key, on
+ * `distrustedKeys` without `trustAnchors`, and on a pinned key distrusted with
+ * no instant (the Server refuses to start with that pair). A pin beside a
+ * dated entry (`sha256:<hex>@<instant>`) is taken. Needs nothing from the
+ * dump, so a caller can run it before reading one.
+ */
+export function assertKeyTrustOptions(options: KeyTrustOptions): void {
+  const anchors = options.trustAnchors ?? [];
+  const distrusted = options.distrustedKeys ?? [];
+  parseTrustAnchors(anchors);
+  if (anchors.length === 0 && distrusted.length > 0) {
+    throw new TypeError('distrustedKeys act only inside the key-statement walk, which runs from trustAnchors; pass trustAnchors as well.');
+  }
+  assertNotPinnedAndDistrusted(anchors, distrusted);
+}
+
+/**
  * The dump's key registry after the trust walk, shared by the vault and
  * read-log passes so both grade against the same verdict on each key.
  */
@@ -181,35 +200,37 @@ export interface DumpKeyTrust {
  */
 export const MAX_REPORTED_FAILURES = 1000;
 
-class FailureSink {
-  readonly listed: Failure[] = [];
+/** Keeps the first MAX_REPORTED_FAILURES items and counts every one. */
+class CappedSink<T> {
+  readonly listed: T[] = [];
   count = 0;
 
-  push(failure: Failure): void {
+  push(item: T): void {
     this.count++;
-    if (this.listed.length < MAX_REPORTED_FAILURES) this.listed.push(failure);
+    if (this.listed.length < MAX_REPORTED_FAILURES) this.listed.push(item);
   }
 }
+
+class FailureSink extends CappedSink<Failure> {}
 
 /**
  * Build the dump's key registry and, given `trustAnchors`, run verify-core's
  * trust walk over its key statements in write order, marking each key
- * anchored, unanchored or undecided. Throws `TypeError` on a malformed anchor
- * or distrusted key, on `distrustedKeys` without `trustAnchors`, on a key both
- * pinned and distrusted (the Server refuses to start with that pair), and on a
- * statement file the walk cannot order (rows with and without `created_at`).
+ * anchored, unanchored or undecided. Throws `TypeError` on what
+ * {@link assertKeyTrustOptions} refuses, and on a statement file the walk
+ * cannot order (rows with and without `created_at`).
  */
 export function walkDumpKeys(
   signingKeys: readonly SigningKeyDump[],
   keyStatements: readonly KeyStatementDump[] = [],
   options: KeyTrustOptions = {},
 ): DumpKeyTrust {
+  assertKeyTrustOptions(options);
   const anchors = options.trustAnchors ?? [];
   const distrusted = options.distrustedKeys ?? [];
   let registry = buildVaultKeyRegistry(signingKeys);
   let trust: KeyTrust | null = null;
   if (anchors.length > 0) {
-    assertNotPinnedAndDistrusted(anchors, distrusted);
     trust = computeKeyTrust({
       keys: signingKeys.map(trustKeyFromDumpRow),
       statements: keyStatements.map(keyStatementFromDumpRow),
@@ -217,8 +238,6 @@ export function walkDumpKeys(
       distrustedKeys: distrusted,
     });
     registry = applyKeyTrust(registry, trust);
-  } else if (distrusted.length > 0) {
-    throw new TypeError('distrustedKeys act only inside the key-statement walk, which runs from trustAnchors; pass trustAnchors as well.');
   }
   // The registry's activated_at columns are unsigned: a writer who strips or
   // moves them later would switch the unsigned-row rule off. With a walk, the
@@ -590,6 +609,7 @@ export function verifyVaultChains(
   options: VaultChainOptions = {},
 ): VaultChainsReport {
   const failures = new FailureSink();
+  const accounted = new CappedSink<AccountedEntry>();
   const { registry: keyRegistry, signingSince } = keys;
   // Caller keys first, then the cert keys each clean chain signs. A chain can
   // only use keys harvested from chains closed before it; the producer sorts
@@ -636,6 +656,8 @@ export function verifyVaultChains(
     checkpointCount: checkpoints.length,
     failures: failures.listed,
     failureCount: failures.count,
+    accounted: accounted.listed,
+    accountedCount: accounted.count,
     optionalChecks,
     agentSignatures,
     certKeysFromChain,
@@ -661,6 +683,7 @@ export function verifyVaultChains(
     agentSignatures.verified += result.agentSignatures.verified;
     const failuresBefore = failures.count;
     collectChainFailures(chainKey, result, failures);
+    for (const a of result.accounted) accounted.push(a);
     verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keys, failures);
     checkpointsByChain.delete(chainKey);
     if (result.valid && failures.count === failuresBefore) {

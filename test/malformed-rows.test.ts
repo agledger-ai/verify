@@ -47,7 +47,9 @@ function writeDump(dump: Dump): string {
 describe('a vault row with no readable created_at fails closed', () => {
   it('nulling every write time does not pass a distrusted key past its cutoff', () => {
     // Pinned on the current key; the key it succeeded is distrusted from just
-    // before the entry that key signed.
+    // before the entry that key signed. Written before the pinned key retired
+    // it, the entry is accounted for; with no write time it cannot be placed
+    // before that retirement, and fails.
     const succession = join(CONFORMANCE, 'valid-key-succession');
     const plain = loadDump(succession);
     const previous = plain.signingKeys.find((k) => k.status === 'retired')!;
@@ -56,7 +58,9 @@ describe('a vault row with no readable created_at fails closed', () => {
     const entry = plain.vaultEntries.find((e) => e.signing_key_id === previous.key_id)!;
     const cutoff = new Date(Date.parse(entry.created_at!) - 1).toISOString();
     const distrust = `sha256:${spkiSha256(previous.public_key)}@${cutoff}`;
-    expect(codes(verifyDump(plain, { trustAnchors: [pin], distrustedKeys: [distrust] }))).toContain('CHAIN_KEY_EXPIRED');
+    const accounted = verifyDump(plain, { trustAnchors: [pin], distrustedKeys: [distrust] });
+    expect(codes(accounted)).toEqual([]);
+    expect(accounted.vault.accountedCount).toBe(1);
 
     const dump = loadDump(succession);
     for (const e of dump.vaultEntries) (e as { created_at: unknown }).created_at = null;

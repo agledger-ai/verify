@@ -7,6 +7,7 @@ import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
 import { EXIT_CANNOT_VERIFY, EXIT_OK, runCli } from '../src/cli.js';
 import {
+  ACCOUNTED_ENTRY_CODE,
   spkiSha256,
   verifyAuditExport,
   type RecordAuditExportInput,
@@ -196,16 +197,58 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
     }
   });
 
-  it('a key distrusted from before the entry it signed fails that entry, pinned on its successor', () => {
+  // The entry the distrusted key signed from its cutoff on was written before
+  // the pinned successor retired it, so the distrust entry and that
+  // retirement account for it, as the engine's scan lists it: not verified,
+  // and nothing fails.
+  it.each([
+    ['pinned on its successor', false],
+    ['pinned on its successor and on the key itself, beside the dated distrust entry', true],
+  ])('a key distrusted from before the entry it signed has that entry accounted for, %s', (_name, pinBoth) => {
     const d = loadDump(join(CONFORMANCE, 'dump/valid-key-succession'));
     const [previous, current] = [d.signingKeys.find((k) => k.status === 'retired')!, d.signingKeys.find((k) => k.status === 'active')!];
     const pin = `sha256:${spkiSha256(current.public_key)}`;
-    expect(verifyDump(d, { trustAnchors: [pin] }).verdict).toBe('trusted');
+    const previousPin = `sha256:${spkiSha256(previous.public_key)}`;
+    const baseline = verifyDump(d, { trustAnchors: [pin] });
+    expect(baseline.verdict).toBe('trusted');
+    expect(baseline.vault).toMatchObject({ accounted: [], accountedCount: 0 });
     const entry = d.vaultEntries.find((e) => e.signing_key_id === previous.key_id)!;
     const cutoff = new Date(Date.parse(entry.created_at!) - 1).toISOString();
-    const report = verifyDump(d, { trustAnchors: [pin], distrustedKeys: [`sha256:${spkiSha256(previous.public_key)}@${cutoff}`] });
-    expect(report.verdict).toBe('failed');
-    expect(allCodes(report)).toContain('CHAIN_KEY_EXPIRED');
+    const trustAnchors = pinBoth ? [previousPin, pin] : [pin];
+    const report = verifyDump(d, { trustAnchors, distrustedKeys: [`${previousPin}@${cutoff}`] });
+    expect(report.verdict).toBe('trusted');
+    expect(report.vault.failureCount).toBe(0);
+    expect(report.vault.accountedCount).toBe(1);
+    expect(report.vault.accounted).toEqual([{
+      code: ACCOUNTED_ENTRY_CODE,
+      chain: 'record',
+      recordId: entry.record_id,
+      orgId: null,
+      scopeId: entry.chain_key,
+      position: entry.chain_position,
+      keyId: previous.key_id,
+      detail: expect.stringContaining('the distrust entry accounts for it'),
+    }]);
+    expect(report.vault.signedEntries).toBe(baseline.vault.signedEntries - 1);
+  });
+
+  it('the CLI lists an accounted entry in text and JSON and exits 0', () => {
+    const dir = join(CONFORMANCE, 'dump/valid-key-succession');
+    const d = loadDump(dir);
+    const [previous, current] = [d.signingKeys.find((k) => k.status === 'retired')!, d.signingKeys.find((k) => k.status === 'active')!];
+    const entry = d.vaultEntries.find((e) => e.signing_key_id === previous.key_id)!;
+    const cutoff = new Date(Date.parse(entry.created_at!) - 1).toISOString();
+    const argv = [dir, '--trust-anchor', `sha256:${spkiSha256(current.public_key)}`, '--distrusted-key', `sha256:${spkiSha256(previous.public_key)}@${cutoff}`];
+    const text = runCli(argv);
+    expect(text.exitCode).toBe(EXIT_OK);
+    expect(text.stdout).toContain('[PASS]');
+    expect(text.stdout).toContain('  accounted for: 1 (signed by a distrusted key before its retirement; not verified)');
+    expect(text.stdout).toContain(`    [${ACCOUNTED_ENTRY_CODE}] Record ${entry.record_id} pos ${entry.chain_position} key ${previous.key_id}: `);
+    const json = runCli([...argv, '-f', 'json']);
+    expect(json.exitCode).toBe(EXIT_OK);
+    const vault = (JSON.parse(json.stdout) as VerifyReport).vault;
+    expect(vault.accountedCount).toBe(1);
+    expect(vault.accounted[0]).toMatchObject({ code: ACCOUNTED_ENTRY_CODE, position: entry.chain_position, keyId: previous.key_id });
   });
 
   it('pinned on the genesis key of a rotation, the closure its unanchored successor signed is KEY_CLOSURE_INVALID, as the engine scan grades it', () => {
@@ -222,9 +265,9 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
     expect(report.keyTrust.findings[0]!.detail).toContain(`${current.key_id}, which is reached but not anchored`);
   });
 
-  it('refuses a key both pinned and distrusted, as the Server refuses to start with it', () => {
+  it('refuses a pinned key distrusted with no instant, as the Server refuses to start with it', () => {
     const pin = currentPin('dump/valid');
-    expect(() => verifyDump(loadDump(join(CONFORMANCE, 'dump/valid')), { trustAnchors: [pin], distrustedKeys: [pin] })).toThrow(/both a trust anchor and a distrusted key/);
+    expect(() => verifyDump(loadDump(join(CONFORMANCE, 'dump/valid')), { trustAnchors: [pin], distrustedKeys: [pin] })).toThrow(/is a trust anchor and a distrusted key with no instant,/);
   });
 
   it('refuses an option it does not read', () => {
