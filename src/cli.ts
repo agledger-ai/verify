@@ -199,7 +199,11 @@ Options:
                               per key. What such a key stored from the
                               instant on (or, with none, from its retirement)
                               counts for nothing in the walk. Requires
-                              --trust-anchor.
+                              --trust-anchor. A dated entry may name a pinned
+                              key: the pin then vouches for what the key
+                              stored before the instant. On a dump, entries
+                              it signed before a trusted key retired it are
+                              listed as accounted for and do not fail.
   --report-format, -f         Output format. Default: text.
   --agent-keys                Path to a JSON file holding the Ed25519 public
                               keys of agent certs: a JWK, a list of JWKs, or a
