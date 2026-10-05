@@ -216,8 +216,9 @@ class FailureSink extends CappedSink<Failure> {}
 /**
  * Build the dump's key registry and, given `trustAnchors`, run verify-core's
  * trust walk over its key statements in write order, marking each key
- * anchored, unanchored or undecided. Throws `TypeError` on what
- * {@link assertKeyTrustOptions} refuses, and on a statement file the walk
+ * anchored, unanchored or undecided. Throws `TypeError` on a malformed anchor
+ * or distrusted key, on `distrustedKeys` without `trustAnchors`, on a pinned
+ * key distrusted with no instant, and on a statement file the walk
  * cannot order (rows with and without `created_at`).
  */
 export function walkDumpKeys(
