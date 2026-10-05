@@ -410,7 +410,8 @@ caller need not add a second dependency.
 
 ## Wire format
 
-See `src/types.ts`. One JSON object per line:
+See [`src/types.ts`](https://github.com/agledger-ai/verify/blob/main/src/types.ts) in the source repository. One
+JSON object per line:
 
 | File | Description |
 |---|---|
@@ -425,9 +426,13 @@ All timestamps are ISO-8601. Bigints are serialized as JS numbers.
 
 ## Conformance corpus
 
-The DUMP-kind vectors under `testdata/conformance/dump/` (manifest:
-`testdata/conformance/manifest-dump.json`) and the EXPORT-kind vectors under
-`testdata/conformance/export/` (manifest: `testdata/conformance/manifest-export.json`)
-are the anti-drift seam shared with the independent Python verifier. They are
+The DUMP-kind vectors under
+[`testdata/conformance/dump/`](https://github.com/agledger-ai/verify/tree/main/testdata/conformance/dump) (manifest:
+[`manifest-dump.json`](https://github.com/agledger-ai/verify/blob/main/testdata/conformance/manifest-dump.json))
+and the EXPORT-kind vectors under
+[`testdata/conformance/export/`](https://github.com/agledger-ai/verify/tree/main/testdata/conformance/export)
+(manifest: [`manifest-export.json`](https://github.com/agledger-ai/verify/blob/main/testdata/conformance/manifest-export.json))
+are the anti-drift seam shared with the independent Python verifier. They live
+in the source repository; the npm package does not ship them. They are
 **real engine output**, not synthesized here, so the two verifiers are held to
 the same wire format and agree verdict-for-verdict.
