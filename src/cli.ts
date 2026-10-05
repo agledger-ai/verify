@@ -203,7 +203,13 @@ Options:
                               key: the pin then vouches for what the key
                               stored before the instant. On a dump, entries
                               it signed before a trusted key retired it are
-                              listed as accounted for and do not fail.
+                              listed as accounted for and do not fail. Where
+                              an export lists a key retired at the instant the
+                              Server distrusts it from (distrustedFrom),
+                              earlier than its signed retirement, a run without
+                              the same entry fails on that window, and the
+                              finding names the --distrusted-key to confirm
+                              with the Server's operator.
   --report-format, -f         Output format. Default: text.
   --agent-keys                Path to a JSON file holding the Ed25519 public
                               keys of agent certs: a JWK, a list of JWKs, or a
@@ -537,6 +543,39 @@ function flagMessage(message: string): string {
     .replace(/^(sha256:[0-9a-f]{64}) is a trust anchor and a distrusted key with no instant,/, '$1 is a --trust-anchor and a --distrusted-key with no instant,');
 }
 
+/**
+ * verify-core words a finding, note or failure for a library caller, so its
+ * advice names options (`give distrustedKeys sha256:<hex>@<instant>`,
+ * `pin sha256:<hex> in trustAnchors`). A CLI user gives those as flags, so the report
+ * names the flag; the library's own result objects are left as they are.
+ */
+const OPTION_FLAGS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\badd (sha256:[0-9a-f]{64}) to distrustedKeys\b/g, 'add --distrusted-key $1'],
+  [/\bis in distrustedKeys\b/g, 'is given as a --distrusted-key'],
+  [/\bin trustAnchors\b/g, 'with --trust-anchor'],
+  [/\bNo trustAnchors were given\b/g, 'No --trust-anchor was given'],
+  [/\bdistrustedKeys\b/g, '--distrusted-key'],
+  [/\btrustAnchors\b/g, '--trust-anchor'],
+  [/\brequireSuppliedKeys\b/g, '--require-supplied-keys'],
+  [/\brequireKeyId\b/g, '--require-key-id'],
+  [/\bagentKeys\b/g, '--agent-keys'],
+];
+
+/** One string from a report, its option names given as this CLI's flags. */
+export function flagWording(text: string): string {
+  return OPTION_FLAGS.reduce((s, [pattern, flag]) => s.replace(pattern, flag), text);
+}
+
+/** A copy of a report with every string in it worded by {@link flagWording}. */
+function withFlagWording<T>(value: T): T {
+  if (typeof value === 'string') return flagWording(value) as T;
+  if (Array.isArray(value)) return value.map((v: unknown) => withFlagWording(v)) as T;
+  if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withFlagWording(v)])) as T;
+  }
+  return value;
+}
+
 export function runCli(argv: readonly string[]): CliResult {
   let parsed: ParsedArgs;
   try {
@@ -614,6 +653,7 @@ export function runCli(argv: readonly string[]): CliResult {
       }
       throw err;
     }
+    report = withFlagWording(report);
     const stdout =
       parsed.reportFormat === 'json'
         ? JSON.stringify(report, null, 2) + '\n'
@@ -692,8 +732,9 @@ export function runCli(argv: readonly string[]): CliResult {
     }
     throw err;
   }
-  // verify-core's result verbatim, verdict first: `valid` alone is true on a
-  // run that anchored nothing.
+  // verify-core's result, verdict first (`valid` alone is true on a run that
+  // anchored nothing), with its advice naming the flags.
+  result = withFlagWording(result);
   const { verdict, ...rest } = result;
   const stdout =
     parsed.reportFormat === 'json'
