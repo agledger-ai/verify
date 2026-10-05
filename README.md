@@ -134,19 +134,49 @@ before its cutoff, and no offline verifier can tell those from history inside
 the key's legitimate window. It needs a `--trust-anchor`.
 
 ```bash
-# Pinned on the key that succeeded the leaked one. Exits 1 when the leaked key
-# signed anything stored from that instant on.
+# Pinned on the key that succeeded the leaked one.
 agledger-verify ./dump --trust-anchor sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675 \
   --distrusted-key sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e@2026-09-30T22:06:09Z
 ```
 
+A dated entry may sit beside a `--trust-anchor` for the same key, which is
+how the Server's key-compromise runbook keeps a leaked key's history: the pin
+vouches for what the key stored before the instant, and the entry withdraws
+what it stored from then on. An entry with no instant beside a pin for the
+same key is refused, as the Server refuses to start with that pair.
+
+```bash
+# The leaked key stays pinned for its history before the instant.
+agledger-verify ./dump \
+  --trust-anchor sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e \
+  --trust-anchor sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675 \
+  --distrusted-key sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e@2026-09-30T22:06:09Z
+```
+
+On a dump, what a distrusted key signed outside its trust (from its instant
+on, or at any time when no pin reaches it) but stored before a key the walk
+trusts retired it is **accounted for**, as the engine's vault scan lists it in
+`distrustedEntries`: the distrust entry and that retirement account for it.
+It is listed, it is not verified, and it fails nothing, so a dump whose only
+such items are accounted for passes with exit `0`. The text report lists the
+chain entries under `audit_vault chain` as `accounted for` with the code
+`CHAIN_SIGNED_BY_DISTRUSTED_KEY`, and the key statements under `key
+anchoring`. In JSON they are `vault.accounted` (capped at 1000, as
+`vault.failures` is) with the true total in `vault.accountedCount`, and
+`keyTrust.accounted`. Each entry carries `code`, `chain` (`record`, `admin` or
+`schema`), `recordId`, `orgId`, `scopeId`, `position`, `keyId` and `detail`.
+Accounted entries do not count toward `vault.signedEntries`. Anything the key
+signed after that retirement, or under a distrusted key no trusted key has
+retired, still fails. An export file has nothing accounted for: such entries
+and statements fail there, as they do in the engine's export.
+
 A malformed pin or distrusted key, a key named twice, `--distrusted-key`
-without `--trust-anchor`, a key given to both (the Server refuses to start
-with that pair: pin the successor of a key that leaked), and a target that
-does not exist are each refused with exit `2` before anything is read; the
-library throws `TypeError` for the same inputs, and for an option
-`verifyDump` does not read. The Python `agledger-verify` and
-`agledger verify` refuse them with the same words and the same code.
+without `--trust-anchor`, a pinned key distrusted with no instant, and a
+target that does not exist are each refused with exit `2` before anything is
+read; the library throws `TypeError` for the same inputs, before it reads the
+directory, and for an option `verifyDump` does not read. The Python
+`agledger-verify` and `agledger verify` refuse them with the same words and
+the same code.
 
 Without a pin nothing is anchored. The chains are still checked against the
 dump's own `vault_signing_keys`, so tampering that leaves the keys alone is
@@ -282,8 +312,11 @@ if (report.verdict !== 'trusted') {
 `ok` is false only for `failed`. Without `trustAnchors` a clean dump is
 `unanchored`, with `keyTrust.status` `no_anchor`: a pass, not a trusted one. `distrustedKeys` takes
 the `VAULT_DISTRUSTED_KEYS` entries, as strings or parsed. A malformed anchor
-or distrusted key throws `TypeError`, as does `distrustedKeys` without
-`trustAnchors`.
+or distrusted key throws `TypeError`, as do `distrustedKeys` without
+`trustAnchors` and a pinned key distrusted with no instant, each before the
+directory is read. A dump's accounted entries are in `report.vault.accounted`
+(`AccountedEntry`, with `ACCOUNTED_ENTRY_CODE` as their code) and
+`report.vault.accountedCount`.
 
 To supply cert keys the dump does not sign itself, add them to the options:
 

@@ -64,6 +64,7 @@ export {
   parseTrustAnchors,
   parseDistrustedKeys,
   spkiSha256,
+  ACCOUNTED_ENTRY_CODE,
 } from '@agledger/verify-core';
 export type {
   VerificationKey,
@@ -75,8 +76,12 @@ export type {
   OptionalCheck,
   CheckApplicability,
   SuppliedKeyEntry,
+  AccountedEntry,
+  AccountedEntryCode,
   DistrustedKey,
+  DistrustSpan,
   KeyTrust,
+  KeyTrustNote,
   KeyTrustReport,
   KeyTrustStatus,
   RecordAuditExportInput,

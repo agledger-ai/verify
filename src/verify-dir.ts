@@ -7,6 +7,7 @@
  */
 import {
   assertDumpOptions,
+  assertKeyTrustOptions,
   verifyOrgAdminReadsChains,
   verifyVaultChains,
   assembleReport,
@@ -32,8 +33,9 @@ import type { VerifyReport } from './types.js';
  * `options.trustAnchors` (with `options.distrustedKeys`) runs the key walk,
  * and `options.agentKeys` enables the offline agent-signature check (see
  * `VerifyDumpOptions`). Throws `TypeError` on an option it does not read, a
- * malformed anchor or distrusted key, or a key both pinned and distrusted,
- * and `DumpReadError` on a file that cannot be read.
+ * malformed anchor or distrusted key, `distrustedKeys` without
+ * `trustAnchors`, or a pinned key distrusted with no instant, each before the
+ * directory is read, and `DumpReadError` on a file that cannot be read.
  */
 export function verifyDumpStreaming(
   dumpDir: string,
@@ -41,6 +43,7 @@ export function verifyDumpStreaming(
   options: VerifyDumpOptions = {},
 ): VerifyReport {
   assertDumpOptions('verifyDumpStreaming', options);
+  assertKeyTrustOptions(options);
   const companions = loadCompanions(dumpDir, filenames);
   const keys = walkDumpKeys(companions.signingKeys, companions.keyStatements, options);
   return assembleReport(

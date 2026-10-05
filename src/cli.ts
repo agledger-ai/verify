@@ -30,6 +30,7 @@ import {
   parseDistrustedKeys,
   parseTrustAnchors,
   verifyAuditExport,
+  type AccountedEntry,
   type AgentPublicKeyJwk,
   type CheckApplicability,
   type DistrustedKey,
@@ -385,7 +386,16 @@ function keyTrustLines(keyTrust: KeyTrustReport, indent: string): string[] {
   for (const n of keyTrust.notes) {
     lines.push(`${indent}  note: ${n.keyId === null ? '' : `key ${n.keyId}: `}${n.detail}`);
   }
+  for (const n of keyTrust.accounted) {
+    lines.push(`${indent}  accounted for: ${n.keyId === null ? '' : `key ${n.keyId}: `}${n.detail}`);
+  }
   return lines;
+}
+
+function accountedChainName(a: AccountedEntry): string {
+  if (a.chain === 'record') return `Record ${a.recordId}`;
+  if (a.chain === 'admin') return 'Chain admin';
+  return `Chain schema:${a.orgId ?? '__platform__'}`;
 }
 
 export function formatDumpReportText(report: VerifyReport, options: TextReportOptions = {}): string {
@@ -404,6 +414,15 @@ export function formatDumpReportText(report: VerifyReport, options: TextReportOp
   );
   lines.push(`  failures    : ${report.vault.failureCount}`);
   lines.push(...failureLines(report.vault.failures, report.vault.failureCount, '    '));
+  if (report.vault.accountedCount > 0) {
+    // Signed by a key the operator distrusts, before a key the walk trusts
+    // retired it: the distrust entry accounts for them. Not verified and not
+    // failures, and listed so nobody reads them as vouched for.
+    lines.push(`  accounted for: ${report.vault.accountedCount} (signed by a distrusted key before its retirement; not verified)`);
+    lines.push(...report.vault.accounted.map((a) => `    [${a.code}] ${accountedChainName(a)} pos ${a.position} key ${a.keyId}: ${a.detail}`));
+    const withheld = report.vault.accountedCount - report.vault.accounted.length;
+    if (withheld > 0) lines.push(`    ... and ${withheld} more not shown (${report.vault.accountedCount} total)`);
+  }
   lines.push('');
   lines.push('org_admin_reads chain');
   lines.push(`  orgs             : ${report.orgAdminReads.orgCount}`);
@@ -511,7 +530,7 @@ function flagMessage(message: string): string {
     .replace(/^trustAnchors entry /, '--trust-anchor ')
     .replace(/^distrustedKeys entry /, '--distrusted-key ')
     .replace(/^distrustedKeys names /, '--distrusted-key names ')
-    .replace(/^(sha256:[0-9a-f]{64}) is both a trust anchor and a distrusted key\./, '$1 is both a --trust-anchor and a --distrusted-key.');
+    .replace(/^(sha256:[0-9a-f]{64}) is a trust anchor and a distrusted key with no instant,/, '$1 is a --trust-anchor and a --distrusted-key with no instant,');
 }
 
 export function runCli(argv: readonly string[]): CliResult {
