@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { EXIT_CANNOT_VERIFY, EXIT_OK, runCli } from '../src/cli.js';
+import { EXIT_CANNOT_VERIFY, EXIT_OK, formatDumpReportText, runCli } from '../src/cli.js';
 import {
   ACCOUNTED_ENTRY_CODE,
   spkiSha256,
@@ -230,6 +230,25 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
       detail: expect.stringContaining('the distrust entry accounts for it'),
     }]);
     expect(report.vault.signedEntries).toBe(baseline.vault.signedEntries - 1);
+  });
+
+  it('the text report lists accounted key statements under key anchoring, and says how many accounted entries the cap withheld', () => {
+    const d = loadDump(join(CONFORMANCE, 'dump/valid-key-succession'));
+    const [previous, current] = [d.signingKeys.find((k) => k.status === 'retired')!, d.signingKeys.find((k) => k.status === 'active')!];
+    const entry = d.vaultEntries.find((e) => e.signing_key_id === previous.key_id)!;
+    const cutoff = new Date(Date.parse(entry.created_at!) - 1).toISOString();
+    const report = verifyDump(d, { trustAnchors: [`sha256:${spkiSha256(current.public_key)}`], distrustedKeys: [`sha256:${spkiSha256(previous.public_key)}@${cutoff}`] });
+    // Neither shape is in the corpus: a statement the distrust entry accounts
+    // for, and more accounted entries than the report lists.
+    const note = { keyId: previous.key_id, statementId: 'st-1', detail: 'a closure by a distrusted key, accounted for' };
+    const text = formatDumpReportText({
+      ...report,
+      keyTrust: { ...report.keyTrust, accounted: [note] },
+      vault: { ...report.vault, accountedCount: 1003 },
+    });
+    expect(text).toContain(`    accounted for: key ${previous.key_id}: a closure by a distrusted key, accounted for`);
+    expect(text).toContain('  accounted for: 1003 (signed by a distrusted key before its retirement; not verified)');
+    expect(text).toContain('    ... and 1002 more not shown (1003 total)');
   });
 
   it('the CLI lists an accounted entry in text and JSON and exits 0', () => {
