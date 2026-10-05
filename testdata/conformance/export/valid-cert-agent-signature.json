@@ -1,5 +1,5 @@
 {
-  "recordId": "01a0fd24-ae6d-76b2-9434-eb4eba257982",
+  "recordId": "01a1099e-5803-75fe-bc1a-26e1e355a7ef",
   "chainIntegrity": true,
   "chainIntegrityReason": null,
   "chainIntegrityDetail": null,
@@ -33,15 +33,15 @@
     ],
     "evidenceBinding": "Completion evidence is bound to the chain BY HASH: a COMPLETION_SUBMITTED entry's `payload.evidenceHash` is the SHA-256 hex digest of the evidence JSON canonicalized per RFC 8785 (JCS — keys sorted, no whitespace, JSON.stringify number/string rules). This is a DIFFERENT canonicalization from the chain envelope's `canonicalization: RFC8949-CDE` (deterministic CBOR), which covers only the COSE payload. To re-bind a separately-obtained evidence body offline: canonicalize it per RFC 8785, SHA-256 it, and compare against the signed `evidenceHash` (Python: `hashlib.sha256(json.dumps(evidence, separators=(\",\", \":\"), sort_keys=True).encode()).hexdigest()` matches for evidence without non-BMP key-ordering edge cases). Pass `?evidence=true` on GET /v1/records/{id}/audit-export to inline the evidence bodies at each COMPLETION_SUBMITTED entry's top-level `evidence` field — an unsigned projection (like the fields in `unsignedFields`) whose authority comes from re-binding it to the signed hash, not from its presence in the export. On encrypted-mode records the server never sees cleartext: `evidenceHash` is client-supplied at submission time, so re-bind against the decrypted cleartext using the canonicalization your writer used.",
     "embeddedKeysHint": "This export embeds the engine's active signing public key(s) at `signingPublicKeys` (keyId → base64). Convenient but trust-on-first-use: an attacker who replaces both the chain AND the embedded key gets a self-consistent forged export.",
-    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from /v1/verification-keys (or the cached /.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Re-fetch rather than pinning once: keys rotate, no event announces it, and every historical key stays published. Each entry names its key in `integrity.signingKeyId`; resolve that id in the fetched set and check the entry was written inside that key's `activatedAt`/`retiredAt` window (`retiredAt: null` means still active).",
-    "offlineVerifier": "Turnkey offline verifier: `@agledger/verify` on npm, installed at or above the `minVerifierVersion` /v1/verification-keys publishes for each signing key. Run `agledger-verify <dump-dir>` against a vault dump for the full chain, signature and checkpoint cross-check, with no AGLedger code in the dependency tree. Produce the dump with `./scripts/vault-dump.sh <out-dir>` from the install bundle, which runs the dump tool shipped in the image (`dist/scripts/dump-vault.js`), or with `pnpm vault:dump <out-dir>` (`scripts/dump-vault.ts`) from a source checkout. Either takes `--org <id>` to scope the dump to one org, which leaves out the platform-ops chain."
+    "oobKeysHint": "For higher-assurance verification, fetch the published verification keys out-of-band from /v1/verification-keys (or its alias /.well-known/agledger-vault-keys.json) and compare against the embedded `signingPublicKeys` BEFORE trusting any signature. Re-fetch rather than pinning once: keys rotate, no event announces it, and every historical key stays published. Each entry names its key in `integrity.signingKeyId`; resolve that id in the fetched set and check the entry was written inside that key's `activatedAt`/`retiredAt` window (`retiredAt: null` means still active).",
+    "offlineVerifier": "Turnkey offline verifier: `@agledger/verify` 2.0.0 or later on npm, the `minVerifierVersion` /v1/verification-keys publishes for each signing key; an older release fails a dump of this Server once an admin has read a record. Run `agledger-verify <dump-dir> --trust-anchor sha256:<pin>` against a vault dump for the full chain, signature and checkpoint cross-check, with no AGLedger code in the dependency tree. Produce the dump with `./scripts/vault-dump.sh <out-dir>` from the install bundle, which runs the dump tool shipped in the image (`dist/scripts/dump-vault.js`), or with `pnpm vault:dump <out-dir>` (`scripts/dump-vault.ts`) from a source checkout. Either takes `--org <id>` to scope the dump to one org, which leaves out the platform-ops chain."
   },
   "exportMetadata": {
-    "recordId": "01a0fd24-ae6d-76b2-9434-eb4eba257982",
-    "orgId": "032bcdd1-2cd2-422c-82b4-5ef306055665",
+    "recordId": "01a1099e-5803-75fe-bc1a-26e1e355a7ef",
+    "orgId": "53168f7c-f52d-4490-9f6b-0c62439f9d7d",
     "type": "test-generic-v1",
     "operatingMode": "cleartext",
-    "exportDate": "2026-10-02T15:03:54.755Z",
+    "exportDate": "2026-10-05T01:12:14.617Z",
     "totalEntries": 1,
     "expectedEntries": null,
     "chainIntegrity": true,
@@ -61,18 +61,18 @@
     },
     "signingKeyWindows": {
       "15d63684b387235c": {
-        "activatedAt": "2026-10-02T15:03:52.081Z",
+        "activatedAt": "2026-10-05T01:12:11.954Z",
         "retiredAt": null
       }
     },
     "signingKeyStatements": {
       "15d63684b387235c": [
         {
-          "id": "01a0fd24-a41c-79ab-b3b2-51bab8e97597",
+          "id": "01a1099e-4dbe-7233-83aa-e81b67ec690a",
           "kind": "genesis",
-          "createdAt": "2026-10-02T15:03:52.092689Z",
+          "createdAt": "2026-10-05T01:12:11.966280Z",
           "cose": [
-            "0oRYO6MBJwN4K2FwcGxpY2F0aW9uL3ZuZC5hZ2xlZGdlci5rZXktc3RhdGVtZW50K2Nib3IESBXWNoSzhyNcoFkBBKRjaWF0Gmq/x9ljaXNzdmh0dHBzOi8vYWdsZWRnZXIubG9jYWxjdHlwZ2dlbmVzaXNnc3ViamVjdKVjYWxnZ0VkMjU1MTlja2lkcDE1ZDYzNjg0YjM4NzIzNWNkc3BraVgsMCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CJqc3BraVNoYTI1NnhAMTVkNjM2ODRiMzg3MjM1YzQ3ZmUzYTgxZTMwMDRiOTI4ZjRlYTUzNTIzNmEyYzFiNDc0NjVjZTVmZGQ3Y2UwZWthY3RpdmF0ZWRBdHgbMjAyNi0xMC0wMlQxNTowMzo1Mi4wODE1MzRaWEBPtMMZhVW5qv+OAJMxi5UrngYGLlfjH5yGPxF1tSI2AJPSxD1EKcr5stLG0SYy3OvMATiPWRuOwnt+hIZLSZYL"
+            "0oRYO6MBJwN4K2FwcGxpY2F0aW9uL3ZuZC5hZ2xlZGdlci5rZXktc3RhdGVtZW50K2Nib3IESBXWNoSzhyNcoFkBBKRjaWF0GmrC+WxjaXNzdmh0dHBzOi8vYWdsZWRnZXIubG9jYWxjdHlwZ2dlbmVzaXNnc3ViamVjdKVjYWxnZ0VkMjU1MTlja2lkcDE1ZDYzNjg0YjM4NzIzNWNkc3BraVgsMCowBQYDK2VwAyEAsRUegebUyHRO0C3kCEYOfsZkx/qZD1SDdR6WxvjZ1CJqc3BraVNoYTI1NnhAMTVkNjM2ODRiMzg3MjM1YzQ3ZmUzYTgxZTMwMDRiOTI4ZjRlYTUzNTIzNmEyYzFiNDc0NjVjZTVmZGQ3Y2UwZWthY3RpdmF0ZWRBdHgbMjAyNi0xMC0wNVQwMToxMjoxMS45NTQ4ODdaWEDXwh9T18qoTav39yvD7xkaWndkUnKwZE4fxWg1oQX6J2e9udUH6k/Mced7wSv55NVa48dFawg5EbXN9Z8jXxUE"
           ]
         }
       ]
@@ -82,12 +82,12 @@
   "entries": [
     {
       "chainPosition": 1,
-      "createdAt": "2026-10-02T15:03:54.739Z",
-      "recordId": "01a0fd24-ae6d-76b2-9434-eb4eba257982",
+      "createdAt": "2026-10-05T01:12:14.601Z",
+      "recordId": "01a1099e-5803-75fe-bc1a-26e1e355a7ef",
       "actorId": "00000000-0000-0000-0000-000000000000",
       "actorRole": "agent",
-      "actorOwnerId": "65aa41e4-f77e-4073-a147-1d371f8d9e0a",
-      "actorDisplayName": "agent-65aa41e4",
+      "actorOwnerId": "e303789f-ba40-48d9-8d14-2b36c2c3b6b1",
+      "actorDisplayName": "agent-e303789f",
       "actorOwnerType": "agent",
       "actorOidcIss": "https://idp.corpus.example/",
       "actorOidcSub": "workload|corpus-agent",
@@ -96,23 +96,23 @@
       "humanReadableLabel": "Record opened",
       "payload": {
         "type": "test-generic-v1",
-        "orgId": "032bcdd1-2cd2-422c-82b4-5ef306055665",
+        "orgId": "53168f7c-f52d-4490-9f6b-0c62439f9d7d",
         "state": "DRAFT",
         "status": "CREATED",
         "criteria": {
           "task": "corpus-signed-create"
         },
-        "recordId": "01a0fd24-ae6d-76b2-9434-eb4eba257982",
-        "changedBy": "65aa41e4-f77e-4073-a147-1d371f8d9e0a",
+        "recordId": "01a1099e-5803-75fe-bc1a-26e1e355a7ef",
+        "changedBy": "e303789f-ba40-48d9-8d14-2b36c2c3b6b1",
         "chainDepth": 0,
         "selfPrincipal": true,
         "parentRecordId": null,
-        "performerAgentId": "65aa41e4-f77e-4073-a147-1d371f8d9e0a",
-        "principalAgentId": "65aa41e4-f77e-4073-a147-1d371f8d9e0a",
+        "performerAgentId": "e303789f-ba40-48d9-8d14-2b36c2c3b6b1",
+        "principalAgentId": "e303789f-ba40-48d9-8d14-2b36c2c3b6b1",
         "on_behalf_of": {
           "cert": {
-            "id": "3a03f197-12a3-4fa4-8a78-575082a8db6b",
-            "expires_at": 1790954034,
+            "id": "2b9ddf6d-ef1e-44ff-93b2-1e22a202bc2e",
+            "expires_at": 1791163334,
             "thumbprint": "sha256:cb9e20283b92fa688518d1b8b587967052cbe6f22c81b0d518fca968dc690562"
           },
           "oidc": {
@@ -120,20 +120,20 @@
             "sub": "workload|corpus-agent"
           },
           "validated": true,
-          "validation_at": 1790953434,
+          "validation_at": 1791162734,
           "validation_kid": "corpus-idp-1",
           "agent_signature": {
             "alg": "EdDSA",
-            "signature": "/P+s0h8WO4qaw9RGVgPtWAa/n/0/bvR9zCbCRU7NaFYOPzhYZr89519ru74Ih5GmA31kCWeKWwtrr9yiOISSAQ==",
-            "content_hash": "sha256:3f8aa525d2e958e007dfaa34af58726ddb08a4ed71288106630c4340b33c2c1c"
+            "signature": "f9uQDEV7H/zeMqnsw4Czaa7cdPCqphUiy1HOWfR1QwsMCwNCM5XdrpzJxm+apBwqVRMSVjuTbTaKyK8pUJwiBg==",
+            "content_hash": "sha256:16f3f294c726d1cf75cd4eeab3d384cd3c58a4f181167b38bbde4ff4e4f806ee"
           },
           "validation_key_thumbprint": "sha256:b519cb36dbe460717a804d7c7dccc4f9304dcab0a6169aa17b89d2f4181dc705"
         }
       },
       "integrity": {
-        "payloadHash": "2da5e1ac7d35feefebba8e34d643dfb3edeccf9dcf36a3ddc7bdb759a0a495ee",
+        "payloadHash": "a43bf10105c53b92a26d2b9da092f109c6b48c8ea38780d97c0273cc5c80de37",
         "previousHash": null,
-        "coseSign1": "0oRYrqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQwMWEwZmQyNC1hZTZkLTc2YjItOTQzNC1lYjRlYmEyNTc5ODIGGmq/x9o6AAEAAqMBUAAAAAAAAAAAAAAAAAAAAAACZWFnZW50A1BlqkHk935Ac6FHHTcfjZ4KOgABAACiAQEC9qBZBNukZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1NlggNuMx1/JWdXJ+VrAxown7Ztu/7YModgygXwpmuKWdlYZpcHJlZGljYXRlpGdwYXlsb2FkrGR0eXBlb3Rlc3QtZ2VuZXJpYy12MWVvcmdJZHgkMDMyYmNkZDEtMmNkMi00MjJjLTgyYjQtNWVmMzA2MDU1NjY1ZXN0YXRlZURSQUZUZnN0YXR1c2dDUkVBVEVEaGNyaXRlcmlhoWR0YXNrdGNvcnB1cy1zaWduZWQtY3JlYXRlaHJlY29yZElkeCQwMWEwZmQyNC1hZTZkLTc2YjItOTQzNC1lYjRlYmEyNTc5ODJpY2hhbmdlZEJ5eCQ2NWFhNDFlNC1mNzdlLTQwNzMtYTE0Ny0xZDM3MWY4ZDllMGFqY2hhaW5EZXB0aABtc2VsZlByaW5jaXBhbPVucGFyZW50UmVjb3JkSWT2cHBlcmZvcm1lckFnZW50SWR4JDY1YWE0MWU0LWY3N2UtNDA3My1hMTQ3LTFkMzcxZjhkOWUwYXBwcmluY2lwYWxBZ2VudElkeCQ2NWFhNDFlNC1mNzdlLTQwNzMtYTE0Ny0xZDM3MWY4ZDllMGFpcmVjb3JkX2lkeCQwMWEwZmQyNC1hZTZkLTc2YjItOTQzNC1lYjRlYmEyNTc5ODJqZW50cnlfdHlwZW5SRUNPUkRfQ1JFQVRFRGxvbl9iZWhhbGZfb2anZGNlcnSjYmlkeCQzYTAzZjE5Ny0xMmEzLTRmYTQtOGE3OC01NzUwODJhOGRiNmJqZXhwaXJlc19hdBpqv8oyanRodW1icHJpbnR4R3NoYTI1NjpjYjllMjAyODNiOTJmYTY4ODUxOGQxYjhiNTg3OTY3MDUyY2JlNmYyMmM4MWIwZDUxOGZjYTk2OGRjNjkwNTYyZG9pZGOiY2lzc3gbaHR0cHM6Ly9pZHAuY29ycHVzLmV4YW1wbGUvY3N1YnV3b3JrbG9hZHxjb3JwdXMtYWdlbnRpdmFsaWRhdGVk9W12YWxpZGF0aW9uX2F0Gmq/x9pudmFsaWRhdGlvbl9raWRsY29ycHVzLWlkcC0xb2FnZW50X3NpZ25hdHVyZaNjYWxnZUVkRFNBaXNpZ25hdHVyZXhYL1ArczBoOFdPNHFhdzlSR1ZnUHRXQWEvbi8wL2J2Ujl6Q2JDUlU3TmFGWU9QemhZWnI4OTUxOXJ1NzRJaDVHbUEzMWtDV2VLV3d0cnI5eWlPSVNTQVE9PWxjb250ZW50X2hhc2h4R3NoYTI1NjozZjhhYTUyNWQyZTk1OGUwMDdkZmFhMzRhZjU4NzI2ZGRiMDhhNGVkNzEyODgxMDY2MzBjNDM0MGIzM2MyYzFjeBl2YWxpZGF0aW9uX2tleV90aHVtYnByaW50eEdzaGEyNTY6YjUxOWNiMzZkYmU0NjA3MTdhODA0ZDdjN2RjY2M0ZjkzMDRkY2FiMGE2MTY5YWExN2I4OWQyZjQxODFkYzcwNW1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWEBtLm/MmddkX6cZYh1yNWWqtpDoRS+KjIRhNLZ5HcZ8OidT9rqmgkg2qHBn7uG49/J2DDnTxP1a4C57ZEBYfk4D",
+        "coseSign1": "0oRYrqUBJwN4HGFwcGxpY2F0aW9uL3ZuZC5pbi10b3RvK2Nib3IESBXWNoSzhyNcD6QBdmh0dHBzOi8vYWdsZWRnZXIubG9jYWwCeCQwMWExMDk5ZS01ODAzLTc1ZmUtYmMxYS0yNmUxZTM1NWE3ZWYGGmrC+W46AAEAAqMBUAAAAAAAAAAAAAAAAAAAAAACZWFnZW50A1DjA3ifukBI2Y0UKzbCw7axOgABAACiAQEC9qBZBNukZV90eXBleB9odHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxZ3N1YmplY3SBomRuYW1laXJlY29yZF9pZGZkaWdlc3ShZnNoYTI1NlggnUmV3UPYtrk+TPpO1hsf9ioeoLkHFqqGZRaB5CBFGplpcHJlZGljYXRlpGdwYXlsb2FkrGR0eXBlb3Rlc3QtZ2VuZXJpYy12MWVvcmdJZHgkNTMxNjhmN2MtZjUyZC00NDkwLTlmNmItMGM2MjQzOWY5ZDdkZXN0YXRlZURSQUZUZnN0YXR1c2dDUkVBVEVEaGNyaXRlcmlhoWR0YXNrdGNvcnB1cy1zaWduZWQtY3JlYXRlaHJlY29yZElkeCQwMWExMDk5ZS01ODAzLTc1ZmUtYmMxYS0yNmUxZTM1NWE3ZWZpY2hhbmdlZEJ5eCRlMzAzNzg5Zi1iYTQwLTQ4ZDktOGQxNC0yYjM2YzJjM2I2YjFqY2hhaW5EZXB0aABtc2VsZlByaW5jaXBhbPVucGFyZW50UmVjb3JkSWT2cHBlcmZvcm1lckFnZW50SWR4JGUzMDM3ODlmLWJhNDAtNDhkOS04ZDE0LTJiMzZjMmMzYjZiMXBwcmluY2lwYWxBZ2VudElkeCRlMzAzNzg5Zi1iYTQwLTQ4ZDktOGQxNC0yYjM2YzJjM2I2YjFpcmVjb3JkX2lkeCQwMWExMDk5ZS01ODAzLTc1ZmUtYmMxYS0yNmUxZTM1NWE3ZWZqZW50cnlfdHlwZW5SRUNPUkRfQ1JFQVRFRGxvbl9iZWhhbGZfb2anZGNlcnSjYmlkeCQyYjlkZGY2ZC1lZjFlLTQ0ZmYtOTNiMi0xZTIyYTIwMmJjMmVqZXhwaXJlc19hdBpqwvvGanRodW1icHJpbnR4R3NoYTI1NjpjYjllMjAyODNiOTJmYTY4ODUxOGQxYjhiNTg3OTY3MDUyY2JlNmYyMmM4MWIwZDUxOGZjYTk2OGRjNjkwNTYyZG9pZGOiY2lzc3gbaHR0cHM6Ly9pZHAuY29ycHVzLmV4YW1wbGUvY3N1YnV3b3JrbG9hZHxjb3JwdXMtYWdlbnRpdmFsaWRhdGVk9W12YWxpZGF0aW9uX2F0GmrC+W5udmFsaWRhdGlvbl9raWRsY29ycHVzLWlkcC0xb2FnZW50X3NpZ25hdHVyZaNjYWxnZUVkRFNBaXNpZ25hdHVyZXhYZjl1UURFVjdIL3plTXFuc3c0Q3phYTdjZFBDcXBoVWl5MUhPV2ZSMVF3c01Dd05DTTVYZHJwekp4bSthcEJ3cVZSTVNWanVUYlRhS3lLOHBVSndpQmc9PWxjb250ZW50X2hhc2h4R3NoYTI1NjoxNmYzZjI5NGM3MjZkMWNmNzVjZDRlZWFiM2QzODRjZDNjNThhNGYxODExNjdiMzhiYmRlNGZmNGU0ZjgwNmVleBl2YWxpZGF0aW9uX2tleV90aHVtYnByaW50eEdzaGEyNTY6YjUxOWNiMzZkYmU0NjA3MTdhODA0ZDdjN2RjY2M0ZjkzMDRkY2FiMGE2MTY5YWExN2I4OWQyZjQxODFkYzcwNW1wcmVkaWNhdGVUeXBleC5odHRwczovL2FnbGVkZ2VyLmFpL3ByZWRpY2F0ZXMvcmVjb3JkLXN0YXRlL3YxWEAuey3INaQVbEi2efeGRE7wRjHTBm00E219KlSlkRVQ1zx1KL0SzW+nVnFofrdwqzOSmHxZjQAOAPm8vqOnkf4J",
         "signingKeyId": "15d63684b387235c",
         "valid": true
       }
