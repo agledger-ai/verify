@@ -2,10 +2,10 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-10-02T15:03:56.030Z",
+  "generatedAt": "2026-10-05T01:12:15.812Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "63649593",
+    "apiGitSha": "5444a54f",
     "apiVersion": "2.0.0",
     "formatVersion": "2.0"
   },

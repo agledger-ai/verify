@@ -2,10 +2,10 @@
   "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of the NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-10-02T15:03:56.031Z",
+  "generatedAt": "2026-10-05T01:12:15.812Z",
   "provenance": {
     "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "63649593",
+    "apiGitSha": "5444a54f",
     "apiVersion": "2.0.0",
     "formatVersion": "2.0"
   },
