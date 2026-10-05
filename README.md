@@ -133,6 +133,20 @@ signed either, so the holder of a leaked key can still sign entries dated
 before its cutoff, and no offline verifier can tell those from history inside
 the key's legitimate window. It needs a `--trust-anchor`.
 
+An API 2.0 Server lists a key its `VAULT_DISTRUSTED_KEYS` names with
+`distrustedFrom`, the entry's instant, in an export's `signingKeyWindows`, and
+where that instant is earlier than the retirement the key's closures sign, it
+lists the key retired at that instant. A run not given the same entry still
+fails `CHAIN_KEY_WINDOW_DRIFT` on that window (`KEY_CLOSURE_INVALID` where no
+closure retires the key), but the finding names the entry the listing says the
+Server applied, as `--distrusted-key sha256:<hex>@<distrustedFrom>`, and says
+so when the entry you gave carries another instant; one at an earlier instant
+draws no finding on the window and is said in a note, though entries the key
+signed after that instant still fail. The listing is the Server's unsigned
+word, so confirm the instant with its operator before passing that entry.
+Findings and notes name the flags in text and JSON alike, where the library
+result names verify-core's options (`distrustedKeys`, `trustAnchors`).
+
 ```bash
 # Pinned on the key that succeeded the leaked one.
 agledger-verify ./dump --trust-anchor sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675 \

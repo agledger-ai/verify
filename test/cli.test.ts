@@ -9,13 +9,14 @@ import {
   EXIT_CANNOT_VERIFY,
   EXIT_OK,
   EXIT_VERIFICATION_FAILED,
+  flagWording,
   formatDumpReportText,
   formatExportReportText,
   parseArgs,
   runCli,
 } from '../src/cli.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { reportKeyTrust, type VerifyExportResult } from '@agledger/verify-core';
+import { reportKeyTrust, verifyAuditExport, type RecordAuditExportInput, type VerifyExportResult } from '@agledger/verify-core';
 import { buildHappyDump, cloneDump, pinOf } from './fixtures.js';
 
 /** Minimal clean export result; tests override only the field under test. */
@@ -243,7 +244,7 @@ describe('runCli (dump-dir end-to-end)', () => {
     const { pin, distrust } = JSON.parse(readFileSync(join(fx, 'meta.json'), 'utf-8')) as { pin: string; distrust: string };
     const result = runCli([join(fx, 'export.json'), '--keys', join(fx, 'keys.json'), '--trust-anchor', pin, '--distrusted-key', distrust]);
     expect(result.exitCode).toBe(EXIT_OK);
-    expect(result.stdout).toMatch(/note: key [0-9a-f]{16}: a succession by [0-9a-f]{16}, which distrustedKeys distrusts/);
+    expect(result.stdout).toMatch(/note: key [0-9a-f]{16}: a succession by [0-9a-f]{16}, which --distrusted-key distrusts/);
   });
 
   it('exits 0 on a clean dump directory pinned on its key', () => {
@@ -262,8 +263,9 @@ describe('runCli (dump-dir end-to-end)', () => {
     expect(text.stdout).toMatch(/^\[VERIFIED, NOT ANCHORED\]/);
     const json = runCli([dir, '-f', 'json']);
     expect(json.exitCode).toBe(EXIT_OK);
-    const parsed = JSON.parse(json.stdout) as { ok: boolean; verdict: string; keyTrust: { status: string } };
+    const parsed = JSON.parse(json.stdout) as { ok: boolean; verdict: string; keyTrust: { status: string; detail: string } };
     expect(parsed).toMatchObject({ ok: true, verdict: 'unanchored', keyTrust: { status: 'no_anchor' } });
+    expect(parsed.keyTrust.detail).toMatch(/^No --trust-anchor was given, .* \(sha256:<hex>\) as --trust-anchor\.$/);
   });
 
   it('exits 1 when the pin reaches none of the keys that signed the dump', () => {
@@ -425,3 +427,84 @@ describe('runCli key-policy flags (verify#8, conformance corpus)', () => {
   });
 });
 
+
+/**
+ * An unmodified API 2.0 export of a record its first key K signed, taken after
+ * the Server retired K with force from its successor F and restarted with
+ * VAULT_DISTRUSTED_KEYS=sha256:<K>@<instant>: signingKeyWindows lists K
+ * retired at that instant, with distrustedFrom. verify-core reads the field
+ * from the export; the CLI reports what it advises with the flag names.
+ */
+describe('runCli on an export after a dated distrust entry', () => {
+  const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'live-2.0.0', 'export-dated-distrust.json');
+  const F = 'sha256:78e7bba47a2dccdb1dbf4f2dc81dc58a5c58735abe480de49d05081d3452aa3a';
+  const K = 'sha256:b649db0ec7c5c0fd921c2cb4d40466d91f4d98252dad2f7c0243851167b2d09e';
+  const FROM = '2026-10-05T23:03:51.537314Z';
+  type Json = VerifyExportResult & { verdict: string };
+  const run = (...flags: string[]) => {
+    const text = runCli([fixture, '--trust-anchor', F, ...flags]);
+    const json = runCli([fixture, '--trust-anchor', F, ...flags, '-f', 'json']);
+    expect(json.exitCode).toBe(text.exitCode);
+    return { text, json: JSON.parse(json.stdout) as Json };
+  };
+
+  it('pinned on F alone, fails CHAIN_KEY_WINDOW_DRIFT naming the --distrusted-key the Server applies', () => {
+    const { text, json } = run();
+    expect(text.exitCode).toBe(EXIT_VERIFICATION_FAILED);
+    expect(json).toMatchObject({ verdict: 'failed', brokenAt: { position: 0, code: 'CHAIN_KEY_WINDOW_DRIFT' } });
+    const advice = `this walk was given no distrust entry for it. If the operator confirms it, give --distrusted-key ${K}@${FROM}.`;
+    expect(json.keyTrust.findings.map((f) => f.code)).toEqual(['CHAIN_KEY_WINDOW_DRIFT']);
+    expect(json.keyTrust.findings[0]!.detail).toContain(advice);
+    expect(json.brokenAt!.detail).toContain(advice);
+    expect(text.stdout).toContain(`[CHAIN_KEY_WINDOW_DRIFT] key b649db0ec7c5c0fd: retiredAt 2026-10-05T23:03:51.537Z is listed as the Server's distrust cutoff`);
+    expect(text.stdout).toContain(advice);
+    for (const out of [text.stdout, JSON.stringify(json)]) expect(out).not.toMatch(/distrustedKeys|trustAnchors/);
+  });
+
+  it('pinned on F with the entry the listing names, passes with nothing to say', () => {
+    const { text, json } = run('--distrusted-key', `${K}@${FROM}`);
+    expect(text.exitCode).toBe(EXIT_OK);
+    expect(text.stdout).toMatch(/^\[PASS\]/);
+    expect(json).toMatchObject({ verdict: 'trusted', valid: true });
+    expect(json.keyTrust.findings).toEqual([]);
+    expect(json.keyTrust.notes).toEqual([]);
+  });
+
+  it('pinned on F with a later instant for K, fails saying the two entries disagree', () => {
+    const { text, json } = run('--distrusted-key', `${K}@2026-10-05T23:04:00Z`);
+    expect(text.exitCode).toBe(EXIT_VERIFICATION_FAILED);
+    expect(json.brokenAt).toMatchObject({ position: 0, code: 'CHAIN_KEY_WINDOW_DRIFT' });
+    const disagree = `the distrust entry given for it (from 2026-10-05T23:04:00.000000Z) and the one the listing says the Server applies (VAULT_DISTRUSTED_KEYS, from ${FROM}) disagree.`;
+    expect(json.brokenAt!.detail).toContain(disagree);
+    expect(text.stdout).toContain(disagree);
+  });
+
+  it('pinned on F with an earlier instant for K, passes with a note naming --distrusted-key', () => {
+    const { text, json } = run('--distrusted-key', `${K}@2026-10-05T23:03:50Z`);
+    expect(text.exitCode).toBe(EXIT_OK);
+    expect(json.verdict).toBe('trusted');
+    const note = `--distrusted-key gives b649db0ec7c5c0fd the instant 2026-10-05T23:03:50.000000Z, and the listing says the Server distrusts it from ${FROM}`;
+    expect(json.keyTrust.notes.map((n) => n.detail.slice(0, note.length))).toEqual([note]);
+    expect(text.stdout).toContain(`note: key b649db0ec7c5c0fd: ${note}`);
+  });
+
+  it('leaves the library result in verify-core\'s option names', () => {
+    const doc = JSON.parse(readFileSync(fixture, 'utf-8')) as RecordAuditExportInput;
+    expect(verifyAuditExport(doc, { trustAnchors: [F] }).brokenAt!.detail).toContain(`give distrustedKeys ${K}@${FROM}.`);
+  });
+});
+
+describe('flagWording', () => {
+  it.each([
+    ['If the operator confirms it, give distrustedKeys sha256:ab@x.', 'If the operator confirms it, give --distrusted-key sha256:ab@x.'],
+    ['distrustedKeys gives k the instant t', '--distrusted-key gives k the instant t'],
+    [`if k leaked as well, add sha256:${'c'.repeat(64)} to distrustedKeys too.`, `if k leaked as well, add --distrusted-key sha256:${'c'.repeat(64)} too.`],
+    ['k is in distrustedKeys, and this closure still counts', 'k is given as a --distrusted-key, and this closure still counts'],
+    ['If k is honest, pin sha256:e in trustAnchors (VAULT_TRUST_ANCHORS on the Server)', 'If k is honest, pin sha256:e with --trust-anchor (VAULT_TRUST_ANCHORS on the Server)'],
+    ['No trustAnchors were given, so ... (sha256:<hex>) as trustAnchors.', 'No --trust-anchor was given, so ... (sha256:<hex>) as --trust-anchor.'],
+    ['(requireKeyId, or requireSuppliedKeys refusing a key)', '(--require-key-id, or --require-supplied-keys refusing a key)'],
+    ['distrustedFrom and VAULT_DISTRUSTED_KEYS stay as they are', 'distrustedFrom and VAULT_DISTRUSTED_KEYS stay as they are'],
+  ])('%s', (from, to) => {
+    expect(flagWording(from)).toBe(to);
+  });
+});
