@@ -12,6 +12,14 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 24 is the engines.node floor, supported to 2028-04-30; 26 is LTS from
+        # 2026-10-28. Leading on what we TEST costs a job. Leading on what we
+        # DECLARE would cost users, which is why engines.node and @types/node
+        # stay at 24 until it leaves support.
+        node-version: [24, 26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,10 +33,10 @@ jobs:
             exit 1
           fi
 
-      - name: Use Node.js 24
+      - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
       - name: Install dependencies
