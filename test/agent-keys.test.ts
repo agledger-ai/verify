@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_SIGNATURE_CONTEXT, ed25519JwkThumbprint, type AgentPublicKeyJwk } from '@agledger/verify-core';
-import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_VERIFICATION_FAILED, parseArgs, runCli as runCliUnpinned } from '../src/cli.js';
+import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_VERIFICATION_FAILED, parseArgs, parseFederationKeys, runCli as runCliUnpinned } from '../src/cli.js';
 import { verifyDump } from '../src/dump-verifier.js';
 import { verifyDumpStreaming } from '../src/verify-dir.js';
 import type { VaultEntryDump, VerifyReport } from '../src/types.js';
@@ -78,6 +78,42 @@ describe('parseArgs --agent-keys', () => {
   it('rejects a missing value', () => {
     expect(() => parseArgs(['x', '--agent-keys'])).toThrow(/--agent-keys requires a value/);
     expect(() => parseArgs(['x', '--agent-keys='])).toThrow(/--agent-keys requires a value/);
+  });
+});
+
+describe('parseArgs --federation-key', () => {
+  it('collects one <hubId>=<key> per flag, separate or with =', () => {
+    expect(parseArgs(['x', '--federation-key', 'hub-b=AAA', '--federation-key=hub-c=BBB']).federationKeys).toEqual(['hub-b=AAA', 'hub-c=BBB']);
+    expect(parseArgs(['x']).federationKeys).toEqual([]);
+  });
+
+  it('rejects a missing value', () => {
+    expect(() => parseArgs(['x', '--federation-key'])).toThrow(/--federation-key requires a value/);
+    expect(() => parseArgs(['x', '--federation-key='])).toThrow(/--federation-key requires a value/);
+  });
+});
+
+describe('parseFederationKeys', () => {
+  const spki = 'MCowBQYDK2VwAyEA' + 'A'.repeat(43) + '=';
+  it('maps hub ids to keys and refuses what is not <hubId>=<Ed25519 key>', () => {
+    expect(parseFederationKeys(['hub-b=' + spki])).toEqual({ 'hub-b': spki });
+    expect(parseFederationKeys(['hub-b'])).toMatch(/Invalid --federation-key "hub-b"/);
+    expect(parseFederationKeys(['=' + spki])).toMatch(/Invalid --federation-key/);
+    expect(parseFederationKeys(['hub-b=not-a-key'])).toMatch(/hub hub-b: the key is not an Ed25519 public key/);
+    expect(parseFederationKeys(['hub-b=' + spki, 'hub-b=' + spki])).toMatch(/names hub hub-b twice/);
+  });
+
+  it('is refused by the CLI before any verification, and an export with no sealed message counts none', () => {
+    const bad = runCli([EXPORT, '--federation-key', 'hub-b=nope', '-f', 'json']);
+    expect(bad.exitCode).toBe(EXIT_CANNOT_VERIFY);
+    expect(bad.stdout).toContain('not an Ed25519 public key');
+    const r = runCli([EXPORT, '--federation-key', 'hub-b=' + spki, '-f', 'json']);
+    expect(r.exitCode).toBe(EXIT_OK);
+    const out = json<ExportJson & { federationWire: { present: number; verified: number } }>(r.stdout);
+    expect(out.federationWire).toEqual({ present: 0, verified: 0 });
+    expect(r.stdout).not.toContain('peer messages');
+    const text = runCli([EXPORT, '--federation-key', 'hub-b=' + spki]);
+    expect(text.stdout).toContain('peer messages     : present=0 verified=0 (none on the chain)');
   });
 });
 
@@ -240,6 +276,7 @@ describe('--agent-keys on a dump directory', () => {
       key_temporal: 'applied',
       agent_signature: 'applied',
       key_anchoring: 'applied',
+      federation_wire: 'skipped_no_input',
     });
     expect(report.vault.agentSignatures).toEqual({ present: 15, verified: 8 });
   });

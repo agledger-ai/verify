@@ -53,6 +53,7 @@ Node 24 or newer.
 agledger-verify <target> [--trust-anchor sha256:<hex>]...
                 [--distrusted-key sha256:<hex>[@<instant>]]...
                 [--agent-keys <file>]
+                [--federation-key <hubId>=<key>]...
                 [--report-format text|json]
                 [--keys <file>] [--require-key-id <id>]
                 [--require-supplied-keys]
@@ -343,6 +344,32 @@ const report = verifyDumpStreaming('/path/to/dump', undefined, { agentKeys: [age
 console.log(report.vault.optionalChecks.agent_signature); // 'applied' once a key matched
 console.log(report.vault.agentSignatures); // e.g. { present: 12, verified: 6 }
 ```
+
+### Messages from a federated peer
+
+A Server that peers with another seals each message it accepts from that
+peer on the chain entry it writes for it (`payload.wire` on its
+`FEDERATION_*` entries): the body as the peer signed it, the peer's registered
+key, the hub ids, the body hash, the timestamp, the nonce and the signature.
+Every sealed message is held to its body hash and to the entry that carries
+it on every run. To also prove what the peer asserted, pass the peer's
+federation key, which its operator gives you (base64 SPKI DER, or base64 of
+the raw 32 bytes the handshake registered), once per peer:
+
+```bash
+agledger-verify ./dump --federation-key hub-b=MCowBQYDK2VwAyEA...
+agledger-verify export.json --federation-key hub-b=MCowBQYDK2VwAyEA...
+```
+
+A sealed signature that does not verify under that key, a sealed key that is
+not the one you were given, a body that no longer hashes to what was signed,
+or an entry that asserts a state the sealed body does not carry fails
+`CHAIN_FEDERATION_WIRE_INVALID`. The report counts the messages under
+`federationWire` (`present`, and `verified` under a key); a message from a hub
+you gave no key for is hashed and matched to its entry but its peer signature
+is not checked, which the text report says. In code, pass `federationKeys`
+(`{ [hubId]: key }` or `[{ hubId, publicKey }]`) to `verifyDumpStreaming`,
+`verifyDump` or `verifyAuditExport`.
 
 `verifyDumpStreaming` is the one to reach for: it streams `audit_vault.ndjson`
 instead of materializing it. `loadDump` + `verifyDump` still exist and produce

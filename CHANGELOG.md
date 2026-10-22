@@ -4,6 +4,12 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-10-22
+
+### Added
+
+- **`--federation-key <hubId>=<key>`, and `federationKeys` on `verifyDump` and `verifyDumpStreaming`:** a receiving Server's `FEDERATION_*` entries seal each peer message as the peer signed it (`payload.wire`); every sealed message is held to its body hash and to its entry on every run, and one from a hub whose federation key is given is also re-verified under it, which proves what the peer asserted from this Server's dump or export alone. A bad value is a could-not-verify before anything is read; a sealed message that does not hold fails `CHAIN_FEDERATION_WIRE_INVALID`. The reports carry `federationWire: { present, verified }` under `vault` and on an export result, and the text reports a `peer msgs` / `peer messages` line. Built on `@agledger/verify-core` 2.1.0.
+
 ## [2.0.0] - 2026-10-05
 
 This release targets AGLedger API 2.0 and reads nothing older. It is built on `@agledger/verify-core` 2.0.0. 1.7.0 was never published; its changes are part of this release.
@@ -47,7 +53,7 @@ This release targets AGLedger API 2.0 and reads nothing older. It is built on `@
 
 - The export path walks key statements in write order too: every API 2.0 export carries each statement's `id` and `createdAt`, so an export and a dump of the same Server are walked alike and a trusted key's later admissions date its window as the Server's do. The write times decide only the order: they are not signed, so a key statement signed by a key in `distrustedKeys` counts for nothing whatever time it carries. A statement that counts for nothing only because its signer is distrusted, dated before the cutoff by the export's own unsigned write time, is a `keyTrust.notes` entry rather than a finding, so an honest rotation away from a key distrusted after it still passes pinned on its successor. The text report lists each note under `key anchoring`.
 - Requires `@agledger/verify-core` 2.0.0.
-- The conformance corpus is regenerated from agledger-api 2.0.0 (`5444a54f`): the dump slice carries `vault_key_statements.ndjson` in every vector and adds the key-statement, unsigned-row and RFC 9162 vectors. Every vector passes as its manifest expects, those that pin `trustAnchors` included. Pinned on the Server's current key, the three registry column-edit vectors (`chain-key-expired`, `chain-key-not-yet-active`, `valid-rotation-boundary`) read as `KEY_CLOSURE_INVALID` or `CHAIN_KEY_WINDOW_DRIFT` rather than the window codes their manifest names, since a pinned walk holds entries to the signed window; unpinned they give their manifest verdicts.
+- The conformance corpus is regenerated from API 2.0.0: the dump slice carries `vault_key_statements.ndjson` in every vector and adds the key-statement, unsigned-row and RFC 9162 vectors. Every vector passes as its manifest expects, those that pin `trustAnchors` included. Pinned on the Server's current key, the three registry column-edit vectors (`chain-key-expired`, `chain-key-not-yet-active`, `valid-rotation-boundary`) read as `KEY_CLOSURE_INVALID` or `CHAIN_KEY_WINDOW_DRIFT` rather than the window codes their manifest names, since a pinned walk holds entries to the signed window; unpinned they give their manifest verdicts.
 - The agent-signature line reads `no key for their cert` where it read `no key supplied for their cert`, since a key can now come from the dump.
 - On a failed run the agent-signature line says its counts stop at the first break in each chain, since nothing past a break is read; it used to say `none on the chain` when signatures sat beyond the break.
 - An `/audit-export` file verify-core refuses as malformed is reported with the file's name, and the note on the `--keys` file's shape is added only when `--keys` was given and is what verify-core refused. It was added to every refusal, with or without `--keys`.
@@ -57,7 +63,7 @@ This release targets AGLedger API 2.0 and reads nothing older. It is built on `@
 
 ### Fixed
 
-- **Conformance corpus regenerated from the tagged 1.8.0 engine** (`apiGitSha 3948cc68`, the `v1.8.0` commit), replacing a corpus generated at API 1.3.4. The export slice goes from 23 to 32 vectors and the dump slice from 12 to 18, and the additions cover this release's own work: `export/actor-attribution-mismatch.json` and `dump/chain-actor-attribution-mismatch` both expect `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`, and `export/agent-signature-invalid.json` expects `CHAIN_AGENT_SIGNATURE_INVALID`. The runner now maps the manifest's `agentKeysFile` to the verifier's agent-key input; without it that vector ran with no agent keys, reported `skipped_no_input`, passed, and failed the suite on a check that never executed.
+- **Conformance corpus regenerated from the tagged 1.8.0 engine** (the `v1.8.0` release), replacing a corpus generated at API 1.3.4. The export slice goes from 23 to 32 vectors and the dump slice from 12 to 18, and the additions cover this release's own work: `export/actor-attribution-mismatch.json` and `dump/chain-actor-attribution-mismatch` both expect `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`, and `export/agent-signature-invalid.json` expects `CHAIN_AGENT_SIGNATURE_INVALID`. The runner now maps the manifest's `agentKeysFile` to the verifier's agent-key input; without it that vector ran with no agent keys, reported `skipped_no_input`, passed, and failed the suite on a check that never executed.
 
 - **Actor attribution is verified, not displayed on trust.** An audit export's own verification guide names `actorDisplayName`, `actorOwnerType` and `humanReadableLabel` as unsigned display projections and tells the auditor that the attribution to rely on is the `actorId`/`actorOwnerId` UUID. Those two, and `actorRole`, are signature-covered in the COSE protected header (CWT_Claims label 15, private label -65539), and nothing compared them against it: an export or dump row could be re-attributed to another actor, changing nothing else, and still verify with out-of-band keys. They are now cross-checked per entry, and a divergence fails the new `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`. This runs on a dump directory and on an `/audit-export` file; the dump carries `actor_key_id`, `actor_role` and `actor_owner_id` on every row, so it always applies there. The text report's `note` line no longer tells the reader that attribution is the signed UUID without saying whether this run checked it: it now states that the attribution was cross-checked and agrees, or that the export carried no signed actor claim to check it against. Requires `@agledger/verify-core` 1.5.0.
 
@@ -98,7 +104,7 @@ Documentation only. Verification behaviour is identical to 1.5.1.
 
 ### Fixed
 
-- **A FIPS-locked host no longer reports an intact Ed25519 dump as tamper**, via `@agledger/verify-core`. The FIPS provider carries no EdDSA, so the runtime refused to compute the signature and the refusal was reported as `CHAIN_SIGNATURE_INVALID` on every entry. It now reports `CHAIN_UNSUPPORTED_ALGORITHM`, naming the provider as the cause and pointing at an unrestricted host. Still `[FAIL]` and exit 1, because an unverified chain is not a verified one, but no longer grounds for a tamper investigation (agents#113). The refusal a real provider performs is at key LOAD, one step earlier than first fixed, so a key that will not load is now classified from its OID; verified against the same corpus and container that produced the original report.
+- **A FIPS-locked host no longer reports an intact Ed25519 dump as tamper**, via `@agledger/verify-core`. The FIPS provider carries no EdDSA, so the runtime refused to compute the signature and the refusal was reported as `CHAIN_SIGNATURE_INVALID` on every entry. It now reports `CHAIN_UNSUPPORTED_ALGORITHM`, naming the provider as the cause and pointing at an unrestricted host. Still `[FAIL]` and exit 1, because an unverified chain is not a verified one, but no longer grounds for a tamper investigation. The refusal a real provider performs is at key LOAD, one step earlier than first fixed, so a key that will not load is now classified from its OID; verified against the same corpus and container that produced the original report.
 - **Checkpoint failure messages stop asserting a signature failed when it was never checked.** The `CHAIN_UNSUPPORTED_ALGORITHM` code was already routed correctly at both checkpoint sites, but the message read "COSE_Sign1 signature does not verify (unsupported-key-algorithm)", which says the opposite of what the code means. It now reads "signature could NOT BE CHECKED" plus the reason and the remedy.
 
 ### Changed
@@ -107,19 +113,19 @@ Documentation only. Verification behaviour is identical to 1.5.1.
 
 ### Packaging
 
-- **Source maps are no longer published.** `dist/**/*.map` shipped with `sources` pointing at `../src/*.ts` and no `sourcesContent`, and `src/` is not in the tarball, so they resolved to nothing. The build no longer emits them at all, so no shipped `.js` or `.d.ts` carries a `sourceMappingURL` comment pointing at a map the tarball does not contain (agents#114).
+- **Source maps are no longer published.** `dist/**/*.map` shipped with `sources` pointing at `../src/*.ts` and no `sourcesContent`, and `src/` is not in the tarball, so they resolved to nothing. The build no longer emits them at all, so no shipped `.js` or `.d.ts` carries a `sourceMappingURL` comment pointing at a map the tarball does not contain.
 - **`bugs` added to package.json.**
 
 ## [1.5.0] - 2026-08-07
 
 ### Fixed
 
-- **Vault checkpoints join on `chain_key`, so a healthy schema chain no longer fails the whole dump.** A schema chain's checkpoint carries a derived UUIDv8 in `record_id`, because the engine needs a non-null uuid for a chain whose rows have none. Grouping checkpoints by that column stranded them: a stock Compose install, untouched, returned `[FAIL]` and exit 1 with `CHECKPOINT_ROW_MISSING`, which is a tamper alarm for any audit gate wired to the exit code. Checkpoints now group on the producer's `chain_key`, falling back to `record_id` so dumps taken before the producer emitted it verify exactly as they did before (agents#103).
-- **Failures name a schema chain by its chain key.** The message said `RecordRow <uuidv8>`, sending an auditor to `/v1/records/{id}` for a 404 with no explanation. It now reads `Chain schema:<orgId>` (agents#103).
+- **Vault checkpoints join on `chain_key`, so a healthy schema chain no longer fails the whole dump.** A schema chain's checkpoint carries a derived UUIDv8 in `record_id`, because the engine needs a non-null uuid for a chain whose rows have none. Grouping checkpoints by that column stranded them: a stock Compose install, untouched, returned `[FAIL]` and exit 1 with `CHECKPOINT_ROW_MISSING`, which is a tamper alarm for any audit gate wired to the exit code. Checkpoints now group on the producer's `chain_key`, falling back to `record_id` so dumps taken before the producer emitted it verify exactly as they did before.
+- **Failures name a schema chain by its chain key.** The message said `RecordRow <uuidv8>`, sending an auditor to `/v1/records/{id}` for a 404 with no explanation. It now reads `Chain schema:<orgId>`.
 
 ### Changed (widened union, via `@agledger/verify-core` 1.3.0)
 
-- **`CHAIN_KEY_NOT_YET_ACTIVE`** is reported for an entry written BEFORE its signing key's activation; `CHAIN_KEY_EXPIRED` now means the retirement side only. Previously both directions reported "expired", sending a consumer to investigate rotation when the real condition is a backdated entry or clock skew. Verdicts are unchanged (agents#112).
+- **`CHAIN_KEY_NOT_YET_ACTIVE`** is reported for an entry written BEFORE its signing key's activation; `CHAIN_KEY_EXPIRED` now means the retirement side only. Previously both directions reported "expired", sending a consumer to investigate rotation when the real condition is a backdated entry or clock skew. Verdicts are unchanged.
 
 ## [1.4.0] - 2026-08-05
 
@@ -131,7 +137,7 @@ Signing-agility wave 2: verifies ES256 chains end to end (chain walk, vault chec
 
 ### Changed
 
-- **Conformance corpus regenerated from engine 1.3.4 @ `ed3369ab`** (the api R2 signing-agility build) and re-pinned via `CORPUS-LOCK.json`. Both slices gain the ES256 wave: `export/valid-es256` + `dump/valid-es256` (real ES256 engine output, must pass), `es256-signature-invalid`, and `es256-header-alg-mismatch` (a valid ES256 signature under an EdDSA header reads as `CHAIN_ALG_MISMATCH`, tamper class).
+- **Conformance corpus regenerated from API 1.3.4** and re-pinned via `CORPUS-LOCK.json`. Both slices gain the ES256 wave: `export/valid-es256` + `dump/valid-es256` (real ES256 engine output, must pass), `es256-signature-invalid`, and `es256-header-alg-mismatch` (a valid ES256 signature under an EdDSA header reads as `CHAIN_ALG_MISMATCH`, tamper class).
 
 ## [1.3.1] - 2026-08-05
 
@@ -152,7 +158,7 @@ The verifier forward-compatibility floor (with `@agledger/verify-core` 1.1.0). L
 
 ## [1.2.0] - 2026-08-01
 
-A full-installation dump could not be verified at all. The loader read each NDJSON file into a single string, so any vault past Node's ~512 MB string cap died in about a second with a raw `Cannot create a string longer than 0x1fffffe8 characters`. Small demo vaults verified fine, which is why this survived a shipped release: the first deployment large enough to need the tool for a real audit is the one that finds it. Testbed F-811 hit it with 545k `audit_vault` rows (1.18 GB NDJSON), roughly a quarter of realistic operation for one mid-size org.
+A full-installation dump could not be verified at all. The loader read each NDJSON file into a single string, so any vault past Node's ~512 MB string cap died in about a second with a raw `Cannot create a string longer than 0x1fffffe8 characters`. Small demo vaults verified fine, which is why this survived a shipped release: the first deployment large enough to need the tool for a real audit is the one that finds it. A validation run hit it with 545k `audit_vault` rows (1.18 GB NDJSON), roughly a quarter of realistic operation for one mid-size org.
 
 ### Fixed
 
@@ -171,7 +177,7 @@ A full-installation dump could not be verified at all. The loader read each NDJS
 - `Dump`, `VaultEntryDump`, and the companion wire types are unchanged. No dump-format change, so no coordination with the dump tool or the conformance corpus.
 - Tests cover chunk-boundary reassembly, multi-byte characters split across a boundary, report-for-report equivalence with the in-memory path across all nine conformance dump vectors, the re-ordered-dump refusal, and the exit-code split. The size case itself is opt-in via `AGLEDGER_VERIFY_LARGE_FILE_TEST=1`, since it wants about 1 GB of disk.
 
-Closes #14. Refs cross-repo agledger-agents#102.
+Closes #14.
 
 ## [1.1.1] - 2026-07-16
 
@@ -179,7 +185,7 @@ Docs and tooling. No verification or wire-format change.
 
 ### Fixed
 
-- README and package links no longer send readers into the private `agledger-api` repo (cross-repo #99); they point at the public source repo instead. Removed the refactoring-history note from the npm package description.
+- README and package links point at the public source repo. Removed the refactoring-history note from the npm package description.
 
 ### Changed
 
@@ -188,7 +194,7 @@ Docs and tooling. No verification or wire-format change.
 
 ## [1.1.0] - 2026-07-06
 
-Closes cross-repo verify#8: the CLI could not perform the out-of-band-keyed verification the README prescribes, so a key-substituted export (full re-sign with an attacker key embedded in the document) returned `[PASS]`.
+Closes verify#8: the CLI could not perform the out-of-band-keyed verification the README prescribes, so a key-substituted export (full re-sign with an attacker key embedded in the document) returned `[PASS]`.
 
 ### Added
 
@@ -208,13 +214,13 @@ Closes cross-repo verify#8: the CLI could not perform the out-of-band-keyed veri
 
 ### Changed
 
-- Docs only: removed em-dashes from the README prose and the package.json description (cross-repo #98 writing-style sweep). Rewrote each sentence rather than swapping the glyph. No verification, exit-code, or wire-format change.
+- Docs only: removed em-dashes from the README prose and the package.json description (writing-style sweep). Rewrote each sentence rather than swapping the glyph. No verification, exit-code, or wire-format change.
 
 ## [1.0.1] - 2026-06-22
 
 ### Added
 
-- **Unsigned-projection warning on the audit-export verdict** (cross-repo #96 / api#769). A green `[PASS]` over a `/v1/records/{id}/audit-export` dump no longer silently vouches for spoofable display labels. When the export self-describes unsigned projection fields (`verificationGuide.unsignedFields`), the verdict now prints a non-fatal `note:` naming them and stating that attribution is the signed `actorOwnerId`/`actorId` UUID, not these labels. The `--report-format json` output carries the machine-readable `unsignedProjectionFields` array. No change to chain verification or exit codes.
+- **Unsigned-projection warning on the audit-export verdict**. A green `[PASS]` over a `/v1/records/{id}/audit-export` dump no longer silently vouches for spoofable display labels. When the export self-describes unsigned projection fields (`verificationGuide.unsignedFields`), the verdict now prints a non-fatal `note:` naming them and stating that attribution is the signed `actorOwnerId`/`actorId` UUID, not these labels. The `--report-format json` output carries the machine-readable `unsignedProjectionFields` array. No change to chain verification or exit codes.
 
 ### Changed
 
@@ -238,7 +244,7 @@ Closes cross-repo verify#8: the CLI could not perform the out-of-band-keyed veri
 ### Changed
 
 - The EXPORT-kind conformance corpus (`testdata/conformance/export/` + `manifest-export.json`) is now exercised in the test suite — previously only the DUMP-kind vectors ran, so the 18 shipped export vectors were dead weight. The new block runs each vector through `verifyAuditExport` (the same code path the CLI/library uses for single `/audit-export` documents) and asserts pass/fail, `brokenAt.code`, and `brokenAt.position`. The export manifest is hard-asserted present so a missing corpus fails loud.
-- Corrected the README corpus-regeneration instructions: removed the bogus `pnpm generate:corpus` step (no such script; this repo uses npm and has no local generator). The corpus is produced and owned by `agledger-api` via `scripts/generate-conformance-corpus.ts`; refresh there and copy `export/`, `dump/`, and both manifests into `testdata/conformance/`.
+- Corrected the README corpus-regeneration instructions: removed the bogus `pnpm generate:corpus` step (no such script; this repo uses npm and has no local generator). The corpus is generated with the Server's conformance generator; refresh it there and copy `export/`, `dump/`, and both manifests into `testdata/conformance/`.
 - Refreshed the `@agledger/verify-core` dependency range to `^0.1.7` (lockfile resolves the latest published verify-core).
 
 ## [0.1.4] - 2026-06-04
@@ -249,11 +255,11 @@ No functional change. First release published from CI with **build provenance** 
 
 ### Changed
 
-- Rebuilt on `@agledger/verify-core@^0.1.3`, inheriting export-path binding-integrity (F-731) and the new `not-checked` signature state (F-732). No change to the dump-verifier API or CLI.
+- Rebuilt on `@agledger/verify-core@^0.1.3`, inheriting export-path binding-integrity and the new `not-checked` signature state. No change to the dump-verifier API or CLI.
 
 ## [0.1.2] - 2026-05-28
 
-Republished against `@agledger/verify-core` 0.1.2 — picks up the F-698 OOB-key polymorphism and the temporal-axis tightening (export `signingKeyWindows` no longer clobbers caller-supplied OOB windows). No functional change in the dump verifier itself. Now also re-exports the new `OutOfBandKeyEntry` type so dump consumers don't need a second dep to type their OOB key catalogue.
+Republished against `@agledger/verify-core` 0.1.2 — picks up the OOB-key polymorphism and the temporal-axis tightening (export `signingKeyWindows` no longer clobbers caller-supplied OOB windows). No functional change in the dump verifier itself. Now also re-exports the new `OutOfBandKeyEntry` type so dump consumers don't need a second dep to type their OOB key catalogue.
 
 ## [0.1.1] - 2026-05-28
 
@@ -261,4 +267,4 @@ Republished against `@agledger/verify-core` 0.1.1 — no functional change in th
 
 ## [0.1.0] - 2026-05-27
 
-Initial release. Full-vault offline dump verifier for AGLedger audit dumps produced by `vault-dump.sh`. Adopted from the agledger-api `tools/agledger-verify/` package and refactored onto `@agledger/verify-core` so the chain walk, COSE_Sign1 decode, and Ed25519 verification share a single body of logic with the SDK / CLI / MCP. Adds dump-only checks: binding-integrity, OIDC-actor cross-check, temporal key-validity, vault checkpoints, org_admin_reads Merkle/STH/fork.
+Initial release. Full-vault offline dump verifier for AGLedger audit dumps produced by `vault-dump.sh`. Adopted from the Server's bundled dump verifier and refactored onto `@agledger/verify-core` so the chain walk, COSE_Sign1 decode, and Ed25519 verification share a single body of logic with the SDK / CLI / MCP. Adds dump-only checks: binding-integrity, OIDC-actor cross-check, temporal key-validity, vault checkpoints, org_admin_reads Merkle/STH/fork.

@@ -291,7 +291,7 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
 
   it('refuses an option it does not read', () => {
     const dump = loadDump(join(CONFORMANCE, 'dump/valid'));
-    expect(() => verifyDump(dump, { trustAnchor: [currentPin('dump/valid')] } as never)).toThrow(/verifyDump: unknown option trustAnchor\. It reads agentKeys, trustAnchors, distrustedKeys/);
+    expect(() => verifyDump(dump, { trustAnchor: [currentPin('dump/valid')] } as never)).toThrow(/verifyDump: unknown option trustAnchor\. It reads agentKeys, federationKeys, trustAnchors, distrustedKeys/);
   });
 });
 
