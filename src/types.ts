@@ -235,6 +235,16 @@ export interface VaultChainsReport {
    */
   agentSignatures: { present: number; verified: number };
   /**
+   * Federation messages sealed on the vault (`payload.wire` on a receiving
+   * Server's FEDERATION_* entries): `present` counts those on entries that
+   * passed every other check, each held to its body hash and to its entry;
+   * `verified` those whose signature was also re-checked under a
+   * `federationKeys` entry for the sending hub. `present > verified` on a
+   * passing report means no key was supplied for those senders, never that
+   * they failed.
+   */
+  federationWire: { present: number; verified: number };
+  /**
    * Vault entries whose signature verified. Under a key walk each verified
    * under an anchored key; with none, the report's key trust is
    * `no_anchored_signature` and a pass is `unanchored`.

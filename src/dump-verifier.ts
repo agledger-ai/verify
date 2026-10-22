@@ -58,6 +58,7 @@ import {
   assertKnownOptions,
   assertNotPinnedAndDistrusted,
   buildAgentKeyRegistry,
+  buildFederationKeyRegistry,
   buildKeyRegistry,
   computeKeyTrust,
   decodeCoseSign1,
@@ -80,6 +81,7 @@ import {
   writtenWhileSigning,
   type AccountedEntry,
   type AgentPublicKeyJwk,
+  type FederationKeyEntry,
   type ChainResult,
   type CheckApplicability,
   type DistrustedKey,
@@ -123,6 +125,18 @@ export interface VaultChainOptions {
    * Anything that is not an Ed25519 JWK throws `TypeError`.
    */
   agentKeys?: ReadonlyArray<AgentPublicKeyJwk>;
+  /**
+   * Federation keys of the Servers this one peers with, keyed by hub id:
+   * `{ [hubId]: publicKey }` or `[{ hubId, publicKey }]`, each as base64 SPKI
+   * DER or base64 of the raw 32 bytes, as the peer registered it at
+   * handshake. Take them from the peer's operator, not from this Server. A
+   * receiving Server's FEDERATION_* entries seal the peer's message as the
+   * peer signed it (`payload.wire`); every sealed message is held to its body
+   * hash and to its entry, and one from a hub listed here also has its
+   * signature re-verified under that key (`CHAIN_FEDERATION_WIRE_INVALID` on
+   * failure). Anything that is not an Ed25519 key throws `TypeError`.
+   */
+  federationKeys?: Readonly<Record<string, string>> | ReadonlyArray<FederationKeyEntry>;
 }
 
 /** Inputs to the key-statement walk (see {@link walkDumpKeys}). */
@@ -148,7 +162,7 @@ export interface KeyTrustOptions {
 /** Options for {@link verifyDump} and `verifyDumpStreaming`. */
 export interface VerifyDumpOptions extends VaultChainOptions, KeyTrustOptions {}
 
-const DUMP_OPTIONS = ['agentKeys', 'trustAnchors', 'distrustedKeys'] as const satisfies ReadonlyArray<keyof VerifyDumpOptions>;
+const DUMP_OPTIONS = ['agentKeys', 'federationKeys', 'trustAnchors', 'distrustedKeys'] as const satisfies ReadonlyArray<keyof VerifyDumpOptions>;
 
 /**
  * Throw `TypeError` on an option {@link verifyDump} does not read, so a
@@ -620,6 +634,8 @@ export function verifyVaultChains(
   const agentKeys = new Map<string, string>(
     options.agentKeys !== undefined ? buildAgentKeyRegistry(options.agentKeys) : [],
   );
+  const federationKeys =
+    options.federationKeys !== undefined ? buildFederationKeyRegistry(options.federationKeys) : undefined;
   let certKeysFromChain = 0;
   // Each input-gated check is reported `applied` once it ran on any chain, so
   // "not checked anywhere" never reads as "passed".
@@ -631,8 +647,10 @@ export function verifyVaultChains(
     agent_signature: 'skipped_no_input',
     // With a walk, `not_checked` until an entry reaches the anchoring check.
     key_anchoring: keys.report.status === 'walked' ? 'not_checked' : 'skipped_no_input',
+    federation_wire: 'skipped_no_input',
   };
   const agentSignatures = { present: 0, verified: 0 };
+  const federationWire = { present: 0, verified: 0 };
   let signedEntries = 0;
 
   const checkpointsByChain = new Map<string, VaultCheckpointDump[]>();
@@ -661,6 +679,7 @@ export function verifyVaultChains(
     accountedCount: accounted.count,
     optionalChecks,
     agentSignatures,
+    federationWire,
     certKeysFromChain,
     signedEntries,
   });
@@ -675,13 +694,15 @@ export function verifyVaultChains(
     const normalized = chain.map((e) => toNormalizedEntry(chainKey, e));
     // `signingSince` is passed rather than left for the core to derive from
     // `keyRegistry`, so it is the same instant the checkpoint pass uses.
-    const result = verifyChain(normalized, keyRegistry, { agentKeys, signingSince });
+    const result = verifyChain(normalized, keyRegistry, { agentKeys, federationKeys, signingSince });
     for (const check of Object.keys(optionalChecks) as OptionalCheck[]) {
       if (result.optionalChecks[check] === 'applied') optionalChecks[check] = 'applied';
     }
     signedEntries += result.signatureCoverage.signed;
     agentSignatures.present += result.agentSignatures.present;
     agentSignatures.verified += result.agentSignatures.verified;
+    federationWire.present += result.federationWire.present;
+    federationWire.verified += result.federationWire.verified;
     const failuresBefore = failures.count;
     collectChainFailures(chainKey, result, failures);
     for (const a of result.accounted) accounted.push(a);

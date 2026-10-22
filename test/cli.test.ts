@@ -37,10 +37,12 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
       key_temporal: 'applied',
       agent_signature: 'skipped_no_input',
       key_anchoring: 'skipped_no_input',
+      federation_wire: 'skipped_no_input',
     },
     keyProvenance: { supplied: 10, embedded: 0 },
     unsignedProjectionFields: [],
     agentSignatures: { present: 0, verified: 0 },
+    federationWire: { present: 0, verified: 0 },
     keyTrust: reportKeyTrust(new Map(), null, null),
     ...overrides,
   };
@@ -69,6 +71,7 @@ describe('parseArgs', () => {
     agentKeys: null,
     trustAnchors: [],
     distrustedKeys: [],
+    federationKeys: [],
   };
 
   it('captures target and defaults to text report format', () => {

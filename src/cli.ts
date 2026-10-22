@@ -30,6 +30,7 @@ import {
   parseDistrustedKeys,
   parseTrustAnchors,
   verifyAuditExport,
+  normalizeFederationKey,
   type AccountedEntry,
   type AgentPublicKeyJwk,
   type CheckApplicability,
@@ -76,6 +77,8 @@ export interface ParsedArgs {
   trustAnchors: string[];
   /** `--distrusted-key` values, one entry each, in the order given. */
   distrustedKeys: string[];
+  /** `--federation-key` values, `<hubId>=<base64 key>` each, in the order given. */
+  federationKeys: string[];
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -89,6 +92,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     agentKeys: null,
     trustAnchors: [],
     distrustedKeys: [],
+    federationKeys: [],
   };
   const takeValue = (flag: string, next: string | undefined): string => {
     if (next === undefined || next.startsWith('-')) {
@@ -146,6 +150,13 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       const value = arg.slice('--distrusted-key='.length);
       if (!value) throw new Error('--distrusted-key requires a value');
       out.distrustedKeys.push(value);
+    } else if (arg === '--federation-key') {
+      out.federationKeys.push(takeValue('--federation-key', argv[i + 1]));
+      i++;
+    } else if (arg.startsWith('--federation-key=')) {
+      const value = arg.slice('--federation-key='.length);
+      if (!value) throw new Error('--federation-key requires a value');
+      out.federationKeys.push(value);
     } else if (arg === '--distrusted-keys' || arg.startsWith('--distrusted-keys=')) {
       throw new Error(PLURAL_DISTRUSTED);
     } else if (arg === '--require-supplied-keys') {
@@ -172,6 +183,7 @@ Usage:
   agledger-verify <target> [--trust-anchor sha256:<hex>]...
                   [--distrusted-key sha256:<hex>[@<instant>]]...
                   [--agent-keys <file>]
+                  [--federation-key <hubId>=<key>]...
                   [--report-format text|json]
                   [--keys <file>] [--require-key-id <id>]
                   [--require-supplied-keys]
@@ -211,6 +223,20 @@ Options:
                               finding names the --distrusted-key to confirm
                               with the Server's operator.
   --report-format, -f         Output format. Default: text.
+  --federation-key            <hubId>=<key>: a peer Server's federation key,
+                              as its operator gives it (base64 SPKI DER, or
+                              base64 of the raw 32 bytes, the form the
+                              handshake registered). Repeat it once per peer.
+                              A receiving Server seals each peer message it
+                              accepts on the chain entry it writes
+                              (payload.wire), as the peer signed it. Every
+                              sealed message is held to its body hash and to
+                              its entry; one from a hub given here also has
+                              its signature re-verified under that key, which
+                              proves what the peer asserted from this
+                              Server's export alone. A failure is
+                              CHAIN_FEDERATION_WIRE_INVALID. Applies to a dump
+                              directory and to an /audit-export file.
   --agent-keys                Path to a JSON file holding the Ed25519 public
                               keys of agent certs: a JWK, a list of JWKs, or a
                               {keys:[...]} JWK Set. An entry may wrap its key
@@ -298,6 +324,28 @@ function failureLines(failures: readonly Failure[], failureCount: number, indent
 export interface TextReportOptions {
   /** Whether the caller passed `--agent-keys` (agent cert keys). Default false. */
   agentKeysSupplied?: boolean;
+  /** Whether the caller passed `--federation-key` (peer federation keys). Default false. */
+  federationKeysSupplied?: boolean;
+}
+
+/**
+ * One line on the sealed federation messages. Every present one was held to
+ * its body hash and to its entry; `verified` says how many were also checked
+ * under a peer's key, and the rest were not, which is not a failure.
+ */
+function federationWireSummary(
+  counts: { present: number; verified: number },
+  keysSupplied: boolean,
+  failed = false,
+): string {
+  const base = `present=${counts.present} verified=${counts.verified}${failed ? ', counted up to the first break in each chain' : ''}`;
+  if (counts.present === 0) return failed ? `${base} (none before it)` : `${base} (none on the chain)`;
+  const unverified = counts.present - counts.verified;
+  if (unverified === 0) return `${base} (each hashed, matched to its entry, and signed by the peer key given for its hub)`;
+  if (keysSupplied) {
+    return `${base} (each hashed and matched to its entry; ${unverified} from a hub with no --federation-key, so the peer's signature was not checked)`;
+  }
+  return `${base} (each hashed and matched to its entry; the peer signatures were NOT checked: pass --federation-key <hubId>=<key> for each peer)`;
 }
 
 /**
@@ -422,6 +470,9 @@ export function formatDumpReportText(report: VerifyReport, options: TextReportOp
   lines.push(
     `  agent sigs  : ${agentSignatureSummary(report.vault.agentSignatures, report.vault.optionalChecks.agent_signature, options.agentKeysSupplied ?? false, report.vault.certKeysFromChain, report.vault.failureCount > 0)}`,
   );
+  lines.push(
+    `  peer msgs   : ${federationWireSummary(report.vault.federationWire, options.federationKeysSupplied ?? false, report.vault.failureCount > 0)}`,
+  );
   lines.push(`  failures    : ${report.vault.failureCount}`);
   lines.push(...failureLines(report.vault.failures, report.vault.failureCount, '    '));
   if (report.vault.accountedCount > 0) {
@@ -472,6 +523,9 @@ export function formatExportReportText(
   lines.push(...keyTrustLines(result.keyTrust, '    '));
   lines.push(
     `  agent signatures  : ${agentSignatureSummary(result.agentSignatures, result.optionalChecks.agent_signature, options.agentKeysSupplied ?? false, 0, !result.valid)}`,
+  );
+  lines.push(
+    `  peer messages     : ${federationWireSummary(result.federationWire, options.federationKeysSupplied ?? false, !result.valid)}`,
   );
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
@@ -559,6 +613,7 @@ const OPTION_FLAGS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\brequireSuppliedKeys\b/g, '--require-supplied-keys'],
   [/\brequireKeyId\b/g, '--require-key-id'],
   [/\bagentKeys\b/g, '--agent-keys'],
+  [/\bfederationKeys\b/g, '--federation-key'],
 ];
 
 /** One prose string from a report, its option names given as this CLI's flags. */
@@ -607,6 +662,31 @@ export function dumpReportWithFlags(report: VerifyReport): VerifyReport {
     },
     orgAdminReads: { ...report.orgAdminReads, failures: report.orgAdminReads.failures.map(failure) },
   };
+}
+
+const FEDERATION_KEY_SHAPE =
+  'Each --federation-key is <hubId>=<key>: the peer\'s hub id, then its Ed25519 federation key as base64 SPKI DER or base64 of the raw 32 bytes, as its operator gives it.';
+
+/**
+ * `--federation-key` values into the `{ [hubId]: key }` map verify-core takes,
+ * or the usage-error message. Each value is checked here, before any
+ * verification runs, so a bad key is reported as a bad key rather than as a
+ * verdict.
+ */
+export function parseFederationKeys(values: readonly string[]): Record<string, string> | string {
+  const out: Record<string, string> = {};
+  for (const value of values) {
+    const at = value.indexOf('=');
+    const hubId = at === -1 ? '' : value.slice(0, at).trim();
+    const key = at === -1 ? '' : value.slice(at + 1).trim();
+    if (hubId === '' || key === '') return `Invalid --federation-key ${JSON.stringify(value)}: ${FEDERATION_KEY_SHAPE}`;
+    if (normalizeFederationKey(key) === null) {
+      return `Invalid --federation-key for hub ${hubId}: the key is not an Ed25519 public key. ${FEDERATION_KEY_SHAPE}`;
+    }
+    if (hubId in out) return `--federation-key names hub ${hubId} twice; give each peer one key.`;
+    out[hubId] = key;
+  }
+  return out;
 }
 
 export function runCli(argv: readonly string[]): CliResult {
@@ -665,6 +745,13 @@ export function runCli(argv: readonly string[]): CliResult {
     agentKeys = loaded;
   }
 
+  let federationKeys: Record<string, string> | undefined;
+  if (parsed.federationKeys.length > 0) {
+    const loaded = parseFederationKeys(parsed.federationKeys);
+    if (typeof loaded === 'string') return cannotVerify(loaded, parsed.reportFormat);
+    federationKeys = loaded;
+  }
+
   // Directory -> full-vault dump.
   if (isDirectory(parsed.target)) {
     if (hasKeyPolicyFlags) {
@@ -677,7 +764,7 @@ export function runCli(argv: readonly string[]): CliResult {
     try {
       // Streamed, so a multi-GB audit_vault.ndjson is bounded by disk rather
       // than by Node's max string length (verify#14).
-      report = verifyDumpStreaming(parsed.target, undefined, { agentKeys, trustAnchors, distrustedKeys });
+      report = verifyDumpStreaming(parsed.target, undefined, { agentKeys, federationKeys, trustAnchors, distrustedKeys });
     } catch (err) {
       // A TypeError here is the walk refusing a statement file it cannot
       // order (rows with and without created_at): no verdict was reached.
@@ -690,7 +777,7 @@ export function runCli(argv: readonly string[]): CliResult {
     const stdout =
       parsed.reportFormat === 'json'
         ? JSON.stringify(report, null, 2) + '\n'
-        : formatDumpReportText(report, { agentKeysSupplied: agentKeys !== undefined }) + '\n';
+        : formatDumpReportText(report, { agentKeysSupplied: agentKeys !== undefined, federationKeysSupplied: federationKeys !== undefined }) + '\n';
     return { exitCode: EXIT_BY_VERDICT[report.verdict], stdout, stderr: '' };
   }
 
@@ -750,6 +837,7 @@ export function runCli(argv: readonly string[]): CliResult {
       requireKeyId: parsed.requireKeyId ?? undefined,
       requireSuppliedKeys: parsed.requireSuppliedKeys,
       agentKeys,
+      federationKeys,
       trustAnchors,
       distrustedKeys,
     });
@@ -772,7 +860,7 @@ export function runCli(argv: readonly string[]): CliResult {
   const stdout =
     parsed.reportFormat === 'json'
       ? JSON.stringify({ verdict, ...rest }, null, 2) + '\n'
-      : formatExportReportText(result, { agentKeysSupplied: agentKeys !== undefined }) + '\n';
+      : formatExportReportText(result, { agentKeysSupplied: agentKeys !== undefined, federationKeysSupplied: federationKeys !== undefined }) + '\n';
   return { exitCode: EXIT_BY_VERDICT[verdict], stdout, stderr: '' };
 }
 
