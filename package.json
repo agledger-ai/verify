@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@agledger/verify-core": "^2.0.0",
-    "cborg": "6.1.2"
+    "cborg": "6.1.3"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.3",
