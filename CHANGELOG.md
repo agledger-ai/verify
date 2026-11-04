@@ -8,7 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **`--federation-key <hubId>=<key>`, and `federationKeys` on `verifyDump` and `verifyDumpStreaming`:** a receiving Server's `FEDERATION_*` entries seal each peer message as the peer signed it (`payload.wire`); every sealed message is held to its body hash and to its entry on every run, and one from a hub whose federation key is given is also re-verified under it, which proves what the peer asserted from this Server's dump or export alone. A bad value is a could-not-verify before anything is read; a sealed message that does not hold fails `CHAIN_FEDERATION_WIRE_INVALID`. The reports carry `federationWire: { present, verified }` under `vault` and on an export result, and the text reports a `peer msgs` / `peer messages` line. Built on `@agledger/verify-core` 2.1.0.
+- **`--federation-key <hubId>=<key>`, and `federationKeys` on `verifyDump` and `verifyDumpStreaming`:** a receiving Server's `FEDERATION_*` entries seal each peer message as the peer signed it (`payload.wire`); every sealed message is held to its body hash and to its entry on every run, and one from a hub whose federation key is given is also re-verified under it, which proves what the peer asserted from this Server's dump or export alone. A bad value is a could-not-verify before anything is read; a sealed message that does not hold fails `CHAIN_FEDERATION_WIRE_INVALID`. The reports carry `federationWire: { present, verified, failed }` under `vault` and on an export result, and the text reports a `peer msgs` / `peer messages` line that tells a key that did not match from a hub given no key. Built on `@agledger/verify-core` 2.1.0.
+
+### Fixed
+
+- On a failed run, the `agent sigs` / `agent signatures` line said its counts stopped at the first break in each chain. The walk reads every entry past a break; the counts cover the entries that passed every other check, and the line now says that.
 
 ## [2.0.0] - 2026-10-05
 

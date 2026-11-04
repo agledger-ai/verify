@@ -109,11 +109,11 @@ describe('parseFederationKeys', () => {
     expect(bad.stdout).toContain('not an Ed25519 public key');
     const r = runCli([EXPORT, '--federation-key', 'hub-b=' + spki, '-f', 'json']);
     expect(r.exitCode).toBe(EXIT_OK);
-    const out = json<ExportJson & { federationWire: { present: number; verified: number } }>(r.stdout);
-    expect(out.federationWire).toEqual({ present: 0, verified: 0 });
+    const out = json<ExportJson & { federationWire: { present: number; verified: number; failed: number } }>(r.stdout);
+    expect(out.federationWire).toEqual({ present: 0, verified: 0, failed: 0 });
     expect(r.stdout).not.toContain('peer messages');
     const text = runCli([EXPORT, '--federation-key', 'hub-b=' + spki]);
-    expect(text.stdout).toContain('peer messages     : present=0 verified=0 (none on the chain)');
+    expect(text.stdout).toContain('peer messages     : present=0 verified=0 failed=0 (none on the chain)');
   });
 });
 

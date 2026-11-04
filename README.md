@@ -365,7 +365,7 @@ A sealed signature that does not verify under that key, a sealed key that is
 not the one you were given, a body that no longer hashes to what was signed,
 or an entry that asserts a state the sealed body does not carry fails
 `CHAIN_FEDERATION_WIRE_INVALID`. The report counts the messages under
-`federationWire` (`present`, and `verified` under a key); a message from a hub
+`federationWire` (`present`, `verified` under a key, and `failed`); a message from a hub
 you gave no key for is hashed and matched to its entry but its peer signature
 is not checked, which the text report says. In code, pass `federationKeys`
 (`{ [hubId]: key }` or `[{ hubId, publicKey }]`) to `verifyDumpStreaming`,
