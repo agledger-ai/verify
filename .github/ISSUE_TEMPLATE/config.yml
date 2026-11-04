@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/agledger-ai/verify/security/policy
+    about: Please do not open a public issue for a vulnerability. Follow the security policy instead.
+  - name: AGLedger documentation and licensing
+    url: https://agledger.ai
+    about: Product documentation, the Developer Edition key, and license terms.
