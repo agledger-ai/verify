@@ -1,0 +1,54 @@
+name: Bug report
+description: "Something in @agledger/verify does not work as documented."
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste API keys, tokens, private keys, or anything from your own records. Replace them with placeholders.
+  - type: input
+    id: version
+    attributes:
+      label: "@agledger/verify version"
+      description: "Output of `npm ls @agledger/verify`."
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: "Node.js version and OS."
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: AGLedger Server version
+      description: The `version` field of `GET /health` on your Server.
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest code, command or configuration that shows it.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output
+      description: The full error, with secrets replaced.
+      render: text
