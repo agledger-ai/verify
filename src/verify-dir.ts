@@ -22,7 +22,7 @@ import type { VerifyReport } from './types.js';
  *
  * Produces the same report as `verifyDump(loadDump(dir))`, but streams
  * `audit_vault.ndjson`, so the ceiling is disk rather than Node's ~512 MB
- * string cap and the heap a fully materialized vault would need (verify#14).
+ * string cap and the heap a fully materialized vault would need.
  * Peak memory is one chain group. This is the path the CLI takes.
  *
  * The companion files are still loaded whole: the checkpoint cross-check,

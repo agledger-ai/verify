@@ -605,7 +605,7 @@ function verifyChainCheckpoints(
  * Accepts any iterable, so it takes either a materialized array or the
  * `streamVaultEntries` generator. Given the generator, peak memory is one chain
  * group rather than the whole vault, which is what makes a multi-GB dump
- * verifiable at all (verify#14).
+ * verifiable at all.
  *
  * **Grouping relies on the dump's row order**, which the producer guarantees:
  * `dump-vault.ts` has emitted `ORDER BY record_id, chain_position` since the

@@ -8,7 +8,7 @@
  *                     `/audit-export` document -> verifyAuditExport (verify-core)
  *
  * Exit codes distinguish the two ways this can end badly, because they mean
- * opposite things to an audit gate (verify#14):
+ * opposite things to an audit gate:
  *
  *   0  verified, no failures (trusted with a --trust-anchor, flagged
  *      as not anchored without one)
@@ -777,7 +777,7 @@ export function runCli(argv: readonly string[]): CliResult {
     let report: VerifyReport;
     try {
       // Streamed, so a multi-GB audit_vault.ndjson is bounded by disk rather
-      // than by Node's max string length (verify#14).
+      // than by Node's max string length.
       report = verifyDumpStreaming(parsed.target, undefined, { agentKeys, federationKeys, trustAnchors, distrustedKeys });
     } catch (err) {
       // A TypeError here is the walk refusing a statement file it cannot

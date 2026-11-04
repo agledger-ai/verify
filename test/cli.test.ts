@@ -141,7 +141,7 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['/tmp/dump', '--report-format', 'yaml'])).toThrow(/--report-format must be/);
   });
 
-  it('captures the key-policy flags (verify#8)', () => {
+  it('captures the key-policy flags', () => {
     expect(
       parseArgs(['export.json', '--keys', 'keys.json', '--require-key-id=abc', '--require-supplied-keys']),
     ).toEqual({
@@ -360,7 +360,7 @@ describe('runCli (dump-dir end-to-end)', () => {
   });
 });
 
-describe('runCli key-policy flags (verify#8, conformance corpus)', () => {
+describe('runCli key-policy flags (conformance corpus)', () => {
   const CONFORMANCE = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance');
   const keySub = join(CONFORMANCE, 'export', 'key-substitution.json');
   const validExport = join(CONFORMANCE, 'export', 'valid.json');

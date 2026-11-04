@@ -12,7 +12,7 @@
  * ~512 MB (0x1fffffe8 characters) and a real vault passes that easily: 545k
  * `audit_vault` rows is a 1.18 GB NDJSON file, which used to die at read time
  * with a raw `Cannot create a string longer than 0x1fffffe8 characters`
- * (verify#14). Every file is read through `readLines`, a chunked sync reader
+ *. Every file is read through `readLines`, a chunked sync reader
  * that yields one line at a time, so file size is bounded only by disk.
  *
  * `loadDump` still materializes every row, so it is bounded by heap rather than
@@ -61,7 +61,7 @@ export const DEFAULT_FILENAMES: DumpFiles = {
  * Raised when a dump cannot be read or parsed at all, as opposed to a dump that
  * reads fine and fails verification. The CLI maps this to its own exit code so
  * an audit gate wired to "nonzero means the chain is broken" cannot mistake an
- * unreadable dump for a tamper alarm (verify#14).
+ * unreadable dump for a tamper alarm.
  */
 export class DumpReadError extends Error {
   override readonly name = 'DumpReadError';
