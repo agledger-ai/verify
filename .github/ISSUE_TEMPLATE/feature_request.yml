@@ -1,0 +1,21 @@
+name: Feature request
+description: "A change that would make @agledger/verify more useful to you."
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: "The task, and where @agledger/verify gets in the way today."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
