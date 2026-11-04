@@ -1,5 +1,5 @@
 /**
- * Streaming dump verification (verify#14).
+ * Streaming dump verification.
  *
  * The bug this covers: `audit_vault.ndjson` used to be read into one string, so
  * any vault past Node's ~512 MB string cap died with a raw
