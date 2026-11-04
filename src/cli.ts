@@ -329,23 +329,39 @@ export interface TextReportOptions {
 }
 
 /**
- * One line on the sealed federation messages. Every present one was held to
- * its body hash and to its entry; `verified` says how many were also checked
- * under a peer's key, and the rest were not, which is not a failure.
+ * verify-core reads every entry of a chain, past a break, and runs the
+ * optional checks on each entry that passed the rest; an entry that failed
+ * another check is not counted. On a failed run the counters say so.
+ */
+const COUNTED_ON_SOUND_ENTRIES = ', counted on the entries that passed every other check';
+
+/**
+ * One line on the sealed federation messages. Each is held to its body hash
+ * and to its entry, then checked under the peer key given for its hub, if
+ * one was. `verified` passed under a key, `failed` failed a check (listed
+ * below), and the rest came from a hub with no key, which is not a failure.
  */
 function federationWireSummary(
-  counts: { present: number; verified: number },
+  counts: { present: number; verified: number; failed: number },
   keysSupplied: boolean,
   failed = false,
 ): string {
-  const base = `present=${counts.present} verified=${counts.verified}${failed ? ', counted up to the first break in each chain' : ''}`;
-  if (counts.present === 0) return failed ? `${base} (none before it)` : `${base} (none on the chain)`;
-  const unverified = counts.present - counts.verified;
-  if (unverified === 0) return `${base} (each hashed, matched to its entry, and signed by the peer key given for its hub)`;
-  if (keysSupplied) {
-    return `${base} (each hashed and matched to its entry; ${unverified} from a hub with no --federation-key, so the peer's signature was not checked)`;
+  const base = `present=${counts.present} verified=${counts.verified} failed=${counts.failed}${failed ? COUNTED_ON_SOUND_ENTRIES : ''}`;
+  if (counts.present === 0) return failed ? `${base} (none among them)` : `${base} (none on the chain)`;
+  const noKey = counts.present - counts.verified - counts.failed;
+  if (noKey === 0 && counts.failed === 0) {
+    return `${base} (each hashed, matched to its entry, and signed by the peer key given for its hub)`;
   }
-  return `${base} (each hashed and matched to its entry; the peer signatures were NOT checked: pass --federation-key <hubId>=<key> for each peer)`;
+  const parts: string[] = [];
+  if (counts.failed > 0) parts.push(`${counts.failed} failed: see the failures below`);
+  if (noKey > 0) {
+    parts.push(
+      keysSupplied
+        ? `${noKey} hashed and matched to its entry, from a hub with no --federation-key, so the peer's signature was not checked`
+        : `${noKey} hashed and matched to its entry; the peer signatures were NOT checked: pass --federation-key <hubId>=<key> for each peer`,
+    );
+  }
+  return `${base} (${parts.join('; ')})`;
 }
 
 /**
@@ -363,10 +379,8 @@ function agentSignatureSummary(
   keysFromChain = 0,
   failed = false,
 ): string {
-  // verify-core stops reading a chain at its first break, so on a failed run
-  // the counts cover only what came before it.
-  const base = `present=${counts.present} verified=${counts.verified}${failed ? ', counted up to the first break in each chain' : ''}`;
-  if (counts.present === 0) return failed ? `${base} (none before it)` : `${base} (none on the chain)`;
+  const base = `present=${counts.present} verified=${counts.verified}${failed ? COUNTED_ON_SOUND_ENTRIES : ''}`;
+  if (counts.present === 0) return failed ? `${base} (none among them)` : `${base} (none on the chain)`;
   const unverified = counts.present - counts.verified;
   const onChain = `${keysFromChain} cert key${keysFromChain === 1 ? '' : 's'} the dump signs`;
   if (check === 'applied') {

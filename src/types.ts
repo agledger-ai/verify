@@ -239,11 +239,11 @@ export interface VaultChainsReport {
    * Server's FEDERATION_* entries): `present` counts those on entries that
    * passed every other check, each held to its body hash and to its entry;
    * `verified` those whose signature was also re-checked under a
-   * `federationKeys` entry for the sending hub. `present > verified` on a
-   * passing report means no key was supplied for those senders, never that
-   * they failed.
+   * `federationKeys` entry for the sending hub; `failed` those that failed a
+   * check (the body hash, the entry, or the signature under the hub's key).
+   * `present - verified - failed` is the messages from a hub with no key.
    */
-  federationWire: { present: number; verified: number };
+  federationWire: { present: number; verified: number; failed: number };
   /**
    * Vault entries whose signature verified. Under a key walk each verified
    * under an anchored key; with none, the report's key trust is

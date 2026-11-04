@@ -42,16 +42,16 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
     keyProvenance: { supplied: 10, embedded: 0 },
     unsignedProjectionFields: [],
     agentSignatures: { present: 0, verified: 0 },
-    federationWire: { present: 0, verified: 0 },
+    federationWire: { present: 0, verified: 0, failed: 0 },
     keyTrust: reportKeyTrust(new Map(), null, null),
     ...overrides,
   };
 }
 
 describe('agent-signature counts on a failed run', () => {
-  it('says the counts stop at the first break rather than that the chain carries none', () => {
+  it('says the counts cover the entries that passed every other check, not that the chain carries none', () => {
     const failed = formatExportReportText(exportResult({ valid: false }));
-    expect(failed).toContain('present=0 verified=0, counted up to the first break in each chain (none before it)');
+    expect(failed).toContain('present=0 verified=0, counted on the entries that passed every other check (none among them)');
     expect(failed).not.toContain('none on the chain');
     expect(formatExportReportText(exportResult())).toContain('present=0 verified=0 (none on the chain)');
     const { dump } = buildHappyDump();
@@ -59,7 +59,35 @@ describe('agent-signature counts on a failed run', () => {
     tampered.vaultEntries[0]!.payload = { tampered: true };
     const report = verifyDump(tampered);
     expect(report.vault.failureCount).toBeGreaterThan(0);
-    expect(formatDumpReportText(report)).toContain('counted up to the first break in each chain');
+    expect(formatDumpReportText(report)).toContain('counted on the entries that passed every other check');
+  });
+});
+
+describe('peer-message counts', () => {
+  const fw = (present: number, verified: number, failed: number, valid = failed === 0) =>
+    exportResult({ valid, federationWire: { present, verified, failed }, optionalChecks: { ...exportResult().optionalChecks, federation_wire: 'applied' } });
+
+  it('says a key that did not match failed, not that its hub had no key', () => {
+    const text = formatExportReportText(fw(5, 0, 5), { federationKeysSupplied: true });
+    expect(text).toContain('present=5 verified=0 failed=5');
+    expect(text).toContain('5 failed: see the failures below');
+    expect(text).not.toContain('no --federation-key');
+  });
+
+  it('separates the failures from the messages a hub with no key sent', () => {
+    const text = formatExportReportText(fw(5, 1, 2), { federationKeysSupplied: true });
+    expect(text).toContain('2 failed: see the failures below; 2 hashed and matched to its entry, from a hub with no --federation-key');
+  });
+
+  it('asks for a key when none was given', () => {
+    const text = formatExportReportText(fw(3, 0, 0));
+    expect(text).toContain('present=3 verified=0 failed=0 (3 hashed and matched to its entry; the peer signatures were NOT checked');
+  });
+
+  it('says every message verified when each did', () => {
+    expect(formatExportReportText(fw(2, 2, 0), { federationKeysSupplied: true })).toContain(
+      'present=2 verified=2 failed=0 (each hashed, matched to its entry, and signed by the peer key given for its hub)',
+    );
   });
 });
 
