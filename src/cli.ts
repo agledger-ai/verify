@@ -255,7 +255,8 @@ Options:
                               CHAIN_FEDERATION_WIRE_INVALID. Applies to a dump
                               directory and to an /audit-export file. Name a
                               hub twice to pin a second key no succession
-                              links to the first (one listed linked: false).
+                              links to the first: one listed linked: false, or
+                              one its history does not list at all.
   --federation-key-history    Path to a peer's key history, the JSON its
                               GET /.well-known/agledger-federation-keys.json
                               serves (no auth). Repeatable. Needs a
@@ -263,10 +264,12 @@ Options:
                               history links to that key through successions
                               both keys signed is trusted inside its window,
                               so entries sealed before the peer changed its
-                              federation key verify. A message under a key
-                              activated after the receiver took it fails; one
-                              under a key retired before it is counted as
-                              after retirement, in order when the receiver's
+                              federation key verify. Each message is placed
+                              by its signed wire.timestamp, never by the
+                              unsigned createdAt. One signed under a key
+                              before the key's activation fails; one signed
+                              after its retirement is counted as after
+                              retirement, in order when the receiver's
                               federation.peer_revoked row for the peer comes
                               after it.
   --agent-keys                Path to a JSON file holding the Ed25519 public
@@ -384,7 +387,7 @@ function federationWireSummary(
   const base = `present=${counts.present} verified=${counts.verified} failed=${counts.failed}${retired}${failed ? COUNTED_ON_SOUND_ENTRIES : ''}`;
   if (counts.present === 0) return failed ? `${base} (none among them)` : `${base} (none on the chain)`;
   const noKey = counts.present - counts.verified - counts.failed;
-  const retiredNote = `${counts.afterRetirement} signed under a key the peer had retired before the receiver took it: in order when the receiver's federation.peer_revoked row for the peer comes after them`;
+  const retiredNote = `${counts.afterRetirement} signed by the peer under a key it had already retired: in order when the receiver's federation.peer_revoked row for the peer comes after them`;
   if (noKey === 0 && counts.failed === 0) {
     const all = '(each hashed, matched to its entry, and signed by the peer key given for its hub';
     return counts.afterRetirement > 0 ? `${base} ${all}; ${retiredNote})` : `${base} ${all})`;
@@ -399,6 +402,28 @@ function federationWireSummary(
         : `${noKey} hashed and matched to its entry; the peer signatures were NOT checked: pass --federation-key <hubId>=<key> for each peer`,
     );
   }
+  return `${base} (${parts.join('; ')})`;
+}
+
+/**
+ * One line on the evidence bodies an `?evidence=true` export inlines, worded
+ * so an export taken without them never reads as evidence that was checked.
+ */
+function evidenceBindingSummary(
+  counts: { present: number; verified: number; clientHashed: number; failed: number },
+  failed = false,
+): string {
+  const hashed = counts.clientHashed > 0 ? ` client-hashed=${counts.clientHashed}` : '';
+  const base = `present=${counts.present} verified=${counts.verified} failed=${counts.failed}${hashed}${failed ? COUNTED_ON_SOUND_ENTRIES : ''}`;
+  if (counts.present === 0) {
+    return failed ? `${base} (none among them)` : `${base} (none inlined: the export was taken without ?evidence=true, so it carries hashes only)`;
+  }
+  const parts: string[] = [];
+  if (counts.verified > 0) parts.push(`${counts.verified} hashed (RFC 8785, SHA-256) to the evidenceHash or payloadHash its entry signs`);
+  if (counts.clientHashed > 0) {
+    parts.push(`${counts.clientHashed} on an encrypted-mode completion, whose signed hash covers a cleartext this export does not carry, so it was NOT re-bound`);
+  }
+  if (counts.failed > 0) parts.push(`${counts.failed} failed: see the failures below`);
   return `${base} (${parts.join('; ')})`;
 }
 
@@ -579,6 +604,7 @@ export function formatExportReportText(
   lines.push(
     `  peer messages     : ${federationWireSummary(result.federationWire, options.federationKeysSupplied ?? false, !result.valid)}`,
   );
+  lines.push(`  evidence bodies   : ${evidenceBindingSummary(result.evidenceBinding, !result.valid)}`);
   if (result.brokenAt) {
     lines.push(`  broken at pos ${result.brokenAt.position}: [${result.brokenAt.code}] ${result.brokenAt.detail ?? ''}`);
   }

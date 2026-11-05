@@ -148,8 +148,16 @@ describe('--federation-key-history', () => {
     const stranger = 'MCowBQYDK2VwAyEA' + 'B'.repeat(43) + '=';
     const off = runCli([EXPORT, '--federation-key', `${doc.hubId}=${stranger}`, '--federation-key-history', HISTORY]);
     expect(off.exitCode).toBe(EXIT_CANNOT_VERIFY);
-    expect(off.stderr + off.stdout).toMatch(/appears in none of the key histories/);
+    expect(off.stderr + off.stdout).toMatch(/no key pinned for hub .* appears in the key history/);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('takes a second --federation-key the history does not list, in either order', () => {
+    const stranger = 'MCowBQYDK2VwAyEA' + 'B'.repeat(43) + '=';
+    for (const keys of [[stranger, newest], [newest, stranger]]) {
+      const argv = [EXPORT, ...keys.flatMap((k) => ['--federation-key', `${doc.hubId}=${k}`]), '--federation-key-history', HISTORY];
+      expect(runCli(argv).exitCode).toBe(EXIT_OK);
+    }
   });
 });
 
@@ -313,6 +321,7 @@ describe('--agent-keys on a dump directory', () => {
       agent_signature: 'applied',
       key_anchoring: 'applied',
       federation_wire: 'skipped_no_input',
+      evidence_binding: 'skipped_no_input',
     });
     expect(report.vault.agentSignatures).toEqual({ present: 15, verified: 8 });
   });

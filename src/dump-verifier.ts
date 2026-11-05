@@ -648,6 +648,8 @@ export function verifyVaultChains(
     // With a walk, `not_checked` until an entry reaches the anchoring check.
     key_anchoring: keys.report.status === 'walked' ? 'not_checked' : 'skipped_no_input',
     federation_wire: 'skipped_no_input',
+    // A dump carries no inlined evidence.
+    evidence_binding: 'skipped_no_input',
   };
   const agentSignatures = { present: 0, verified: 0 };
   const federationWire = { present: 0, verified: 0, failed: 0, afterRetirement: 0 };
