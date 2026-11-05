@@ -472,11 +472,11 @@ caller need not add a second dependency.
   envelope or had the column removed). It fails `UNSUPPORTED_FORMAT` rather than
   being parsed best-effort.
 
-## What is NOT verified
+## Witness cosignatures
 
-- **Witness cosignatures** are stored verbatim and reported (checkpoint id,
-  witness key id), but their signature is not checked. The witness key
-  algorithm is customer-chosen and out of band.
+Witness cosignatures are kept verbatim and reported with their checkpoint id
+and witness key id, for you to check under the witness's own key. The
+customer chooses that key and its algorithm out of band.
 
 ## Wire format
 
