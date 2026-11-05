@@ -361,7 +361,7 @@ function writeSlice(rows: readonly VaultEntryDump[]): string {
 
 describe('a row copy of on_behalf_of must equal what the entry signed (live dump)', () => {
   // The cert-signed create: its signed predicate carries on_behalf_of, and the
-  // engine does not copy it onto the row payload.
+  // Server does not copy it onto the row payload.
   const kept = (JSON.parse(readFileSync(EXPORT, 'utf-8')) as { recordId: string }).recordId;
   const target = (r: VaultEntryDump): boolean => r.record_id === kept && r.chain_position === 1;
 
@@ -389,7 +389,7 @@ describe('a row copy of on_behalf_of must equal what the entry signed (live dump
     });
   });
 
-  it('a malformed traceparent row copy is dropped by the engine, so it does not bind', () => {
+  it('a malformed traceparent row copy is dropped by the Server, so it does not bind', () => {
     const rows = readSlice();
     const row = rows.find(target)!;
     row.payload = { ...row.payload, traceparent: 'not-a-traceparent' };

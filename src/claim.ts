@@ -1,9 +1,8 @@
 /**
  * The signed claim inside a checkpoint or read-log envelope, decoded the way
- * the engine decodes it (`decodeCoseSign1ToClaim` in the engine's COSE_Sign1
- * encoder) so a dump is held to the same claim checks the engine's own scan
- * applies. An envelope the engine would not decode as a claim decodes to null
- * here, and the caller reports that as a claim mismatch, as the engine does.
+ * the Server decodes it so a dump is held to the same claim checks the Server's own scan
+ * applies. An envelope the Server would not decode as a claim decodes to null
+ * here, and the caller reports that as a claim mismatch, as the Server does.
  *
  * Only what those checks read is returned: the chain position and previous
  * hash, the signed kid, the first subject's sha256 digest, and the predicate.
@@ -37,7 +36,7 @@ export interface SignedClaim {
 
 const hex = (b: Uint8Array): string => Buffer.from(b).toString('hex');
 
-/** Decode an envelope's signed claim, or null where the engine's decoder returns null. */
+/** Decode an envelope's signed claim, or null where the Server's decoder returns null. */
 export function decodeSignedClaim(coseSign1: Uint8Array): SignedClaim | null {
   const parts = decodeCoseSign1(coseSign1);
   if (!parts) return null;
@@ -83,7 +82,7 @@ export function decodeSignedClaim(coseSign1: Uint8Array): SignedClaim | null {
   }
 }
 
-/** sha256 of a UUID's 16 bytes, the digest the engine signs as a record's subject. */
+/** sha256 of a UUID's 16 bytes, the digest the Server signs as a record's subject. */
 export function uuidSubjectDigest(uuid: unknown): string | null {
   if (typeof uuid !== 'string') return null;
   const h = uuid.replace(/-/g, '').toLowerCase();

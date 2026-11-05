@@ -21,7 +21,7 @@
  * checkpoints, read-log leaves and read-log checkpoints under an unanchored key
  * fail CHAIN_SIGNING_KEY_UNANCHORED, CHECKPOINT_KEY_UNANCHORED,
  * TENANT_READ_KEY_UNANCHORED and TENANT_CHECKPOINT_KEY_UNANCHORED, as the
- * engine's scan grades them. Without anchors no walk runs, the registry rows
+ * Server's scan grades them. Without anchors no walk runs, the registry rows
  * are taken as they stand, and a pass carries the verdict `unanchored`.
  *
  * What stays LOCAL to this package is the dump-structural work the core does
@@ -30,7 +30,7 @@
  * orgReadLeafHash / orgReadMerkleRoot) with its signed-tree-head and
  * fork-detection passes. They emit the canonical CHECKPOINT_* / TENANT_* codes.
  *
- * Unsigned rows follow the engine's one rule everywhere: the instant the
+ * Unsigned rows follow the Server's one rule everywhere: the instant the
  * install began signing is the earliest `activated_at` in
  * `vault_signing_keys` (retired keys included; the dump always carries the
  * whole registry, even when scoped to one org). An unsigned chain entry, vault
@@ -40,7 +40,7 @@
  *
  * The agent-signature check needs the cert public keys. A dump not scoped to
  * one org carries them: each `EPHEMERAL_CERT_ISSUED` entry on the platform-ops
- * chain signs its cert's `publicKeyJwk` (engines from 1.8.0 on). They are
+ * chain signs its cert's `publicKeyJwk` (Servers from 1.8.0 on). They are
  * taken only from a chain this walk has itself verified clean, entry
  * signature included, and added to any keys the caller passes as `agentKeys`.
  *
@@ -115,9 +115,9 @@ export interface VaultChainOptions {
    * an agent sent to `POST /v1/auth/oidc/cert`, also the `cnf.jwk` claim inside
    * the `certJws`. Needed for certs the dump does not sign a key for: every
    * cert on an org-scoped dump (which leaves out the platform-ops chain), and
-   * certs issued by an engine older than 1.8.0. The keys a dump does carry
+   * certs issued by a Server older than 1.8.0. The keys a dump does carry
    * are used without being passed here. Where an entry's signed
-   * payload carries an engine-validated `predicate.on_behalf_of.agent_signature`
+   * payload carries a Server-validated `predicate.on_behalf_of.agent_signature`
    * whose sealed cert thumbprint matches one of these keys, the signature is
    * re-verified offline; one that does not verify fails
    * `CHAIN_AGENT_SIGNATURE_INVALID`. A key is matched only through the
@@ -199,7 +199,7 @@ export interface DumpKeyTrust {
   report: KeyTrustReport;
   /**
    * When the install began signing: the earliest `activated_at` across the
-   * registry rows (retired keys included, as the engine's `min(activated_at)`
+   * registry rows (retired keys included, as the Server's `min(activated_at)`
    * reads them) and, once the walk ran, across the activations the anchored
    * keys' statements sign.
    */
@@ -288,7 +288,7 @@ const CERT_ISSUED = 'EPHEMERAL_CERT_ISSUED';
  * Add to `registry` the cert public keys a verified chain signs, and return how
  * many were new. Called only for a chain that verified with no failure, its
  * checkpoints included, and reads only entries whose vault signature checked
- * `ok`, so every key taken is one the engine signed and nobody changed since.
+ * `ok`, so every key taken is one the Server signed and nobody changed since.
  * The key is read from the signed predicate, not the row copy. It is filed
  * under its own RFC 7638 thumbprint, which is how a sealed agent signature
  * names its cert, so a key can only ever check the signatures made under it.
@@ -320,14 +320,14 @@ function harvestCertKeys(
 
 
 /**
- * The kid an unsigned COSE_Sign1 carries, as the engine writes it (eight zero
+ * The kid an unsigned COSE_Sign1 carries, as the Server writes it (eight zero
  * bytes, hex). A read-log leaf has no signing-key column, so the envelope's
  * kid is the only unsigned marker it has.
  */
 const UNSIGNED_KID = '0'.repeat(16);
 
 /**
- * The bytes of a row's cose_sign1 column. The engine never writes it null, so
+ * The bytes of a row's cose_sign1 column. The Server never writes it null, so
  * a row without one was edited: it reads as empty bytes, which no leaf hash
  * matches and no claim decodes from, rather than throwing out of the walk.
  */
@@ -356,7 +356,7 @@ function claimDisagreement(
 
 /**
  * Look up the key a checkpoint or read-log row names and apply the walk's
- * verdict on it, in the engine's order: a key the registry does not hold, then
+ * verdict on it, in the Server's order: a key the registry does not hold, then
  * one nothing anchors, then one only a signature this host cannot compute
  * reaches. Returns the key to verify under, or the failure to report.
  */
@@ -406,7 +406,7 @@ function chainKeyOf(e: VaultEntryDump): string {
 /**
  * The chain identity of one checkpoint, which is NOT always its `record_id`.
  * A schema chain's checkpoint carries a derived UUIDv8 in `record_id` (the
- * engine needs a non-null uuid for a chain whose rows have none), so joining on
+ * Server needs a non-null uuid for a chain whose rows have none), so joining on
  * that column strands the checkpoint and reports CHECKPOINT_ROW_MISSING against
  * a perfectly healthy vault. The producer emits `chain_key` to carry the real
  * identity; fall back to `record_id` for dumps taken before it did, which is
@@ -529,8 +529,8 @@ function verifyChainCheckpoints(
       continue;
     }
 
-    // Engine mirror of `checkpoint_claim_mismatch`, after the row and hash
-    // cross-checks and before anything about the key, as the engine orders it.
+    // Server mirror of `checkpoint_claim_mismatch`, after the row and hash
+    // cross-checks and before anything about the key, as the Server orders it.
     const vaultClaim = claimDisagreement(cp.cose_sign1, (c) => [
       ['position', c.position, cp.chain_position],
       ['chain_tip_hash', c.predicate['chain_tip_hash'], `sha256:${cp.payload_hash}`],
@@ -550,8 +550,8 @@ function verifyChainCheckpoints(
     // Only null/undefined means unsigned; "" must resolve in the registry and
     // fail as a missing key rather than silently skip the signature check.
     if (cp.signing_key_id == null) {
-      // Engine mirror of `checkpoint_unsigned`. Checked after the row and hash
-      // cross-checks, as the engine orders it, so a truncated or diverged
+      // Server mirror of `checkpoint_unsigned`. Checked after the row and hash
+      // cross-checks, as the Server orders it, so a truncated or diverged
       // chain is still reported under its own code.
       if (writtenWhileSigning(cp.created_at, signingSince)) {
         failures.push({
@@ -577,7 +577,7 @@ function verifyChainCheckpoints(
       const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
       // Fail closed on ANY non-ok outcome. 'unsigned' (an all-zero signature
       // on a checkpoint that CLAIMS a signing key) is tampering, not benign:
-      // the engine never writes a signing_key_id it did not sign with. An
+      // the Server never writes a signing_key_id it did not sign with. An
       // unsupported key algorithm is an upgrade signal, never a pass.
       if (outcome !== 'ok') {
         failures.push({
@@ -607,9 +607,8 @@ function verifyChainCheckpoints(
  * group rather than the whole vault, which is what makes a multi-GB dump
  * verifiable at all.
  *
- * **Grouping relies on the dump's row order**, which the producer guarantees:
- * `dump-vault.ts` has emitted `ORDER BY record_id, chain_position` since the
- * format existed, so a record's rows are contiguous and a chain is complete the
+ * **Grouping relies on the dump's row order**, which the verifier assumes and does
+ * not prove: dumps list rows ordered by record_id then chain_position, so a record's rows are contiguous and a chain is complete the
  * moment a different record_id appears. Schema-event chains (record_id IS NULL)
  * sort together at the end but interleave with each other, so they stay open
  * until EOF; that set is bounded by schema-registration volume, not by vault
@@ -724,14 +723,14 @@ export function verifyVaultChains(
     entryCount++;
 
     // Format gate: export format 2.0 carries the canonical COSE_Sign1 envelope
-    // on every vault row. A row without one was written by an engine that
+    // on every vault row. A row without one was written by a Server that
     // predates the envelope, or had the column removed; either way there is
     // nothing signed to verify, so fail closed rather than parse best-effort.
     // Stops the walk.
     if (!e.cose_sign1) {
       failures.push({
         code: 'UNSUPPORTED_FORMAT',
-        message: `audit_vault row ${e.id} has no cose_sign1. Every vault row in export format 2.0 (RFC 8949 CDE) carries its COSE_Sign1 envelope, so this row was written by an engine that predates the envelope or had the column removed. Re-export from a current AGLedger instance.`,
+        message: `audit_vault row ${e.id} has no cose_sign1. Every vault row in export format 2.0 (RFC 8949 CDE) carries its COSE_Sign1 envelope, so this row was written by a Server that predates the envelope or had the column removed. Re-export from a current AGLedger instance.`,
         scopeId: e.record_id ?? undefined,
         position: e.chain_position,
       });
@@ -804,7 +803,7 @@ function detectCheckpointForks(
     if (prior && prior.root_hash !== cp.root_hash) {
       failures.push({
         code: 'TENANT_CHECKPOINT_FORK',
-        message: `Org ${cp.org_id}: two checkpoints at tree_size ${cp.tree_size} carry different root_hash (${prior.id} vs ${cp.id}): engine fork or key compromise`,
+        message: `Org ${cp.org_id}: two checkpoints at tree_size ${cp.tree_size} carry different root_hash (${prior.id} vs ${cp.id}): Server fork or key compromise`,
         scopeId: cp.org_id,
         treeSize: cp.tree_size,
       });
@@ -815,10 +814,10 @@ function detectCheckpointForks(
 }
 
 /**
- * Grade one read-log leaf's signature the way the engine does, after its index
+ * Grade one read-log leaf's signature the way the Server does, after its index
  * and hash have been checked. Returns the failure, or null when the leaf holds
  * up. `mustSign.signedBefore` is set by any leaf that names a real key,
- * whatever its own verdict, as the engine's walk does.
+ * whatever its own verdict, as the Server's walk does.
  */
 function checkLeafSignature(
   orgId: string,
@@ -839,7 +838,7 @@ function checkLeafSignature(
     };
   }
   if (kid === UNSIGNED_KID) {
-    // Engine mirror of `leaf_signature_missing`: unsigned is reduced coverage
+    // Server mirror of `leaf_signature_missing`: unsigned is reduced coverage
     // only before the install began signing and before any signed leaf in
     // this org's log.
     let why: string | null = null;
@@ -862,7 +861,7 @@ function checkLeafSignature(
   if ('code' in key) return { ...key, scopeId: orgId, leafIndex: leaf.leaf_index, signingKeyId: kid };
   const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
   // Fail closed on ANY non-ok outcome; an all-zero signature under a real kid
-  // ('unsigned') is a wiped signature, as the engine grades it.
+  // ('unsigned') is a wiped signature, as the Server grades it.
   if (outcome === 'ok') return null;
   return {
     code: outcome === 'unsupported-key-algorithm' ? 'CHAIN_UNSUPPORTED_ALGORITHM' : 'TENANT_READ_SIGNATURE_INVALID',
@@ -888,7 +887,7 @@ function verifyOneOrgAdminReadsLog(
   const mustSign = { signedBefore: false, signingSince };
 
   // One finding per org, the first met in leaf order, then the walk stops
-  // before the checkpoints: the engine reports the read log the same way.
+  // before the checkpoints: the Server reports the read log the same way.
   for (let i = 0; i < leaves.length; i++) {
     const leaf = leaves[i];
     if (!leaf) continue;
@@ -913,7 +912,7 @@ function verifyOneOrgAdminReadsLog(
       });
       return;
     }
-    // Engine mirror of `leaf_claim_mismatch`: the claim is what links each
+    // Server mirror of `leaf_claim_mismatch`: the claim is what links each
     // leaf to the one before it and to the record it says was read.
     const leafClaim = claimDisagreement(leaf.cose_sign1, (c) => [
       ['position', c.position, i + 1],
@@ -962,7 +961,7 @@ function verifyOneOrgAdminReadsLog(
       continue;
     }
 
-    // Engine mirror of the read log's `checkpoint_claim_mismatch`, after the
+    // Server mirror of the read log's `checkpoint_claim_mismatch`, after the
     // leaf-count and root cross-checks and before anything about the key.
     const headClaim = claimDisagreement(cp.cose_sign1, (c) => [
       ['position', c.position, cp.tree_size],
@@ -984,8 +983,8 @@ function verifyOneOrgAdminReadsLog(
     // Only null/undefined means unsigned; "" must resolve in the registry and
     // fail as a missing key rather than silently skip the signature check.
     if (cp.signing_key_id == null) {
-      // Engine mirror of the read log's `checkpoint_unsigned`, checked after
-      // the leaf-count and root cross-checks as the engine orders it.
+      // Server mirror of the read log's `checkpoint_unsigned`, checked after
+      // the leaf-count and root cross-checks as the Server orders it.
       if (writtenWhileSigning(cp.checkpoint_at, signingSince)) {
         failures.push({
           code: 'TENANT_CHECKPOINT_UNSIGNED',
@@ -1052,7 +1051,7 @@ export function verifyOrgAdminReadsChains(
     );
   }
 
-  // Witness cosignatures are reported, not verified; the engine cannot verify
+  // Witness cosignatures are reported, not verified; the Server cannot verify
   // customer-chosen witness keys because their algorithm is untyped.
   const witnessCosignedCheckpoints = checkpoints
     .filter(

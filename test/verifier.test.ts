@@ -185,7 +185,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
   });
 
   it('CHECKPOINT_SIGNATURE_INVALID when a checkpoint claiming a key carries an all-zero signature', () => {
-    // The engine never writes a signing_key_id it did not sign with, so a
+    // The Server never writes a signing_key_id it did not sign with, so a
     // zeroed signature slot on a key-claiming checkpoint is tampering. This
     // pins the closed fail-open: the 'unsigned' outcome must not pass here.
     const { dump } = buildHappyDump();
@@ -201,7 +201,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
   it('CHECKPOINT_CLAIM_MISMATCH, never unsigned, when a checkpoint carries signing_key_id ""', () => {
     // Only null means unsigned. A tampered checkpoint with an empty-string key
     // id must not slip past the signature check on a truthiness shortcut; the
-    // engine meets it first as a column that disagrees with the signed kid.
+    // Server meets it first as a column that disagrees with the signed kid.
     const { dump } = buildHappyDump();
     const tampered = cloneDump(dump);
     tampered.vaultCheckpoints[0]!.signing_key_id = '';
@@ -269,8 +269,8 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
       if (e.record_id === cp.record_id) e.chain_key = chainKey;
     }
     cp.chain_key = chainKey;
-    // The derived v8 the engine writes: deliberately matches nothing. The
-    // engine signs it as the checkpoint's subject, so the envelope is re-signed.
+    // The derived v8 the Server writes: deliberately matches nothing. The
+    // Server signs it as the checkpoint's subject, so the envelope is re-signed.
     cp.record_id = '019a0000-0000-8000-8000-0000000000ff';
     const resigned = buildVaultCheckpoint(cp.record_id, cp.chain_position, cp.payload_hash, key, cp.record_id);
     cp.cose_sign1 = resigned.cose_sign1;
@@ -433,7 +433,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
 });
 
 describe('a row whose envelope is missing', () => {
-  // The engine never writes cose_sign1 null, so such a row was edited. It must
+  // The Server never writes cose_sign1 null, so such a row was edited. It must
   // fail its own check, not throw out of the walk (which the CLI would report
   // as "could not verify" rather than as a failed verdict).
   const VALID = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance', 'dump', 'valid');

@@ -43,8 +43,8 @@ jobs:
         run: npm ci
 
       - name: Verify conformance-corpus pin
-        # The corpus is the contract with the engine: fixtures are real
-        # agledger-api output and change only via deliberate regeneration.
+        # The corpus is the contract with the Server: fixtures are real
+        # Server output and change only via deliberate regeneration.
         # This fails on any fixture drift that skipped the lock rewrite.
         run: node scripts/corpus-lock.mjs --check
 

@@ -1,7 +1,7 @@
 /**
  * The claim checks: each vault checkpoint, read-log leaf and read-log tree head
  * carries a signed claim, and the row beside it must say the same thing, as
- * the engine's scan holds them (`checkpoint_claim_mismatch`,
+ * the Server's scan holds them (`checkpoint_claim_mismatch`,
  * `leaf_claim_mismatch`). Every case tampers a real corpus dump (`dump/valid`)
  * while leaving the hash and root cross-checks intact, which is the gap the
  * claim checks close.

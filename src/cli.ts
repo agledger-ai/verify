@@ -318,7 +318,7 @@ history and rejects them.
 
 A dump not scoped to one org carries the cert keys itself: each
 EPHEMERAL_CERT_ISSUED entry on the platform-ops chain signs its cert's
-publicKeyJwk (engines from 1.8.0 on), and a key is used once that chain has
+publicKeyJwk (Servers from 1.8.0 on), and a key is used once that chain has
 verified clean. An org-scoped dump leaves the platform-ops chain out, and a
 per-record /audit-export carries no cert keys, so for those pass --agent-keys.
 Where no key is at hand the agent-signature check reports "not checked" and
@@ -454,7 +454,7 @@ function agentSignatureSummary(
       : `${base} (${unverified} NOT verified: no key for their cert, a caller-asserted identity, or a failure listed in this report)`;
   }
   if (keysSupplied) {
-    return `${base} (NOT verified: none of the supplied keys${keysFromChain === 0 ? '' : ` or the ${onChain}`} matches the cert thumbprint sealed with an engine-validated agent signature)`;
+    return `${base} (NOT verified: none of the supplied keys${keysFromChain === 0 ? '' : ` or the ${onChain}`} matches the cert thumbprint sealed with a Server-validated agent signature)`;
   }
   return keysFromChain === 0
     ? `${base} (NOT verified: pass --agent-keys with the agent cert keys to re-verify them)`

@@ -10,7 +10,7 @@ import { EXIT_OK, EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
 import type { Dump, FailureCode, VerifyReport } from '../src/types.js';
 
 /**
- * Row data no engine writes (a nulled, dropped or retyped column) is a failure
+ * Row data no Server writes (a nulled, dropped or retyped column) is a failure
  * code, never a throw out of the walk and never a pass read off a skipped
  * check; and a pin over a dump with nothing signed by a key it anchors is not
  * a trusted pass. Every case is a mutation of a real corpus dump.

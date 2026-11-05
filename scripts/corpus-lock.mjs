@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * Pin the vendored conformance corpus. The corpus is the contract with the
- * engine: every fixture is real agledger-api engine output (tamper-transformed
+ * Server: every fixture is real Server output (tamper-transformed
  * by the generator), and it must change only through a deliberate regeneration
- * (agledger-api `pnpm generate:corpus`), never by hand.
+ * (the Server's conformance generator), never by hand.
  *
  * The lock records a sha256 per corpus file plus the manifest provenance
- * (which engine version and git SHA produced it). CI runs `--check`, so any
+ * (which Server version and git SHA produced it). CI runs `--check`, so any
  * fixture edit that skips the lock rewrite fails loudly, naming exactly which
  * files drifted.
  *
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORPUS_DIR = join(HERE, '..', 'testdata', 'conformance');
 const LOCK_PATH = join(CORPUS_DIR, 'CORPUS-LOCK.json');
-// Repo-side documentation, not engine output; SPEC.md survives regenerations.
+// Repo-side documentation, not Server output; SPEC.md survives regenerations.
 const EXCLUDED = new Set(['CORPUS-LOCK.json', 'SPEC.md']);
 
 function walk(dir) {
@@ -69,19 +69,19 @@ if (process.argv.includes('--check')) {
     console.error('Conformance corpus drifted from CORPUS-LOCK.json:');
     for (const line of drift) console.error(`  ${line}`);
     console.error(
-      'If this is a deliberate regeneration from agledger-api, rewrite the lock: '
+      'If this is a deliberate regeneration from the Server, rewrite the lock: '
       + 'node scripts/corpus-lock.mjs. Hand-edits to fixtures are never correct.',
     );
     process.exit(1);
   }
   console.log(
     `corpus lock ok: ${Object.keys(current.files).length} files, `
-    + `engine ${current.provenance?.apiVersion ?? '?'} @ ${current.provenance?.apiGitSha ?? '?'}`,
+    + `Server ${current.provenance?.apiVersion ?? '?'} @ ${current.provenance?.apiGitSha ?? '?'}`,
   );
 } else {
   writeFileSync(LOCK_PATH, `${JSON.stringify(current, null, 2)}\n`);
   console.log(
     `wrote ${relative(join(HERE, '..'), LOCK_PATH)}: ${Object.keys(current.files).length} files, `
-    + `engine ${current.provenance?.apiVersion ?? '?'} @ ${current.provenance?.apiGitSha ?? '?'}`,
+    + `Server ${current.provenance?.apiVersion ?? '?'} @ ${current.provenance?.apiGitSha ?? '?'}`,
   );
 }
