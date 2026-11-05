@@ -1,12 +1,11 @@
 {
-  "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of the NDJSON files produced by the agledger-api dump-vault tool, then tamper-transformed; verified via verifyDump.",
+  "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of the NDJSON files produced by the AGLedger Server's vault dump tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-10-05T01:12:15.812Z",
+  "generatedAt": "2026-11-05T15:58:25.244Z",
   "provenance": {
-    "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "5444a54f",
-    "apiVersion": "2.0.0",
+    "producedBy": "AGLedger Server conformance generator",
+    "serverVersion": "2.2.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -131,7 +130,7 @@
       "kind": "dump",
       "expect": "fail",
       "failureCode": "TENANT_CHECKPOINT_FORK",
-      "note": "Two signed tree heads at the same tree_size carry different roots for the same org — engine fork or signing-key compromise."
+      "note": "Two signed tree heads at the same tree_size carry different roots for the same org: a Server fork or signing-key compromise."
     },
     {
       "file": "dump/valid-identity",
@@ -164,35 +163,35 @@
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_ENTRY_UNSIGNED",
-      "note": "An audit_vault chain whose entry 1 is signed, entry 2 was written by a process holding no key (signing_key_id null), and entry 3 is signed again: the engine signature_missing at position 2."
+      "note": "An audit_vault chain whose entry 1 is signed, entry 2 was written by a process holding no key (signing_key_id null), and entry 3 is signed again: the Server's signature_missing at position 2."
     },
     {
       "file": "dump/chain-entry-unsigned-after-activation",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_ENTRY_UNSIGNED",
-      "note": "An audit_vault chain with no signed entry, written by a process holding no key after the earliest activated_at in vault_signing_keys.ndjson: the engine signature_missing at position 1, placed by the key set alone."
+      "note": "An audit_vault chain with no signed entry, written by a process holding no key after the earliest activated_at in vault_signing_keys.ndjson: the Server's signature_missing at position 1, placed by the key set alone."
     },
     {
       "file": "dump/checkpoint-unsigned",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHECKPOINT_UNSIGNED",
-      "note": "A signed audit_vault chain whose vault_checkpoints row was written by a process holding no key (signing_key_id null) after the earliest activated_at: the engine checkpoint_unsigned. The row and its hash match the chain, so only the missing signature fails."
+      "note": "A signed audit_vault chain whose vault_checkpoints row was written by a process holding no key (signing_key_id null) after the earliest activated_at: the Server's checkpoint_unsigned. The row and its hash match the chain, so only the missing signature fails."
     },
     {
       "file": "dump/tenant-read-leaf-unsigned",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "TENANT_READ_LEAF_UNSIGNED",
-      "note": "An org_admin_reads log whose first leaf (leaf_index 0) is signed and second (leaf_index 1) was written by a process holding no key (the unsigned sentinel kid 0000000000000000): the engine leaf_signature_missing at leaf_index 1."
+      "note": "An org_admin_reads log whose first leaf (leaf_index 0) is signed and second (leaf_index 1) was written by a process holding no key (the unsigned sentinel kid 0000000000000000): the Server's leaf_signature_missing at leaf_index 1."
     },
     {
       "file": "dump/tenant-checkpoint-unsigned",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "TENANT_CHECKPOINT_UNSIGNED",
-      "note": "An org_admin_reads log with one signed leaf under a tree head written by a process holding no key (org_admin_reads_checkpoints.signing_key_id null) after the earliest activated_at: the engine checkpoint_unsigned. The root matches its leaves, so only the missing signature fails."
+      "note": "An org_admin_reads log with one signed leaf under a tree head written by a process holding no key (org_admin_reads_checkpoints.signing_key_id null) after the earliest activated_at: the Server's checkpoint_unsigned. The root matches its leaves, so only the missing signature fails."
     },
     {
       "file": "dump/valid-key-succession",
@@ -227,7 +226,7 @@
           "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675"
         ]
       },
-      "note": "valid-key-succession plus what a leaked copy of the retired vault key can write: a succession admitting a new key, signed by both, stored after the vault key's closure, and an entry the new key signed on the tip. Pinned to the successor, the walk reaches the vault key backward; every signature verifies, but every edge out of a key stored after its first closure is void, so nothing anchors the new key. Without the closure the same rows anchor it. The engine also reports the planted succession itself as a statement its endorser signed after its closure (KEY_STATEMENT_INVALID); that finding is expected beside this one."
+      "note": "valid-key-succession plus what a leaked copy of the retired vault key can write: a succession admitting a new key, signed by both, stored after the vault key's closure, and an entry the new key signed on the tip. Pinned to the successor, the walk reaches the vault key backward; every signature verifies, but every edge out of a key stored after its first closure is void, so nothing anchors the new key. Without the closure the same rows anchor it. The Server also reports the planted succession itself as a statement its endorser signed after its closure (KEY_STATEMENT_INVALID); that finding is expected beside this one."
     },
     {
       "file": "dump/valid-es256",

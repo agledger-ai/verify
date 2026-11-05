@@ -1,24 +1,22 @@
 # AGLedger verifier conformance corpus: contract
 
 This directory is the **anti-drift seam** for AGLedger's offline verifiers. It
-holds known-good and known-tampered fixtures that ARE real engine output, each
+holds known-good and known-tampered fixtures that ARE real Server output, each
 paired with an expected verdict + canonical failure code. Every verifier surface
 (TS `@agledger/verify-core`, the `@agledger/verify` dump verifier, and the
 independent Python `agledger.verify`) runs this corpus in CI. A change to the
-engine wire format bumps the corpus; the verifiers update in lockstep.
+Server wire format bumps the corpus; the verifiers update in lockstep.
 
-**`agledger-api` owns generation** (it owns the contract: wire format + dump
-producer + corpus). The fixtures here are produced by `agledger-api`'s
-`scripts/generate-conformance-corpus.ts`, which boots the real engine, captures
-byte-faithful `/audit-export` JSON and `dump-vault` NDJSON, then applies
-controlled tamper transforms. Regenerate (on a wire-format change) from an
-`agledger-api` checkout with a local Postgres up: `pnpm generate:corpus`. Each
-manifest carries a `provenance` block recording the producing api SHA + version.
-Do NOT hand-edit fixtures; regenerate.
+**The AGLedger Server owns generation.** The fixtures are produced by the
+Server's conformance generator from real Server output: byte-faithful
+`/audit-export` JSON and vault-dump NDJSON, with controlled tamper transforms
+applied to produce one fixture per failure code. The corpus is regenerated on a
+wire-format change, and each manifest's `provenance` block records the Server
+version that produced it. Do NOT hand-edit fixtures; regenerate.
 
-Lesson encoded here (F-682): fixtures MUST mirror the real export/dump shape
-exactly, never a bilingual superset (e.g. carrying both `position` and
-`chainPosition`). A superset masks field-name drift.
+Fixtures MUST mirror the real export and dump shape exactly, never a bilingual
+superset (for example carrying both `position` and `chainPosition`). A superset
+masks field-name drift.
 
 ## Layout
 
