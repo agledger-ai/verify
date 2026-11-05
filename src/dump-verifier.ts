@@ -491,8 +491,8 @@ function collectChainFailures(scopeId: string, result: ChainResult, failures: Fa
 }
 
 /**
- * Cross-check one chain's checkpoints against its rows. vault_checkpoints
- * survives audit_vault TRUNCATE, so a chain shorter than (or hash-mismatched
+ * Cross-check one chain's checkpoints against its rows. A checkpoint outlives
+ * the removal of the chain entries it anchors, so a chain shorter than (or hash-mismatched
  * with) its anchor is evidence of out-of-band tampering. Dump-structural, so it
  * stays local rather than moving into verify-core.
  *
