@@ -4,6 +4,12 @@ All notable changes to `@agledger/verify` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Documentation and code comments describe the Server's behaviour rather than its internals.
+
 ## [2.1.0] - 2026-11-05
 
 ### Added
@@ -24,7 +30,7 @@ This release targets AGLedger API 2.0 and reads nothing older. It is built on `@
 ### Breaking
 
 - **A run without `--trust-anchor` passes flagged, never as trusted.** Reports carry a `verdict`: `trusted` (clean, every signing key anchored to a pin), `unanchored` (clean, no pin given) or `failed`. An unanchored pass keeps `ok: true` and exit `0`, and says so everywhere: the text headline is `[VERIFIED, NOT ANCHORED]` with lines saying it is not a trusted verdict and how to get a pin from the operator (a trusted pass is `[PASS]` and a failure `[FAIL]`, each with a line saying what it means), and the JSON carries `verdict: "unanchored"` and `keyTrust.status: "no_anchor"`. A gate that needs a trusted verdict reads `verdict` or passes `--trust-anchor`.
-- **The org_admin_reads tree is RFC 9162.** `leaf_hash` is recomputed as hex(sha256(0x00 || cose_sign1)) and each tree head's root as the RFC 9162 root, through verify-core's `orgReadLeafHash` and `orgReadMerkleRoot`, the construction API 2.0 writes. A dump from an older engine fails `TENANT_READ_LEAF_HASH_MISMATCH` on every leaf. The re-exports `merkleRoot` and `verifyInclusion` are removed; `orgReadLeafHash`, `orgReadMerkleRoot` and `verifyOrgReadInclusion` (the audit-path walk for the Server's inclusion proofs) take their place.
+- **The org_admin_reads tree is RFC 9162.** `leaf_hash` is recomputed as hex(sha256(0x00 || cose_sign1)) and each tree head's root as the RFC 9162 root, through verify-core's `orgReadLeafHash` and `orgReadMerkleRoot`, the construction API 2.0 writes. A dump from an older Server fails `TENANT_READ_LEAF_HASH_MISMATCH` on every leaf. The re-exports `merkleRoot` and `verifyInclusion` are removed; `orgReadLeafHash`, `orgReadMerkleRoot` and `verifyOrgReadInclusion` (the audit-path walk for the Server's inclusion proofs) take their place.
 - **A dump directory must contain `vault_key_statements.ndjson`**, which every API 2.0 dump writes; without it the CLI exits `2`. `Dump` gains `keyStatements` and `DumpFiles` gains `keyStatements`.
 - **`--require-out-of-band-keys` is `--require-supplied-keys`.** A key fetched from the Server comes from the database a key-registry attacker writes to, so "out of band" promised an independence it never gave. The old flag is refused with a message naming the new one. The export report's `key provenance` reads `supplied=` where it read `out-of-band=`, following verify-core's `keyProvenance.supplied`, and the `OutOfBandKeyEntry` re-export is `SuppliedKeyEntry`. The warning about embedded keys is replaced by the key-anchoring section.
 - **`verifyVaultChains` and `verifyOrgAdminReadsChains` take the result of `walkDumpKeys`** in place of the raw `vault_signing_keys` rows, and `assembleReport` takes it as a third argument, so both passes grade against one verdict on each key. `VerifyReport` gains `verdict` and `keyTrust`; `ok` is false only for the `failed` verdict. `vault.optionalChecks` gains `key_anchoring`.
@@ -32,13 +38,13 @@ This release targets AGLedger API 2.0 and reads nothing older. It is built on `@
 
 ### Added
 
-- **Key anchoring on the dump path**. `--trust-anchor sha256:<hex>` (repeatable) and `trustAnchors` in `VerifyDumpOptions` pin vault keys held out of band. The dump's key statements are walked by verify-core's `computeKeyTrust` in write order (`created_at`, then row id), and every row a vault key signs is graded against the result, with the engine's codes: a chain entry `CHAIN_SIGNING_KEY_UNANCHORED`, a vault checkpoint `CHECKPOINT_KEY_UNANCHORED`, a read-log leaf `TENANT_READ_KEY_UNANCHORED`, a read-log tree head `TENANT_CHECKPOINT_KEY_UNANCHORED`. An anchored key is held to the window its statements sign. A key reached only through a statement this host cannot compute is `undecided`, and what it signed is `CHAIN_UNSUPPORTED_ALGORITHM`. Findings about the statements (`KEY_STATEMENT_INVALID`, `KEY_CLOSURE_INVALID`, `CHAIN_KEY_WINDOW_DRIFT`) fail the dump, and match the engine's scan, including its `key_closure_invalid` on a closure by a key reached but not anchored that retires an anchored key earlier, or with force, than any published closure and are listed under `key anchoring` in text and in `keyTrust.findings` in JSON.
+- **Key anchoring on the dump path**. `--trust-anchor sha256:<hex>` (repeatable) and `trustAnchors` in `VerifyDumpOptions` pin vault keys held out of band. The dump's key statements are walked by verify-core's `computeKeyTrust` in write order (`created_at`, then row id), and every row a vault key signs is graded against the result, with the Server's codes: a chain entry `CHAIN_SIGNING_KEY_UNANCHORED`, a vault checkpoint `CHECKPOINT_KEY_UNANCHORED`, a read-log leaf `TENANT_READ_KEY_UNANCHORED`, a read-log tree head `TENANT_CHECKPOINT_KEY_UNANCHORED`. An anchored key is held to the window its statements sign. A key reached only through a statement this host cannot compute is `undecided`, and what it signed is `CHAIN_UNSUPPORTED_ALGORITHM`. Findings about the statements (`KEY_STATEMENT_INVALID`, `KEY_CLOSURE_INVALID`, `CHAIN_KEY_WINDOW_DRIFT`) fail the dump, and match the Server's scan, including its `key_closure_invalid` on a closure by a key reached but not anchored that retires an anchored key earlier, or with force, than any published closure and are listed under `key anchoring` in text and in `keyTrust.findings` in JSON.
 - **`--distrusted-key` and `distrustedKeys`**, the operator's `VAULT_DISTRUSTED_KEYS` (`sha256:<hex>`, optionally `@<RFC 3339 instant>`), given once per key: what such a key stored from the instant on, or with none from the retirement a trusted key signed for it, counts for nothing in the walk. Given without a pin it is refused (exit `2`, or `TypeError` from the library) rather than ignored, and so is a pinned key distrusted with no instant, which the Server refuses to start with. A pin beside a dated entry for the same key (`sha256:<hex>@<instant>`) is taken, as the Server's key-compromise runbook uses it: the pin vouches for what the key stored before the instant. `verifyDump` and `verifyDumpStreaming` throw `TypeError` on an option they do not read, so a misspelt one cannot switch a check off, and `verifyDumpStreaming` refuses a malformed anchor or distrusted key, a distrust entry without a pin and an undated pin and distrust pair before it reads the directory. `--distrusted-keys` is refused with a message naming `--distrusted-key`.
-- **What a distrusted key signed before a trusted key retired it is accounted for on a dump, not failed**, as the engine's vault scan lists it in `distrustedEntries`. A chain entry the key signed outside its trust is listed with the code `CHAIN_SIGNED_BY_DISTRUSTED_KEY` in `vault.accounted` (capped at `MAX_REPORTED_FAILURES`, as `vault.failures` is) with the total in `vault.accountedCount`, and a key statement it signed in `keyTrust.accounted`; the text report lists both as `accounted for`. They are not verified, do not count toward `vault.signedEntries`, and fail nothing, so a dump whose only such items are accounted for passes. The JSON keys match the Python `agledger-verify`. `AccountedEntry`, `AccountedEntryCode`, `ACCOUNTED_ENTRY_CODE`, `DistrustSpan` and `KeyTrustNote` are re-exported from verify-core. An export file is unchanged: such entries and statements fail there.
+- **What a distrusted key signed before a trusted key retired it is accounted for on a dump, not failed**, as the Server's vault scan lists it in `distrustedEntries`. A chain entry the key signed outside its trust is listed with the code `CHAIN_SIGNED_BY_DISTRUSTED_KEY` in `vault.accounted` (capped at `MAX_REPORTED_FAILURES`, as `vault.failures` is) with the total in `vault.accountedCount`, and a key statement it signed in `keyTrust.accounted`; the text report lists both as `accounted for`. They are not verified, do not count toward `vault.signedEntries`, and fail nothing, so a dump whose only such items are accounted for passes. The JSON keys match the Python `agledger-verify`. `AccountedEntry`, `AccountedEntryCode`, `ACCOUNTED_ENTRY_CODE`, `DistrustSpan` and `KeyTrustNote` are re-exported from verify-core. An export file is unchanged: such entries and statements fail there.
 - **An export's `distrustedFrom` is read.** verify-core takes it from `exportMetadata.signingKeyWindows`: where the Server's `VAULT_DISTRUSTED_KEYS` entry cut the listed retirement and the run was not given the same `--distrusted-key`, the `CHAIN_KEY_WINDOW_DRIFT` (or `KEY_CLOSURE_INVALID`) finding names the entry to confirm with the Server's operator rather than reading as a rewritten column, says when the given entry carries another instant, and an earlier given instant is a note. The verdict and exit code are as before.
 - **The CLI's findings, notes and failures name its flags.** Where verify-core's wording names an option (`give distrustedKeys sha256:<hex>@<instant>`, `pin sha256:<hex> in trustAnchors`, `No trustAnchors were given`, `requireKeyId / requireSuppliedKeys`), the text and JSON reports say `--distrusted-key`, `--trust-anchor`, `--require-key-id` and `--require-supplied-keys`. The library's results keep verify-core's option names.
 - Both flags apply to an `/audit-export` file too, passed to verify-core's `verifyAuditExport`, and the export JSON carries `verdict` beside verify-core's result.
-- **The signed claims are checked against their rows, as the engine's scan checks them.** A vault checkpoint whose envelope does not decode as a claim, or whose signed position, tip hash, record subject or key id differs from its row, fails `CHECKPOINT_CLAIM_MISMATCH`. A read-log leaf whose signed position, previous-leaf hash, record id or record subject differs from its row fails `TENANT_READ_CLAIM_MISMATCH`. A read-log tree head whose signed size, root, count or key id differs fails `TENANT_CHECKPOINT_CLAIM_MISMATCH`. Each runs after the row, hash, index and root cross-checks and before anything about the key, so a key id column nulled beside a signed envelope is a claim mismatch rather than an unsigned row. The hash and root checks read the columns, so before this a rewritten column pair beside an intact envelope passed. `cborg` (the version verify-core pins) is now a runtime dependency, to read the claim as the engine does.
+- **The signed claims are checked against their rows, as the Server's scan checks them.** A vault checkpoint whose envelope does not decode as a claim, or whose signed position, tip hash, record subject or key id differs from its row, fails `CHECKPOINT_CLAIM_MISMATCH`. A read-log leaf whose signed position, previous-leaf hash, record id or record subject differs from its row fails `TENANT_READ_CLAIM_MISMATCH`. A read-log tree head whose signed size, root, count or key id differs fails `TENANT_CHECKPOINT_CLAIM_MISMATCH`. Each runs after the row, hash, index and root cross-checks and before anything about the key, so a key id column nulled beside a signed envelope is a claim mismatch rather than an unsigned row. The hash and root checks read the columns, so before this a rewritten column pair beside an intact envelope passed. `cborg` (the version verify-core pins) is now a runtime dependency, to read the claim as the Server does.
 - **With a pin, the instant the install began signing is held to the signed activations too.** The unsigned-row rule (`CHAIN_ENTRY_UNSIGNED`, `CHECKPOINT_UNSIGNED`, `TENANT_READ_LEAF_UNSIGNED`, `TENANT_CHECKPOINT_UNSIGNED`) dates the install's first signature from the earliest `activated_at` in `vault_signing_keys`, an unsigned column. With `--trust-anchor`, the activations the anchored keys' statements sign count as well and the earliest stands, so stripping the column or moving it later no longer switches the rule off.
 - **A pin over a dump with nothing signed by a key it anchors is not a trusted pass.** When `--trust-anchor` was walked but no vault entry verified under an anchored key, as for a dump of history written before the install began signing, `keyTrust.status` is `no_anchored_signature` and the verdict `unanchored`: exit `0`, headline `[VERIFIED, NOT ANCHORED]` with lines saying the pin was walked and no signature verified under a key it anchors. `vault.signedEntries` counts the entries whose signature verified, and `vault.optionalChecks.key_anchoring` is `not_checked` when a pin was given but no entry reached the anchoring check.
 - **A vault row with no readable time fails closed.** An entry with a null, missing or unparseable `created_at` fails `CHAIN_MALFORMED_ENTRY` wherever its key's window or the start of signing needs one, where it used to skip the window check and read as unsigned history; nulling every `created_at` let entries signed by a distrusted key after its cutoff pass. An unsigned vault checkpoint, read-log leaf or tree head with no readable time once signing began fails its unsigned code.
@@ -50,7 +56,7 @@ This release targets AGLedger API 2.0 and reads nothing older. It is built on `@
 
 ### Fixed
 
-- **An unsigned row written once the install signs is a break, as the engine grades it.** The instant the install began signing is the earliest `activated_at` in `vault_signing_keys`, retired keys included; from then on every writer holds a registered key. An unsigned chain entry written at or after it, or after a signed entry in the same chain, fails `CHAIN_ENTRY_UNSIGNED`. An unsigned vault checkpoint written at or after it fails `CHECKPOINT_UNSIGNED`. On the cross-party read log, a leaf whose envelope kid is the unsigned sentinel `0000000000000000` fails `TENANT_READ_LEAF_UNSIGNED` when read at or after that instant or after a signed leaf in the same org's log, and an unsigned tree head written at or after it fails `TENANT_CHECKPOINT_UNSIGNED`. Each is checked after the row, hash, index and root cross-checks, so an existing tamper finding keeps its own code. Unsigned rows from before the first key activation stay reduced coverage, so an install that never registered a key still verifies. Before this, an unsigned entry or checkpoint anywhere was reduced coverage, which is what a writer holding no key, or a DBA nulling a signed row's key id, leaves behind.
+- **An unsigned row written once the install signs is a break, as the Server grades it.** The instant the install began signing is the earliest `activated_at` in `vault_signing_keys`, retired keys included; from then on every writer holds a registered key. An unsigned chain entry written at or after it, or after a signed entry in the same chain, fails `CHAIN_ENTRY_UNSIGNED`. An unsigned vault checkpoint written at or after it fails `CHECKPOINT_UNSIGNED`. On the cross-party read log, a leaf whose envelope kid is the unsigned sentinel `0000000000000000` fails `TENANT_READ_LEAF_UNSIGNED` when read at or after that instant or after a signed leaf in the same org's log, and an unsigned tree head written at or after it fails `TENANT_CHECKPOINT_UNSIGNED`. Each is checked after the row, hash, index and root cross-checks, so an existing tamper finding keeps its own code. Unsigned rows from before the first key activation stay reduced coverage, so an install that never registered a key still verifies. Before this, an unsigned entry or checkpoint anywhere was reduced coverage, which is what a writer holding no key, or a DBA nulling a signed row's key id, leaves behind.
 - **A read-log leaf's signature is verified.** A leaf that names a real key now has its COSE_Sign1 signature checked under that key: one that does not verify, carries an all-zero signature, or does not decode fails `TENANT_READ_SIGNATURE_INVALID`, and a kid the key registry does not hold fails `CHAIN_SIGNATURE_MISSING_KEY`. Only the leaf hash and index were checked before, so a restamped leaf passed.
 - **A chain-entry failure names the chain it is on.** An entry-level failure on a schema chain read `RecordRow schema:<orgId> pos N`, presenting the chain key as a record id; it now reads `Chain schema:<orgId> pos N`, as checkpoint failures already did. A failure on a per-record chain reads `Record <id> pos N` instead of the internal type name `RecordRow`.
 - **An all-zero signature on a chain entry that names a signing key fails `CHAIN_SIGNATURE_INVALID`** rather than being graded unsigned.
@@ -64,13 +70,13 @@ This release targets AGLedger API 2.0 and reads nothing older. It is built on `@
 - The agent-signature line reads `no key for their cert` where it read `no key supplied for their cert`, since a key can now come from the dump.
 - On a failed run the agent-signature line says its counts stop at the first break in each chain, since nothing past a break is read; it used to say `none on the chain` when signatures sat beyond the break.
 - An `/audit-export` file verify-core refuses as malformed is reported with the file's name, and the note on the `--keys` file's shape is added only when `--keys` was given and is what verify-core refused. It was added to every refusal, with or without `--keys`.
-- A vault row with no `cose_sign1` is described as carrying no signed envelope (an engine that predates it, or a removed column) rather than as a "pre-2.0 dump shape".
+- A vault row with no `cose_sign1` is described as carrying no signed envelope (a Server that predates it, or a removed column) rather than as a "pre-2.0 dump shape".
 
 ## [1.6.0] - 2026-09-21
 
 ### Fixed
 
-- **Conformance corpus regenerated from the tagged 1.8.0 engine** (the `v1.8.0` release), replacing a corpus generated at API 1.3.4. The export slice goes from 23 to 32 vectors and the dump slice from 12 to 18, and the additions cover this release's own work: `export/actor-attribution-mismatch.json` and `dump/chain-actor-attribution-mismatch` both expect `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`, and `export/agent-signature-invalid.json` expects `CHAIN_AGENT_SIGNATURE_INVALID`. The runner now maps the manifest's `agentKeysFile` to the verifier's agent-key input; without it that vector ran with no agent keys, reported `skipped_no_input`, passed, and failed the suite on a check that never executed.
+- **Conformance corpus regenerated from the tagged 1.8.0 Server** (the `v1.8.0` release), replacing a corpus generated at API 1.3.4. The export slice goes from 23 to 32 vectors and the dump slice from 12 to 18, and the additions cover this release's own work: `export/actor-attribution-mismatch.json` and `dump/chain-actor-attribution-mismatch` both expect `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`, and `export/agent-signature-invalid.json` expects `CHAIN_AGENT_SIGNATURE_INVALID`. The runner now maps the manifest's `agentKeysFile` to the verifier's agent-key input; without it that vector ran with no agent keys, reported `skipped_no_input`, passed, and failed the suite on a check that never executed.
 
 - **Actor attribution is verified, not displayed on trust.** An audit export's own verification guide names `actorDisplayName`, `actorOwnerType` and `humanReadableLabel` as unsigned display projections and tells the auditor that the attribution to rely on is the `actorId`/`actorOwnerId` UUID. Those two, and `actorRole`, are signature-covered in the COSE protected header (CWT_Claims label 15, private label -65539), and nothing compared them against it: an export or dump row could be re-attributed to another actor, changing nothing else, and still verify with out-of-band keys. They are now cross-checked per entry, and a divergence fails the new `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`. This runs on a dump directory and on an `/audit-export` file; the dump carries `actor_key_id`, `actor_role` and `actor_owner_id` on every row, so it always applies there. The text report's `note` line no longer tells the reader that attribution is the signed UUID without saying whether this run checked it: it now states that the attribution was cross-checked and agrees, or that the export carried no signed actor claim to check it against. Requires `@agledger/verify-core` 1.5.0.
 
@@ -93,7 +99,7 @@ This release targets AGLedger API 2.0 and reads nothing older. It is built on `@
 
 ### Changed
 
-- **LICENSE section 6 names the ciphers this package line ships**: Ed25519 (EdDSA), ECDSA P-256 with SHA-256, HMAC-SHA-256, AES-256-GCM, HKDF-SHA-256 and SHA-256. X25519 is gone from the list with the federation encryption key the engine no longer has. The LICENSE file is the only shipped byte that moved.
+- **LICENSE section 6 names the ciphers this package line ships**: Ed25519 (EdDSA), ECDSA P-256 with SHA-256, HMAC-SHA-256, AES-256-GCM, HKDF-SHA-256 and SHA-256. X25519 is gone from the list with the federation encryption key the Server no longer has. The LICENSE file is the only shipped byte that moved.
 
 ## [1.5.2] - 2026-08-30
 
@@ -116,7 +122,7 @@ Documentation only. Verification behaviour is identical to 1.5.1.
 
 ### Changed
 
-- **Report text no longer uses em-dashes**, in the help header, the unsigned-projection note, and the tree-head fork message. Wording only; every verdict, code, and exit status is unchanged.
+Documentation wording.
 
 ### Packaging
 
@@ -127,7 +133,7 @@ Documentation only. Verification behaviour is identical to 1.5.1.
 
 ### Fixed
 
-- **Vault checkpoints join on `chain_key`, so a healthy schema chain no longer fails the whole dump.** A schema chain's checkpoint carries a derived UUIDv8 in `record_id`, because the engine needs a non-null uuid for a chain whose rows have none. Grouping checkpoints by that column stranded them: a stock Compose install, untouched, returned `[FAIL]` and exit 1 with `CHECKPOINT_ROW_MISSING`, which is a tamper alarm for any audit gate wired to the exit code. Checkpoints now group on the producer's `chain_key`, falling back to `record_id` so dumps taken before the producer emitted it verify exactly as they did before.
+- **Vault checkpoints join on `chain_key`, so a healthy schema chain no longer fails the whole dump.** A schema chain's checkpoint carries a derived UUIDv8 in `record_id`, because the Server needs a non-null uuid for a chain whose rows have none. Grouping checkpoints by that column stranded them: a stock Compose install, untouched, returned `[FAIL]` and exit 1 with `CHECKPOINT_ROW_MISSING`, which is a tamper alarm for any audit gate wired to the exit code. Checkpoints now group on the producer's `chain_key`, falling back to `record_id` so dumps taken before the producer emitted it verify exactly as they did before.
 - **Failures name a schema chain by its chain key.** The message said `RecordRow <uuidv8>`, sending an auditor to `/v1/records/{id}` for a 404 with no explanation. It now reads `Chain schema:<orgId>`.
 
 ### Changed (widened union, via `@agledger/verify-core` 1.3.0)
@@ -136,7 +142,7 @@ Documentation only. Verification behaviour is identical to 1.5.1.
 
 ## [1.4.0] - 2026-08-05
 
-Signing-agility wave 2: verifies ES256 chains end to end (chain walk, vault checkpoints, org-admin-reads signed tree heads) via `@agledger/verify-core` 1.2.0. Ed25519 chains verify byte-identically to 1.3.1.
+Signing-algorithm agility: verifies ES256 chains end to end (chain walk, vault checkpoints, org-admin-reads signed tree heads) via `@agledger/verify-core` 1.2.0. Ed25519 chains verify byte-identically to 1.3.1.
 
 ### Added
 
@@ -144,7 +150,7 @@ Signing-agility wave 2: verifies ES256 chains end to end (chain walk, vault chec
 
 ### Changed
 
-- **Conformance corpus regenerated from API 1.3.4** and re-pinned via `CORPUS-LOCK.json`. Both slices gain the ES256 wave: `export/valid-es256` + `dump/valid-es256` (real ES256 engine output, must pass), `es256-signature-invalid`, and `es256-header-alg-mismatch` (a valid ES256 signature under an EdDSA header reads as `CHAIN_ALG_MISMATCH`, tamper class).
+- **Conformance corpus regenerated from API 1.3.4** and re-pinned via `CORPUS-LOCK.json`. Both slices gain the ES256 vectors: `export/valid-es256` + `dump/valid-es256` (real ES256 Server output, must pass), `es256-signature-invalid`, and `es256-header-alg-mismatch` (a valid ES256 signature under an EdDSA header reads as `CHAIN_ALG_MISMATCH`, tamper class).
 
 ## [1.3.1] - 2026-08-05
 
@@ -161,7 +167,7 @@ The verifier forward-compatibility floor (with `@agledger/verify-core` 1.1.0). L
 - **Takes `@agledger/verify-core` `^1.1.0`**, inheriting the key-bound algorithm dispatch, the tamper-class `CHAIN_ALG_MISMATCH`, the fail-closed `CHAIN_UNSUPPORTED_ALGORITHM`, the signed-kid binding (`CHAIN_SIGNING_KEY_DRIFT`), untagged-COSE_Sign1 rejection, and the key-length-derived unsigned sentinel. See that package's 1.1.0 changelog for the full contract.
 - **Checkpoint signature checks fail closed on every non-ok outcome.** Both the vault-checkpoint and the org-admin-reads signed-tree-head sites previously passed an all-zero signature on a checkpoint that claims a `signing_key_id` (the `'unsigned'` outcome slipped between the two handled failure cases). Any non-ok outcome now fails: `CHECKPOINT_SIGNATURE_INVALID` / `TENANT_CHECKPOINT_SIGNATURE_INVALID`, or `CHAIN_UNSUPPORTED_ALGORITHM` when the key's algorithm is beyond this build.
 - **`vault_signing_keys.algorithm` is now plumbed into verification.** The dump's declared algorithm is cross-checked against the key material itself; a registry row that lies about its own key fails `CHAIN_ALG_MISMATCH`. The declared string never selects the code path.
-- Conformance corpus refreshed from engine 1.3.4, including the new `chain-signing-key-drift` and `chain-alg-registry-lie` dump vectors.
+- Conformance corpus refreshed from Server 1.3.4, including the new `chain-signing-key-drift` and `chain-alg-registry-lie` dump vectors.
 
 ## [1.2.0] - 2026-08-01
 
@@ -183,8 +189,6 @@ A full-installation dump could not be verified at all. The loader read each NDJS
 - `loadDump` + `verifyDump` still work and produce the same report. `verifyDumpStreaming` is the new preferred entry point and is what the CLI uses.
 - `Dump`, `VaultEntryDump`, and the companion wire types are unchanged. No dump-format change, so no coordination with the dump tool or the conformance corpus.
 - Tests cover chunk-boundary reassembly, multi-byte characters split across a boundary, report-for-report equivalence with the in-memory path across all nine conformance dump vectors, the re-ordered-dump refusal, and the exit-code split. The size case itself is opt-in via `AGLEDGER_VERIFY_LARGE_FILE_TEST=1`, since it wants about 1 GB of disk.
-
-Closes #14.
 
 ## [1.1.1] - 2026-07-16
 
@@ -221,7 +225,7 @@ Docs and tooling. No verification or wire-format change.
 
 ### Changed
 
-- Docs only: removed em-dashes from the README prose and the package.json description (writing-style sweep). Rewrote each sentence rather than swapping the glyph. No verification, exit-code, or wire-format change.
+Documentation wording.
 
 ## [1.0.1] - 2026-06-22
 
@@ -237,7 +241,7 @@ Docs and tooling. No verification or wire-format change.
 
 ### Changed
 
-- **1.0.0 GA.** Version promoted to 1.0.0 to align with the AGLedger API v1.0.0 GA and the published package line. Bumped `@agledger/verify-core` to `^1.0.0` (now also GA at 1.0.0). No verifier-logic or CLI-surface changes from 0.1.6 — the dump-verification behavior and exit codes are unchanged.
+- **1.0.0 GA.** Version promoted to 1.0.0 to align with the AGLedger API v1.0.0 GA and the published package line. Bumped `@agledger/verify-core` to `^1.0.0` (now also GA at 1.0.0). No verifier-logic or CLI-surface changes from 0.1.6; the dump-verification behavior and exit codes are unchanged.
 
 ## [0.1.6] - 2026-06-10
 
@@ -250,13 +254,13 @@ Docs and tooling. No verification or wire-format change.
 
 ### Changed
 
-- The EXPORT-kind conformance corpus (`testdata/conformance/export/` + `manifest-export.json`) is now exercised in the test suite — previously only the DUMP-kind vectors ran, so the 18 shipped export vectors were dead weight. The new block runs each vector through `verifyAuditExport` (the same code path the CLI/library uses for single `/audit-export` documents) and asserts pass/fail, `brokenAt.code`, and `brokenAt.position`. The export manifest is hard-asserted present so a missing corpus fails loud.
+- The EXPORT-kind conformance corpus (`testdata/conformance/export/` + `manifest-export.json`) is now exercised in the test suite; previously only the DUMP-kind vectors ran, so the 18 shipped export vectors were dead weight. The new block runs each vector through `verifyAuditExport` (the same code path the CLI/library uses for single `/audit-export` documents) and asserts pass/fail, `brokenAt.code`, and `brokenAt.position`. The export manifest is hard-asserted present so a missing corpus fails loud.
 - Corrected the README corpus-regeneration instructions: removed the bogus `pnpm generate:corpus` step (no such script; this repo uses npm and has no local generator). The corpus is generated with the Server's conformance generator; refresh it there and copy `export/`, `dump/`, and both manifests into `testdata/conformance/`.
 - Refreshed the `@agledger/verify-core` dependency range to `^0.1.7` (lockfile resolves the latest published verify-core).
 
 ## [0.1.4] - 2026-06-04
 
-No functional change. First release published from CI with **build provenance** via npm trusted publishing (OIDC) — npm attaches a Sigstore provenance attestation automatically; verify with `npm audit signatures`. A CycloneDX SBOM is attached to the release. This package now lives in its own source-of-truth repo `agledger-ai/verify` and resolves `@agledger/verify-core@0.1.4`.
+No functional change. First release published from CI with **build provenance** via npm trusted publishing (OIDC); npm attaches a Sigstore provenance attestation automatically; verify with `npm audit signatures`. A CycloneDX SBOM is attached to the release. This package now lives in its own source-of-truth repo `agledger-ai/verify` and resolves `@agledger/verify-core@0.1.4`.
 
 ## [0.1.3] - 2026-05-29
 
@@ -266,11 +270,11 @@ No functional change. First release published from CI with **build provenance** 
 
 ## [0.1.2] - 2026-05-28
 
-Republished against `@agledger/verify-core` 0.1.2 — picks up the OOB-key polymorphism and the temporal-axis tightening (export `signingKeyWindows` no longer clobbers caller-supplied OOB windows). No functional change in the dump verifier itself. Now also re-exports the new `OutOfBandKeyEntry` type so dump consumers don't need a second dep to type their OOB key catalogue.
+Republished against `@agledger/verify-core` 0.1.2, picks up the OOB-key polymorphism and the temporal-axis tightening (export `signingKeyWindows` no longer clobbers caller-supplied OOB windows). No functional change in the dump verifier itself. Now also re-exports the new `OutOfBandKeyEntry` type so dump consumers don't need a second dep to type their OOB key catalogue.
 
 ## [0.1.1] - 2026-05-28
 
-Republished against `@agledger/verify-core` 0.1.1 — no functional change in the dump verifier itself. The shared core now also exercises `oidc_actor` and `key_temporal` on the per-record export path; the full-vault dump path here is unchanged.
+Republished against `@agledger/verify-core` 0.1.1; no functional change in the dump verifier itself. The shared core now also exercises `oidc_actor` and `key_temporal` on the per-record export path; the full-vault dump path here is unchanged.
 
 ## [0.1.0] - 2026-05-27
 

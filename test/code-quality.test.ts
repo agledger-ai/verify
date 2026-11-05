@@ -68,7 +68,7 @@ describe('no truthiness tests on signing-key ids', () => {
   // truthiness test treats a tampered "" like null and skips the signature
   // check (fail-open); the empty string must instead fall through to key
   // resolution and fail as an unknown key. Six instances of this class
-  // shipped in the verifier wave before the sweep; this pins it at zero.
+  // shipped in an earlier release; this pins it at zero.
   // Legal spellings: `=== null`, `!== null`, and `??`.
   const TRUTHY_PATTERNS = [
     /if \((?:[\w.]+\.)?(?:signingKeyId|signing_key_id)\)/,
@@ -161,7 +161,7 @@ describe('publishable package cleans dist before building', () => {
 
 describe('offline verifier makes no network access', () => {
   // The verifier's entire value is producing a correct verdict even if the
-  // engine that produced the records is compromised. A verifier that can reach
+  // Server that produced the records is compromised. A verifier that can reach
   // the network could be steered to "phone home" for a verdict, so this package
   // must import nothing network-capable and never call fetch.
   const networkImport =

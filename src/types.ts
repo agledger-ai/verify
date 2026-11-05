@@ -14,7 +14,7 @@
  * fields. Post-2.0, those are replaced by a single `cose_sign1` field
  * carrying the base64-encoded canonical COSE_Sign1 envelope (RFC 9052) over
  * an in-toto v1 Statement payload, the chain trust root. A vault entry that
- * lacks `cose_sign1` carries no signed envelope (an engine that predates it,
+ * lacks `cose_sign1` carries no signed envelope (a Server that predates it,
  * or a removed column); this verifier refuses to parse it best-effort
  * (UNSUPPORTED_FORMAT).
  */
@@ -70,16 +70,16 @@ export interface VaultEntryDump {
   actor_owner_id: string;
   /** OIDC issuer URI when the request authenticated via an admin OIDC bearer.
    *  NULL on API-key paths + every older dump. Paired with
-   *  `actor_oidc_sub` + `actor_oidc_synthesized` at the DB layer via
-   *  `chk_audit_vault_actor_oidc_synthesized_paired`. Optional in the dump
+   *  `actor_oidc_sub` + `actor_oidc_synthesized` by the
+   *  Server, which writes all three or none. Optional in the dump
    *  JSON for back-compat: older dumps omit the columns. */
   actor_oidc_iss?: string | null;
   actor_oidc_sub?: string | null;
-  /** TRUE iff the engine itself populated the column pair AND wrote the
+  /** TRUE iff the Server itself populated the column pair AND wrote the
    *  same identity into the signed `predicate.on_behalf_of.oidc`.
    *  Drives the row-vs-signed cross-check (CHAIN_OIDC_ACTOR_MISMATCH); when
    *  TRUE the verifier requires row columns to equal the signed predicate,
-   *  so column-DELETION tamper (DBA NULLs the columns on a synthesized row)
+   *  so column-DELETION tamper (the columns are NULLed on a synthesized row)
    *  surfaces as drift. FALSE on API-key paths and on caller-supplied RFC
    *  8693 delegation. Optional in the dump JSON for back-compat: older
    *  dumps lack the field and the verifier falls back to the
@@ -92,7 +92,7 @@ export interface VaultEntryDump {
 export interface VaultCheckpointDump {
   id?: string;
   /**
-   * The engine requires a non-null uuid here even for chains whose rows carry
+   * The Server requires a non-null uuid here even for chains whose rows carry
    * no record id, so a schema chain's checkpoint holds a *derived UUIDv8* hash
    * of the org id. That value matches no `audit_vault` row by inspection, which
    * is why the join must go through `chain_key` and not this column.
@@ -132,7 +132,7 @@ export interface SigningKeyDump {
 
 /**
  * One line of vault_key_statements.ndjson: a signed key statement (genesis,
- * succession, adoption or closure) as the engine stored it, with the write
+ * succession, adoption or closure) as the Server stored it, with the write
  * time the trust walk orders by.
  */
 export type KeyStatementDump = DumpKeyStatementRow;
@@ -210,7 +210,7 @@ export interface VaultChainsReport {
   /**
    * Capped sample, oldest first, of entries a distrusted key signed that its
    * `distrustedKeys` entry and a retirement signed by a key the walk trusts
-   * account for (`CHAIN_SIGNED_BY_DISTRUSTED_KEY`), as the engine's scan lists
+   * account for (`CHAIN_SIGNED_BY_DISTRUSTED_KEY`), as the Server's scan lists
    * them in `distrustedEntries`. They are not verified, they fail nothing, and
    * they do not count toward `signedEntries`. Empty without `distrustedKeys`.
    * Capped at MAX_REPORTED_FAILURES, as `failures` is.
@@ -222,7 +222,7 @@ export interface VaultChainsReport {
    * Which input-gated checks ran. A check is `applied` when it ran on at least
    * one chain. `agent_signature` is `applied` once a cert key, from
    * `agentKeys` or from the dump (`certKeysFromChain`), matched at least one
-   * engine-validated agent signature.
+   * Server-validated agent signature.
    */
   optionalChecks: Record<OptionalCheck, CheckApplicability>;
   /**
@@ -255,7 +255,7 @@ export interface VaultChainsReport {
    * `EPHEMERAL_CERT_ISSUED` entry signs on the platform-ops chain, counted
    * once per key and only from a chain that verified clean. Used beside any
    * `agentKeys` the caller passed. Zero on an org-scoped dump, which leaves
-   * that chain out, and for certs an engine older than 1.8.0 issued.
+   * that chain out, and for certs a Server older than 1.8.0 issued.
    */
   certKeysFromChain: number;
 }

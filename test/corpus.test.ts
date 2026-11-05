@@ -163,7 +163,7 @@ describe('DUMP conformance corpus (manifest-dump.json)', () => {
 });
 
 describe('DUMP corpus pinned on the Server\'s current key', () => {
-  // Every pass vector whose registry columns are the engine's own, as
+  // Every pass vector whose registry columns are the Server's own, as
   // verify-core's dump runner holds them.
   it.each(['dump/valid', 'dump/valid-es256', 'dump/valid-identity', 'dump/valid-unsigned-history-then-signed'])(
     '%s verifies with every key anchored',
@@ -183,7 +183,7 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
   });
 
   it('the key-window vectors sign the window they test, so pinned they give the verdict their manifest names', () => {
-    // The engine regenerates these three by moving the window the vault key's
+    // The Server regenerates these three by moving the window the vault key's
     // statements sign, not a vault_signing_keys column, so the walk from a pin
     // reaches the same verdict as the unpinned run and reports no drift.
     for (const dir of ['dump/valid-rotation-boundary', 'dump/chain-key-not-yet-active', 'dump/chain-key-expired']) {
@@ -199,7 +199,7 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
 
   // The entry the distrusted key signed from its cutoff on was written before
   // the pinned successor retired it, so the distrust entry and that
-  // retirement account for it, as the engine's scan lists it: not verified,
+  // retirement account for it, as the Server's scan lists it: not verified,
   // and nothing fails.
   it.each([
     ['pinned on its successor', false],
@@ -270,7 +270,7 @@ describe('DUMP corpus pinned on the Server\'s current key', () => {
     expect(vault.accounted[0]).toMatchObject({ code: ACCOUNTED_ENTRY_CODE, position: entry.chain_position, keyId: previous.key_id });
   });
 
-  it('pinned on the genesis key of a rotation, the closure its unanchored successor signed is KEY_CLOSURE_INVALID, as the engine scan grades it', () => {
+  it('pinned on the genesis key of a rotation, the closure its unanchored successor signed is KEY_CLOSURE_INVALID, as the Server scan grades it', () => {
     // The successor is reached but not anchored from the genesis pin, and no
     // key surface publishes it, so its closure of the genesis key is one an
     // offline walk over the published statements cannot verify.

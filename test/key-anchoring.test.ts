@@ -2,7 +2,7 @@
  * Key anchoring on the dump path: every row a vault key signs (chain entries,
  * vault checkpoints, read-log leaves, read-log tree heads) is graded against
  * verify-core's walk of the dump's key statements from `trustAnchors`, with the
- * engine's codes, and a run without anchors is never a clean verdict.
+ * Server's codes, and a run without anchors is never a clean verdict.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -54,7 +54,7 @@ function planted(): { dump: Dump; pin: string } {
 }
 
 describe('rows signed by a key no statement anchors', () => {
-  it('pinned, each fails with the code the engine reports for it', () => {
+  it('pinned, each fails with the code the Server reports for it', () => {
     const { dump, pin } = planted();
     const report = verifyDump(dump, { trustAnchors: [pin] });
     expect(report.verdict).toBe('failed');

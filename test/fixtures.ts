@@ -3,15 +3,14 @@
  * producer. Returns a Dump that should pass verification cleanly. Adversarial
  * tests and the conformance generator mutate a clone of this baseline.
  *
- * The producer here mirrors the engine encoder (audit-vault/encoders/
- * cose-sign1.ts): same protected header labels, same CWT layout, same
+ * The producer here mirrors the Server encoder: same protected header labels, same CWT layout, same
  * payload-as-in-toto-v1-Statement shape, same RFC 8949 §4.2.1 deterministic
  * encoding via cborg.rfc8949EncodeOptions.
  *
- * Inlined rather than imported to keep the verifier's load-bearing zero-engine-
- * dependency property: the offline auditor works even if the engine is
+ * Inlined rather than imported to keep the verifier's load-bearing zero-Server-
+ * dependency property: the offline auditor works even if the Server is
  * compromised, and these fixtures prove the verifier interoperates with a
- * conforming producer that isn't engine code.
+ * conforming producer that isn't Server code.
  */
 import { createPrivateKey, generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -161,7 +160,7 @@ function recordSubjectFor(recordId: string): Array<{ name: string; digest: { sha
   return [{ name: 'record_id', digest: { sha256: hash('sha256', recordId, 'hex') } }];
 }
 
-/** The subject the engine signs on a checkpoint or read-log leaf: sha256 of the record UUID's 16 bytes. */
+/** The subject the Server signs on a checkpoint or read-log leaf: sha256 of the record UUID's 16 bytes. */
 function uuidSubject(uuid: string): Array<{ name: string; digest: { sha256: string } }> {
   return [{ name: 'record_id', digest: { sha256: hash('sha256', uuidToBytes(uuid), 'hex') } }];
 }
@@ -212,7 +211,7 @@ export function buildVaultEntry(args: BuildVaultEntryArgs): Dump['vaultEntries']
   );
   const row: Dump['vaultEntries'][number] = {
     id: `entry-${args.recordId}-${args.position}`,
-    // Match the engine's row shape: record_id is the UUID written into the
+    // Match the Server's row shape: record_id is the UUID written into the
     // signed predicate, NOT the synthetic short-key the fixture uses for lookup.
     record_id: recordUuid,
     entry_type: args.entryType,

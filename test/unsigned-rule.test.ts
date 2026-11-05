@@ -11,7 +11,7 @@ import { EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
 import type { Dump, Failure, FailureCode, OrgAdminReadDump, VerifyReport } from '../src/types.js';
 
 /**
- * The engine's rule for unsigned rows, applied to a dump: an unsigned chain
+ * The Server's rule for unsigned rows, applied to a dump: an unsigned chain
  * entry, vault checkpoint, read-log leaf or read-log checkpoint is a break
  * when it is written at or after the earliest `activated_at` in the key
  * registry (retired keys included), and an unsigned entry or leaf is also a
@@ -66,7 +66,7 @@ function longChain(dump: Dump): Dump['vaultEntries'] {
 }
 
 /**
- * Re-encode a real envelope as the engine writes an unsigned one: the kid is
+ * Re-encode a real envelope as the Server writes an unsigned one: the kid is
  * the eight-zero-byte sentinel and the signature slot is zeroed. Protected
  * header otherwise unchanged, so every chain claim still holds.
  */
@@ -102,7 +102,7 @@ function replaceLeaf(dump: Dump, index: number, coseSign1: string): OrgAdminRead
 }
 
 /**
- * Make a checkpoint row unsigned the way the engine writes one: no key id,
+ * Make a checkpoint row unsigned the way the Server writes one: no key id,
  * and an envelope carrying the unsigned kid and a zeroed signature. Nulling
  * the column alone leaves the signed kid disagreeing with it, which is a
  * claim mismatch rather than an unsigned checkpoint.
@@ -115,7 +115,7 @@ function unsign(cp: { signing_key_id: string | null; cose_sign1: string }): void
 /**
  * Make every read-log tree head unsigned and written before `before`, its
  * signed root restamped to the row's (which `replaceLeaf` may have re-rooted),
- * as an engine writing that tree head unsigned would have signed it.
+ * as a Server writing that tree head unsigned would have signed it.
  */
 function unsignTreeHeads(dump: Dump, before: string): void {
   for (const cp of dump.orgAdminReadsCheckpoints) {
@@ -356,7 +356,7 @@ describe('org_admin_reads leaves: the signature a real kid claims', () => {
     expect(only(verifyDump(dump))).toMatchObject({ code: 'TENANT_READ_SIGNATURE_INVALID', leafIndex: 0 });
   });
 
-  it('a leaf whose bytes are not a COSE_Sign1 envelope is TENANT_READ_CLAIM_MISMATCH, as the engine grades it', () => {
+  it('a leaf whose bytes are not a COSE_Sign1 envelope is TENANT_READ_CLAIM_MISMATCH, as the Server grades it', () => {
     const dump = validDump();
     replaceLeaf(dump, 0, Buffer.from('not an envelope').toString('base64'));
     const failure = only(verifyDump(dump));

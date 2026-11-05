@@ -3,8 +3,8 @@
 Standalone offline verifier for a **full AGLedger installation dump**: the
 per-record `audit_vault` hash chain, the vault checkpoints, the
 `org_admin_reads` Merkle log, and the signed key statements that anchor every
-vault key, all read from a static NDJSON dump. No engine, no database, no
-network. It reads dumps and exports from AGLedger API 2.0.
+vault key, all read from a static NDJSON dump. No Server, no database, no
+network. It reads dumps and exports from AGLedger Server 2.0.
 
 Built on [`@agledger/verify-core`](https://www.npmjs.com/package/@agledger/verify-core): the per-record (and per-org
 schema-event) hash-chain walk is the same body of logic the SDK `/verify`
@@ -15,12 +15,13 @@ is verify-core's too.
 
 ## Why
 
-The engine signs every state transition (Ed25519 by default, ES256 behind
+The Server signs every state transition (Ed25519 by default, ES256 behind
 the server-side opt-in). A customer's auditor
-needs an independent verifier that does not trust the engine. If the engine
-were compromised, an in-engine "everything is fine" report would be worth
-nothing. This package is that escape hatch: it lives outside the engine and
-checks a dump the operator produces with the engine's `vault:dump` exporter.
+needs an independent verifier that does not trust the Server. A report the
+Server produces about itself rests on the Server being sound. This package
+runs no Server code: it reads a dump the operator exports from the Server and
+checks it alone, so given keys held out of band, a compromised Server cannot
+make it report a pass it did not earn.
 
 The one thing a dump cannot tell you on its own is which keys to trust: anything
 with write access to the database can add a key row and sign entries with it.
@@ -126,10 +127,10 @@ agledger-verify ./dump --trust-anchor sha256:15d63684b387235c47fe3a81e3004b928f4
 ```
 
 `--trust-anchor` is repeatable. The statements are walked in the dump's write
-order (`created_at`, then row id), the rule the engine applies to its own
+order (`created_at`, then row id), the rule the Server applies to its own
 registry, and each anchored key is held to the window its statements sign
 rather than to the registry columns. A row signed by a key the walk does not
-reach fails, with the code the engine's own scan reports for it:
+reach fails, with the code the Server's own scan reports for it:
 
 | Row | Code |
 | --- | --- |
@@ -144,7 +145,7 @@ under `key anchoring` in the text report and in `keyTrust.findings` in JSON:
 what it is filed under), `KEY_CLOSURE_INVALID` (a retired key with no closure
 that counts, or a closure by a key the walk reaches but does not anchor that
 retires an anchored key earlier, or with force, than any published closure, as
-the engine's scan grades it), and `CHAIN_KEY_WINDOW_DRIFT` (a registry column that differs from
+the Server's scan grades it), and `CHAIN_KEY_WINDOW_DRIFT` (a registry column that differs from
 the signed window). A key reached only through a statement this host cannot
 compute (Ed25519 history on a FIPS host) is `undecided`, and what it signed is
 `CHAIN_UNSUPPORTED_ALGORITHM`, not tamper.
@@ -161,7 +162,7 @@ signed either, so the holder of a leaked key can still sign entries dated
 before its cutoff, and no offline verifier can tell those from history inside
 the key's legitimate window. It needs a `--trust-anchor`.
 
-An API 2.0 Server lists a key its `VAULT_DISTRUSTED_KEYS` names with
+A Server 2.0 lists a key its `VAULT_DISTRUSTED_KEYS` names with
 `distrustedFrom`, the entry's instant, in an export's `signingKeyWindows`, and
 where that instant is earlier than the retirement the key's closures sign, it
 lists the key retired at that instant. A run not given the same entry still
@@ -197,7 +198,7 @@ agledger-verify ./dump \
 
 On a dump, what a distrusted key signed outside its trust (from its instant
 on, or at any time when no pin reaches it) but stored before a key the walk
-trusts retired it is **accounted for**, as the engine's vault scan lists it in
+trusts retired it is **accounted for**, as the Server's vault scan lists it in
 `distrustedEntries`: the distrust entry and that retirement account for it.
 It is listed, it is not verified, and it fails nothing, so a dump whose only
 such items are accounted for passes with exit `0`. The text report lists the
@@ -210,7 +211,7 @@ anchoring`. In JSON they are `vault.accounted` (capped at 1000, as
 Accounted entries do not count toward `vault.signedEntries`. Anything the key
 signed after that retirement, or under a distrusted key no trusted key has
 retired, still fails. An export file has nothing accounted for: such entries
-and statements fail there, as they do in the engine's export.
+and statements fail there, as they do in the Server's export.
 
 A malformed pin or distrusted key, a key named twice, `--distrusted-key`
 without `--trust-anchor`, a pinned key distrusted with no instant, and a
@@ -296,7 +297,7 @@ Where that key comes from depends on what you are verifying:
   platform-ops chain has verified clean (hash chain, vault signatures and
   checkpoints) and only from an entry whose vault signature checked, so it
   uses no key the vault key did not sign. No flag is needed.
-- **An org-scoped dump** (`--org <id>` on the dump tool) leaves the
+- **An org-scoped dump** (one the Server exported for a single org) leaves the
   platform-ops chain out, and **a per-record `/audit-export`** does not
   include it either. Neither carries cert keys.
 - **A cert issued by a Server older than 1.8.0** has only its thumbprint on
@@ -447,7 +448,7 @@ caller need not add a second dependency.
   signature verifies. An
   inclusion proof from `GET /v1/audit/org-reads/checkpoints/{id}/proof` checks
   with the re-exported `verifyOrgReadInclusion`.
-- **Unsigned rows**, graded as the engine grades them. The install began
+- **Unsigned rows**, graded as the Server grades them. The install began
   signing at the earliest `activated_at` in `vault_signing_keys`, retired keys
   included. From then on every writer holds a registered key, so an unsigned
   row written at or after that instant is a break: `CHAIN_ENTRY_UNSIGNED` for a
@@ -458,7 +459,7 @@ caller need not add a second dependency.
   org log is a break whatever its time. Unsigned rows from before the first key
   activation stay reduced coverage, so an install that never registered a key
   still verifies.
-- **Engine-fork detection**: two checkpoints at the same `tree_size` carrying
+- **Server fork detection**: two checkpoints at the same `tree_size` carrying
   different `root_hash` is `TENANT_CHECKPOINT_FORK`.
 
 ## Fail-closed posture
@@ -466,7 +467,7 @@ caller need not add a second dependency.
 - An **empty or truncated vault** (zero entries) does NOT verify clean. It
   reports `CHAIN_EMPTY`.
 - A vault row with no `cose_sign1` carries no signed envelope (every row in
-  export format 2.0 has one, so it was written by an engine that predates the
+  export format 2.0 has one, so it was written by a Server that predates the
   envelope or had the column removed). It fails `UNSUPPORTED_FORMAT` rather than
   being parsed best-effort.
 
@@ -502,5 +503,5 @@ and the EXPORT-kind vectors under
 (manifest: [`manifest-export.json`](https://github.com/agledger-ai/verify/blob/main/testdata/conformance/manifest-export.json))
 are the anti-drift seam shared with the independent Python verifier. They live
 in the source repository; the npm package does not ship them. They are
-**real engine output**, not synthesized here, so the two verifiers are held to
+**real Server output**, not synthesized here, so the two verifiers are held to
 the same wire format and agree verdict-for-verdict.
