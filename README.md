@@ -76,10 +76,22 @@ the change seal the earlier key. Pass the peer's key history (the JSON its
 `GET /.well-known/agledger-federation-keys.json` serves, no auth) with
 `--federation-key-history <file>` beside the `--federation-key` you hold for
 that hub: every key the history links to it through successions both keys
-signed is trusted inside its window. A message under a key retired before the
-receiver took it verifies and is reported as after retirement, which is in
+signed is trusted inside its window. Each message is placed by its sealed
+`wire.timestamp`, which the peer signed and the receiver sealed, never by the
+entry's unsigned `createdAt`. A message the peer signed under a key after the
+key's retirement verifies and is reported as after retirement, which is in
 order when the receiver's `federation.peer_revoked` audit row for the peer
-comes after it.
+comes after it. A key the history does not list (one in use before a change
+made with neither predecessor setting) takes a second `--federation-key` for
+the same hub and is trusted on its own.
+
+On an `/audit-export` taken with `?evidence=true`, each inlined evidence body
+(a completion's evidence, a dispute's filed payload) is hashed under RFC 8785
+and SHA-256 and compared with the `evidenceHash` or `payloadHash` its entry
+signs. An edited body fails `CHAIN_EVIDENCE_BINDING_MISMATCH`, and the
+`evidence bodies` line of the report counts them. An encrypted-mode
+completion signs a hash over a cleartext the export does not carry, so its
+body is reported as client-hashed rather than re-bound.
 
 `agledger-verify --version` prints the verifier's version and the
 `@agledger/verify-core` it runs on, for the audit record of which verifier

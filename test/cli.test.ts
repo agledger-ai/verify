@@ -38,11 +38,13 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
       agent_signature: 'skipped_no_input',
       key_anchoring: 'skipped_no_input',
       federation_wire: 'skipped_no_input',
+      evidence_binding: 'skipped_no_input',
     },
     keyProvenance: { supplied: 10, embedded: 0 },
     unsignedProjectionFields: [],
     agentSignatures: { present: 0, verified: 0 },
     federationWire: { present: 0, verified: 0, failed: 0, afterRetirement: 0 },
+    evidenceBinding: { present: 0, verified: 0, clientHashed: 0, failed: 0 },
     keyTrust: reportKeyTrust(new Map(), null, null),
     ...overrides,
   };
@@ -70,7 +72,7 @@ describe('peer-message counts', () => {
   it('names the messages signed under a key the peer had retired, and what puts them in order', () => {
     const text = formatExportReportText(fw(3, 3, 0, true, 2), { federationKeysSupplied: true });
     expect(text).toContain('present=3 verified=3 failed=0 after-retirement=2');
-    expect(text).toContain('2 signed under a key the peer had retired before the receiver took it');
+    expect(text).toContain('2 signed by the peer under a key it had already retired');
     expect(text).toContain('federation.peer_revoked');
   });
 
