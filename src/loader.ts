@@ -10,9 +10,9 @@
  *
  * **Nothing here reads a file into a single string.** Node caps a string at
  * ~512 MB (0x1fffffe8 characters) and a real vault passes that easily: 545k
- * `audit_vault` rows is a 1.18 GB NDJSON file, which used to die at read time
- * with a raw `Cannot create a string longer than 0x1fffffe8 characters`
- *. Every file is read through `readLines`, a chunked sync reader
+ * `audit_vault` rows is a 1.18 GB NDJSON file, and reading it whole fails with a raw
+ * `Cannot create a string longer than 0x1fffffe8 characters`.
+ * Every file is read through `readLines`, a chunked sync reader
  * that yields one line at a time, so file size is bounded only by disk.
  *
  * `loadDump` still materializes every row, so it is bounded by heap rather than

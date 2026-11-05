@@ -250,7 +250,7 @@ Options:
                               sealed message is held to its body hash and to
                               its entry; one from a hub given here also has
                               its signature re-verified under that key, which
-                              proves what the peer asserted from this
+                              checks what the peer asserted from this
                               Server's export alone. A failure is
                               CHAIN_FEDERATION_WIRE_INVALID. Applies to a dump
                               directory and to an /audit-export file. Name a
@@ -318,7 +318,7 @@ history and rejects them.
 
 A dump not scoped to one org carries the cert keys itself: each
 EPHEMERAL_CERT_ISSUED entry on the platform-ops chain signs its cert's
-publicKeyJwk (Servers from 1.8.0 on), and a key is used once that chain has
+publicKeyJwk, and a key is used once that chain has
 verified clean. An org-scoped dump leaves the platform-ops chain out, and a
 per-record /audit-export carries no cert keys, so for those pass --agent-keys.
 Where no key is at hand the agent-signature check reports "not checked" and
@@ -486,7 +486,7 @@ function headline(verdict: Verdict, kind: string, keyTrust: KeyTrustReport): str
       `[VERIFIED, NOT ANCHORED] AGLedger offline verification (${kind})`,
       '  Nothing failed, but this is NOT a trusted verdict: the --trust-anchor was walked, but no',
       '  signature here verified under a key it anchors. An entry written before the install',
-      '  began signing carries no signature, and proves nothing about who wrote it.',
+      '  began signing carries no signature, and says nothing about who wrote it.',
     ];
   }
   return [
@@ -656,7 +656,7 @@ function looksLikeAuditExport(value: unknown): value is RecordAuditExportInput {
  * Report "no verdict was reached" in whichever format the caller asked for.
  * Under `--report-format json` the message still has to arrive as JSON: a
  * machine consumer that gets a bare line of prose cannot tell an unreadable
- * dump from a broken chain, which is the whole point of exit code 2.
+ * dump from a broken chain, which is the distinction exit code 2 exists to draw.
  */
 function cannotVerify(message: string, format: ParsedArgs['reportFormat']): CliResult {
   if (format === 'json') {
