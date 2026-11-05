@@ -28,6 +28,7 @@
   "scripts": {
     "prebuild": "rm -rf dist",
     "build": "tsc",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo",
     "lint": "tsc --noEmit",
