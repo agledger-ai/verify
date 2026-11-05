@@ -54,6 +54,7 @@ agledger-verify <target> [--trust-anchor sha256:<hex>]...
                 [--distrusted-key sha256:<hex>[@<instant>]]...
                 [--agent-keys <file>]
                 [--federation-key <hubId>=<key>]...
+                [--federation-key-history <file>]...
                 [--report-format text|json]
                 [--keys <file>] [--require-key-id <id>]
                 [--require-supplied-keys]
@@ -69,6 +70,16 @@ agledger-verify <target> [--trust-anchor sha256:<hex>]...
 
 `--report-format json` emits a single JSON object (not NDJSON), including for
 input errors, so a machine consumer always gets something parseable.
+
+After a peer changes its federation key, the entries a receiver wrote before
+the change seal the earlier key. Pass the peer's key history (the JSON its
+`GET /.well-known/agledger-federation-keys.json` serves, no auth) with
+`--federation-key-history <file>` beside the `--federation-key` you hold for
+that hub: every key the history links to it through successions both keys
+signed is trusted inside its window. A message under a key retired before the
+receiver took it verifies and is reported as after retirement, which is in
+order when the receiver's `federation.peer_revoked` audit row for the peer
+comes after it.
 
 `agledger-verify --version` prints the verifier's version and the
 `@agledger/verify-core` it runs on, for the audit record of which verifier

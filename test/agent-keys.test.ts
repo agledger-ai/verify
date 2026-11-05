@@ -19,6 +19,7 @@ import { generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_SIGNATURE_CONTEXT, ed25519JwkThumbprint, type AgentPublicKeyJwk } from '@agledger/verify-core';
 import { EXIT_CANNOT_VERIFY, EXIT_OK, EXIT_VERIFICATION_FAILED, parseArgs, parseFederationKeys, runCli as runCliUnpinned } from '../src/cli.js';
@@ -96,11 +97,12 @@ describe('parseArgs --federation-key', () => {
 describe('parseFederationKeys', () => {
   const spki = 'MCowBQYDK2VwAyEA' + 'A'.repeat(43) + '=';
   it('maps hub ids to keys and refuses what is not <hubId>=<Ed25519 key>', () => {
-    expect(parseFederationKeys(['hub-b=' + spki])).toEqual({ 'hub-b': spki });
+    expect(parseFederationKeys(['hub-b=' + spki])).toEqual([{ hubId: 'hub-b', publicKey: spki }]);
     expect(parseFederationKeys(['hub-b'])).toMatch(/Invalid --federation-key "hub-b"/);
     expect(parseFederationKeys(['=' + spki])).toMatch(/Invalid --federation-key/);
     expect(parseFederationKeys(['hub-b=not-a-key'])).toMatch(/hub hub-b: the key is not an Ed25519 public key/);
-    expect(parseFederationKeys(['hub-b=' + spki, 'hub-b=' + spki])).toMatch(/names hub hub-b twice/);
+    // A hub named twice pins two keys (a key no succession links to the first).
+    expect(parseFederationKeys(['hub-b=' + spki, 'hub-b=' + spki])).toHaveLength(2);
   });
 
   it('is refused by the CLI before any verification, and an export with no sealed message counts none', () => {
@@ -109,11 +111,45 @@ describe('parseFederationKeys', () => {
     expect(bad.stdout).toContain('not an Ed25519 public key');
     const r = runCli([EXPORT, '--federation-key', 'hub-b=' + spki, '-f', 'json']);
     expect(r.exitCode).toBe(EXIT_OK);
-    const out = json<ExportJson & { federationWire: { present: number; verified: number; failed: number } }>(r.stdout);
-    expect(out.federationWire).toEqual({ present: 0, verified: 0, failed: 0 });
+    const out = json<ExportJson & { federationWire: { present: number; verified: number; failed: number; afterRetirement: number } }>(r.stdout);
+    expect(out.federationWire).toEqual({ present: 0, verified: 0, failed: 0, afterRetirement: 0 });
     expect(r.stdout).not.toContain('peer messages');
     const text = runCli([EXPORT, '--federation-key', 'hub-b=' + spki]);
     expect(text.stdout).toContain('peer messages     : present=0 verified=0 failed=0 (none on the chain)');
+  });
+});
+
+describe('--federation-key-history', () => {
+  // Served by a real Server rotated K1 -> K2 -> K3 (see verify-core's fixture of the same name).
+  const HISTORY = fileURLToPath(new URL('./fixtures/federation-key-history/succession.json', import.meta.url));
+  const doc = JSON.parse(readFileSync(HISTORY, 'utf8')) as { hubId: string; statements: Array<{ payload: string }> };
+  const newest = (JSON.parse(doc.statements[2]!.payload) as { subject: { publicKey: string } }).subject.publicKey;
+
+  it('is trusted from the --federation-key given for its hub, and runs clean on an export with no sealed message', () => {
+    const r = runCli([EXPORT, '--federation-key', `${doc.hubId}=${newest}`, '--federation-key-history', HISTORY, '-f', 'json']);
+    expect(r.exitCode).toBe(EXIT_OK);
+  });
+
+  it('is refused without a --federation-key for its hub, since alone it is the peer\'s word', () => {
+    const r = runCli([EXPORT, '--federation-key-history', HISTORY]);
+    expect(r.exitCode).toBe(EXIT_CANNOT_VERIFY);
+    expect(r.stderr + r.stdout).toMatch(/no --federation-key names that hub/);
+  });
+
+  it('is refused when it was altered, or when it never reaches the key you pinned', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fedhist-'));
+    const altered = structuredClone(doc);
+    altered.statements[1]!.payload = altered.statements[1]!.payload.replace('04:22:03', '04:21:03');
+    const path = join(dir, 'altered.json');
+    writeFileSync(path, JSON.stringify(altered));
+    const r = runCli([EXPORT, '--federation-key', `${doc.hubId}=${newest}`, '--federation-key-history', path]);
+    expect(r.exitCode).toBe(EXIT_CANNOT_VERIFY);
+    expect(r.stderr + r.stdout).toMatch(/--federation-key-history\.statements\[1\].*does not hold/);
+    const stranger = 'MCowBQYDK2VwAyEA' + 'B'.repeat(43) + '=';
+    const off = runCli([EXPORT, '--federation-key', `${doc.hubId}=${stranger}`, '--federation-key-history', HISTORY]);
+    expect(off.exitCode).toBe(EXIT_CANNOT_VERIFY);
+    expect(off.stderr + off.stdout).toMatch(/appears in none of the key histories/);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
