@@ -1,7 +1,7 @@
 {
   "name": "@agledger/verify",
   "version": "2.1.0",
-  "description": "Standalone offline verifier for a full AGLedger audit-vault and org-admin-reads NDJSON dump. No Server, database, or network dependency.",
+  "description": "Standalone offline verifier for a full AGLedger audit-vault and org-admin-reads NDJSON dump. Runs offline on the dump alone.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "engines": {
