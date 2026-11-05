@@ -1,12 +1,11 @@
 {
-  "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the agledger-api engine, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
+  "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the AGLedger Server, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-10-05T01:12:15.812Z",
+  "generatedAt": "2026-11-05T15:58:25.240Z",
   "provenance": {
-    "producedBy": "agledger-api scripts/generate-conformance-corpus.ts",
-    "apiGitSha": "5444a54f",
-    "apiVersion": "2.0.0",
+    "producedBy": "AGLedger Server conformance generator",
+    "serverVersion": "2.2.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -159,7 +158,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_SIGNING_KEY_DRIFT",
       "brokenAt": 2,
-      "note": "Entry 2 re-signed with the attacker key but the signature-covered kid still names the vault key; the row signingKeyId column points at the attacker key. The kid binding (engine signing_key_drift mirror) fails it with no options."
+      "note": "Entry 2 re-signed with the attacker key but the signature-covered kid still names the vault key; the row signingKeyId column points at the attacker key. The kid binding (the Server's signing_key_drift check) fails it with no options."
     },
     {
       "file": "export/payload-binding-mismatch.json",
@@ -306,7 +305,7 @@
         "unsigned": 0,
         "skipped": 3
       },
-      "note": "Engine booted without a signing key: every row has signing_key_id=NULL and an all-zero signature slot. Chain integrity holds via hash links; the signature check is skipped (no key), never folded into a cryptographically-signed verdict."
+      "note": "A Server booted without a signing key: every row has signing_key_id=NULL and an all-zero signature slot. Chain integrity holds via hash links; the signature check is skipped (no key), never folded into a cryptographically-signed verdict."
     },
     {
       "file": "export/unsigned-history-then-signed.json",
@@ -331,7 +330,7 @@
       "options": {
         "keysFile": "export/keys-oob.json"
       },
-      "note": "Entry 1 signed, entry 2 written by a process holding no key (signingKeyId null, all-zero signature), entry 3 signed again. An unsigned entry after a signed one in the same chain is the engine signature_missing; a verifier must break at 2 and not resume at the signed entry 3."
+      "note": "Entry 1 signed, entry 2 written by a process holding no key (signingKeyId null, all-zero signature), entry 3 signed again. An unsigned entry after a signed one in the same chain is the Server's signature_missing; a verifier must break at 2 and not resume at the signed entry 3."
     },
     {
       "file": "export/entry-unsigned-after-activation.json",
@@ -339,7 +338,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_ENTRY_UNSIGNED",
       "brokenAt": 1,
-      "note": "Every entry unsigned, written by a process holding no key after the install began signing. No entry is signed, so only the earliest activatedAt in exportMetadata.signingKeyWindows (the whole key set, not only keys this chain uses) places it: the engine signature_missing at the first entry."
+      "note": "Every entry unsigned, written by a process holding no key after the install began signing. No entry is signed, so only the earliest activatedAt in exportMetadata.signingKeyWindows (the whole key set, not only keys this chain uses) places it: the Server's signature_missing at the first entry."
     },
     {
       "file": "export/valid-es256.json",
@@ -356,7 +355,7 @@
       "requiresAlgorithms": [
         "ES256"
       ],
-      "note": "Clean 3-entry chain signed under ES256 (COSE -7, P1363 low-S) by an engine booted with a P-256 vault key behind AGLEDGER_ALLOW_NON_DEFAULT_SIGNING_ALG. Requires an ES256-capable verifier (wave 2); earlier verifiers fail it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
+      "note": "Clean 3-entry chain signed under ES256 (COSE -7, P1363 low-S) by a Server booted with a P-256 vault key behind AGLEDGER_ALLOW_NON_DEFAULT_SIGNING_ALG. Requires an ES256-capable verifier (wave 2); earlier verifiers fail it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
     },
     {
       "file": "export/es256-signature-invalid.json",

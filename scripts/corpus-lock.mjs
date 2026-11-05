@@ -6,7 +6,7 @@
  * (the Server's conformance generator), never by hand.
  *
  * The lock records a sha256 per corpus file plus the manifest provenance
- * (which Server version and git SHA produced it). CI runs `--check`, so any
+ * (which Server version produced it). CI runs `--check`, so any
  * fixture edit that skips the lock rewrite fails loudly, naming exactly which
  * files drifted.
  *
@@ -76,12 +76,12 @@ if (process.argv.includes('--check')) {
   }
   console.log(
     `corpus lock ok: ${Object.keys(current.files).length} files, `
-    + `Server ${current.provenance?.apiVersion ?? '?'} @ ${current.provenance?.apiGitSha ?? '?'}`,
+    + `Server ${current.provenance?.serverVersion ?? '?'}`,
   );
 } else {
   writeFileSync(LOCK_PATH, `${JSON.stringify(current, null, 2)}\n`);
   console.log(
     `wrote ${relative(join(HERE, '..'), LOCK_PATH)}: ${Object.keys(current.files).length} files, `
-    + `Server ${current.provenance?.apiVersion ?? '?'} @ ${current.provenance?.apiGitSha ?? '?'}`,
+    + `Server ${current.provenance?.serverVersion ?? '?'}`,
   );
 }
