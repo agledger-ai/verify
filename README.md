@@ -507,3 +507,9 @@ in the source repository; the npm package does not ship them. They are
 **real Server output**, not synthesized here, so the two verifiers are held to
 the same wire format and agree on every vector of the shared conformance
 corpus.
+
+## License
+
+Proprietary. Copyright (c) 2026 AGLedger LLC. All rights reserved. See [LICENSE](LICENSE).
+
+AGLedger is a trademark of AGLedger LLC. All other trademarks are the property of their respective owners. Patent pending.
