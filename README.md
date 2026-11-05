@@ -431,8 +431,8 @@ caller need not add a second dependency.
   see "Anchoring keys".
 - **Vault checkpoints**: the anchor row matches the live entry at its position
   and its signature verifies under an anchored key. A checkpoint without a
-  matching `audit_vault` row is evidence of out-of-band TRUNCATE/DELETE
-  (`CHECKPOINT_ROW_MISSING`). The claim signed inside the envelope must say
+  matching `audit_vault` row is evidence that chain entries were removed out of
+  band (`CHECKPOINT_ROW_MISSING`). The claim signed inside the envelope must say
   what the row says (position, tip hash, record subject, key id), or it is
   `CHECKPOINT_CLAIM_MISMATCH`: the hash cross-check reads the columns, so a
   rewritten column pair beside an intact envelope would otherwise pass.
