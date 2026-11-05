@@ -53,8 +53,8 @@ export interface VaultEntryDump {
    */
   chain_key?: string;
   entry_type: string;
-  /** Denormalized JSONB payload: convenience view, NOT the signed canonical
-   *  form. The signed canonical form is `cose_sign1`. */
+  /** The entry's readable payload, a convenience view of what was signed.
+   *  The signed form is `cose_sign1`. */
   payload: Record<string, unknown>;
   /** sha256 of the cose_sign1 envelope bytes. Chain linkage value. */
   payload_hash: string;
