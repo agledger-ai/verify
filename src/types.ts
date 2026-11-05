@@ -243,7 +243,7 @@ export interface VaultChainsReport {
    * check (the body hash, the entry, or the signature under the hub's key).
    * `present - verified - failed` is the messages from a hub with no key.
    */
-  federationWire: { present: number; verified: number; failed: number };
+  federationWire: { present: number; verified: number; failed: number; afterRetirement: number };
   /**
    * Vault entries whose signature verified. Under a key walk each verified
    * under an anchored key; with none, the report's key trust is

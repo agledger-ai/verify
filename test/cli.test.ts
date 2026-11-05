@@ -42,7 +42,7 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
     keyProvenance: { supplied: 10, embedded: 0 },
     unsignedProjectionFields: [],
     agentSignatures: { present: 0, verified: 0 },
-    federationWire: { present: 0, verified: 0, failed: 0 },
+    federationWire: { present: 0, verified: 0, failed: 0, afterRetirement: 0 },
     keyTrust: reportKeyTrust(new Map(), null, null),
     ...overrides,
   };
@@ -64,8 +64,15 @@ describe('agent-signature counts on a failed run', () => {
 });
 
 describe('peer-message counts', () => {
-  const fw = (present: number, verified: number, failed: number, valid = failed === 0) =>
-    exportResult({ valid, federationWire: { present, verified, failed }, optionalChecks: { ...exportResult().optionalChecks, federation_wire: 'applied' } });
+  const fw = (present: number, verified: number, failed: number, valid = failed === 0, afterRetirement = 0) =>
+    exportResult({ valid, federationWire: { present, verified, failed, afterRetirement }, optionalChecks: { ...exportResult().optionalChecks, federation_wire: 'applied' } });
+
+  it('names the messages signed under a key the peer had retired, and what puts them in order', () => {
+    const text = formatExportReportText(fw(3, 3, 0, true, 2), { federationKeysSupplied: true });
+    expect(text).toContain('present=3 verified=3 failed=0 after-retirement=2');
+    expect(text).toContain('2 signed under a key the peer had retired before the receiver took it');
+    expect(text).toContain('federation.peer_revoked');
+  });
 
   it('says a key that did not match failed, not that its hub had no key', () => {
     const text = formatExportReportText(fw(5, 0, 5), { federationKeysSupplied: true });
@@ -100,6 +107,7 @@ describe('parseArgs', () => {
     trustAnchors: [],
     distrustedKeys: [],
     federationKeys: [],
+    federationKeyHistories: [],
   };
 
   it('captures target and defaults to text report format', () => {

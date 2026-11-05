@@ -650,7 +650,7 @@ export function verifyVaultChains(
     federation_wire: 'skipped_no_input',
   };
   const agentSignatures = { present: 0, verified: 0 };
-  const federationWire = { present: 0, verified: 0, failed: 0 };
+  const federationWire = { present: 0, verified: 0, failed: 0, afterRetirement: 0 };
   let signedEntries = 0;
 
   const checkpointsByChain = new Map<string, VaultCheckpointDump[]>();
@@ -704,6 +704,7 @@ export function verifyVaultChains(
     federationWire.present += result.federationWire.present;
     federationWire.verified += result.federationWire.verified;
     federationWire.failed += result.federationWire.failed;
+    federationWire.afterRetirement += result.federationWire.afterRetirement;
     const failuresBefore = failures.count;
     collectChainFailures(chainKey, result, failures);
     for (const a of result.accounted) accounted.push(a);

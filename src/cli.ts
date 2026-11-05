@@ -32,6 +32,8 @@ import {
   verifyAuditExport,
   normalizeFederationKey,
   type AccountedEntry,
+  type FederationKeyEntry,
+  type FederationKeyHistoryDocument,
   type AgentPublicKeyJwk,
   type CheckApplicability,
   type DistrustedKey,
@@ -80,6 +82,8 @@ export interface ParsedArgs {
   distrustedKeys: string[];
   /** `--federation-key` values, `<hubId>=<base64 key>` each, in the order given. */
   federationKeys: string[];
+  /** `--federation-key-history` paths, each a peer's key-history document, in the order given. */
+  federationKeyHistories: string[];
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -95,6 +99,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     trustAnchors: [],
     distrustedKeys: [],
     federationKeys: [],
+    federationKeyHistories: [],
   };
   const takeValue = (flag: string, next: string | undefined): string => {
     if (next === undefined || next.startsWith('-')) {
@@ -154,6 +159,13 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       const value = arg.slice('--distrusted-key='.length);
       if (!value) throw new Error('--distrusted-key requires a value');
       out.distrustedKeys.push(value);
+    } else if (arg === '--federation-key-history') {
+      out.federationKeyHistories.push(takeValue('--federation-key-history', argv[i + 1]));
+      i++;
+    } else if (arg.startsWith('--federation-key-history=')) {
+      const value = arg.slice('--federation-key-history='.length);
+      if (!value) throw new Error('--federation-key-history requires a value');
+      out.federationKeyHistories.push(value);
     } else if (arg === '--federation-key') {
       out.federationKeys.push(takeValue('--federation-key', argv[i + 1]));
       i++;
@@ -188,6 +200,7 @@ Usage:
                   [--distrusted-key sha256:<hex>[@<instant>]]...
                   [--agent-keys <file>]
                   [--federation-key <hubId>=<key>]...
+                  [--federation-key-history <file>]...
                   [--report-format text|json]
                   [--keys <file>] [--require-key-id <id>]
                   [--require-supplied-keys]
@@ -240,7 +253,22 @@ Options:
                               proves what the peer asserted from this
                               Server's export alone. A failure is
                               CHAIN_FEDERATION_WIRE_INVALID. Applies to a dump
-                              directory and to an /audit-export file.
+                              directory and to an /audit-export file. Name a
+                              hub twice to pin a second key no succession
+                              links to the first (one listed linked: false).
+  --federation-key-history    Path to a peer's key history, the JSON its
+                              GET /.well-known/agledger-federation-keys.json
+                              serves (no auth). Repeatable. Needs a
+                              --federation-key for the same hub: every key the
+                              history links to that key through successions
+                              both keys signed is trusted inside its window,
+                              so entries sealed before the peer changed its
+                              federation key verify. A message under a key
+                              activated after the receiver took it fails; one
+                              under a key retired before it is counted as
+                              after retirement, in order when the receiver's
+                              federation.peer_revoked row for the peer comes
+                              after it.
   --agent-keys                Path to a JSON file holding the Ed25519 public
                               keys of agent certs: a JWK, a list of JWKs, or a
                               {keys:[...]} JWK Set. An entry may wrap its key
@@ -348,18 +376,22 @@ const COUNTED_ON_SOUND_ENTRIES = ', counted on the entries that passed every oth
  * below), and the rest came from a hub with no key, which is not a failure.
  */
 function federationWireSummary(
-  counts: { present: number; verified: number; failed: number },
+  counts: { present: number; verified: number; failed: number; afterRetirement: number },
   keysSupplied: boolean,
   failed = false,
 ): string {
-  const base = `present=${counts.present} verified=${counts.verified} failed=${counts.failed}${failed ? COUNTED_ON_SOUND_ENTRIES : ''}`;
+  const retired = counts.afterRetirement > 0 ? ` after-retirement=${counts.afterRetirement}` : '';
+  const base = `present=${counts.present} verified=${counts.verified} failed=${counts.failed}${retired}${failed ? COUNTED_ON_SOUND_ENTRIES : ''}`;
   if (counts.present === 0) return failed ? `${base} (none among them)` : `${base} (none on the chain)`;
   const noKey = counts.present - counts.verified - counts.failed;
+  const retiredNote = `${counts.afterRetirement} signed under a key the peer had retired before the receiver took it: in order when the receiver's federation.peer_revoked row for the peer comes after them`;
   if (noKey === 0 && counts.failed === 0) {
-    return `${base} (each hashed, matched to its entry, and signed by the peer key given for its hub)`;
+    const all = '(each hashed, matched to its entry, and signed by the peer key given for its hub';
+    return counts.afterRetirement > 0 ? `${base} ${all}; ${retiredNote})` : `${base} ${all})`;
   }
   const parts: string[] = [];
   if (counts.failed > 0) parts.push(`${counts.failed} failed: see the failures below`);
+  if (counts.afterRetirement > 0) parts.push(retiredNote);
   if (noKey > 0) {
     parts.push(
       keysSupplied
@@ -611,6 +643,8 @@ function cannotVerify(message: string, format: ParsedArgs['reportFormat']): CliR
 /** A pin parser's message, named by the flag that carried the value. */
 function flagMessage(message: string): string {
   return message
+    .replace(/\bfederationKeys\[\d+\]\.history\b/g, '--federation-key-history')
+    .replace(/\bfederationKeys\[\d+\]/g, '--federation-key')
     .replace(/^trustAnchors entry /, '--trust-anchor ')
     .replace(/^distrustedKeys entry /, '--distrusted-key ')
     .replace(/^distrustedKeys names /, '--distrusted-key names ')
@@ -688,13 +722,13 @@ const FEDERATION_KEY_SHAPE =
   'Each --federation-key is <hubId>=<key>: the peer\'s hub id, then its Ed25519 federation key as base64 SPKI DER or base64 of the raw 32 bytes, as its operator gives it.';
 
 /**
- * `--federation-key` values into the `{ [hubId]: key }` map verify-core takes,
- * or the usage-error message. Each value is checked here, before any
+ * `--federation-key` values into the `[{ hubId, publicKey }]` list verify-core
+ * takes, or the usage-error message. Each value is checked here, before any
  * verification runs, so a bad key is reported as a bad key rather than as a
- * verdict.
+ * verdict. A hub named twice pins two keys.
  */
-export function parseFederationKeys(values: readonly string[]): Record<string, string> | string {
-  const out: Record<string, string> = {};
+export function parseFederationKeys(values: readonly string[]): FederationKeyEntry[] | string {
+  const out: FederationKeyEntry[] = [];
   for (const value of values) {
     const at = value.indexOf('=');
     const hubId = at === -1 ? '' : value.slice(0, at).trim();
@@ -703,8 +737,35 @@ export function parseFederationKeys(values: readonly string[]): Record<string, s
     if (normalizeFederationKey(key) === null) {
       return `Invalid --federation-key for hub ${hubId}: the key is not an Ed25519 public key. ${FEDERATION_KEY_SHAPE}`;
     }
-    if (hubId in out) return `--federation-key names hub ${hubId} twice; give each peer one key.`;
-    out[hubId] = key;
+    out.push({ hubId, publicKey: key });
+  }
+  return out;
+}
+
+/**
+ * Attach each `--federation-key-history` file to the `--federation-key` entry
+ * for its hub (the document names its hub), or the usage-error message. A
+ * history needs a key for its hub, since the history alone is the peer's word.
+ */
+export function attachFederationKeyHistories(keys: FederationKeyEntry[], paths: readonly string[]): FederationKeyEntry[] | string {
+  const out = keys.map((k) => ({ ...k }));
+  for (const path of paths) {
+    let doc: unknown;
+    try {
+      doc = JSON.parse(readFileSync(path, 'utf-8'));
+    } catch (err) {
+      return `Cannot read --federation-key-history ${path}: ${(err as Error).message}`;
+    }
+    const hubId = doc !== null && typeof doc === 'object' ? (doc as { hubId?: unknown }).hubId : undefined;
+    if (typeof hubId !== 'string' || hubId === '') {
+      return `--federation-key-history ${path} is not a key-history document naming its hub (GET /.well-known/agledger-federation-keys.json on the peer, with federation configured).`;
+    }
+    const entry = out.find((k) => k.hubId === hubId && k.history === undefined) ?? out.find((k) => k.hubId === hubId);
+    if (entry === undefined) {
+      return `--federation-key-history ${path} is hub ${hubId}'s, and no --federation-key names that hub. Give the key you hold for it (the signingPublicKey your peer row holds, or one its operator confirmed): the history is trusted only from a key you pinned.`;
+    }
+    if (entry.history !== undefined) out.push({ hubId, publicKey: entry.publicKey, history: doc as FederationKeyHistoryDocument });
+    else entry.history = doc as FederationKeyHistoryDocument;
   }
   return out;
 }
@@ -794,11 +855,13 @@ export function runCli(argv: readonly string[]): CliResult {
     agentKeys = loaded;
   }
 
-  let federationKeys: Record<string, string> | undefined;
-  if (parsed.federationKeys.length > 0) {
+  let federationKeys: FederationKeyEntry[] | undefined;
+  if (parsed.federationKeys.length > 0 || parsed.federationKeyHistories.length > 0) {
     const loaded = parseFederationKeys(parsed.federationKeys);
     if (typeof loaded === 'string') return cannotVerify(loaded, parsed.reportFormat);
-    federationKeys = loaded;
+    const withHistory = attachFederationKeyHistories(loaded, parsed.federationKeyHistories);
+    if (typeof withHistory === 'string') return cannotVerify(withHistory, parsed.reportFormat);
+    federationKeys = withHistory;
   }
 
   // Directory -> full-vault dump.
@@ -818,7 +881,7 @@ export function runCli(argv: readonly string[]): CliResult {
       // A TypeError here is the walk refusing a statement file it cannot
       // order (rows with and without created_at): no verdict was reached.
       if (err instanceof DumpReadError || err instanceof TypeError) {
-        return cannotVerify(err.message, parsed.reportFormat);
+        return cannotVerify(flagMessage(err.message), parsed.reportFormat);
       }
       throw err;
     }
@@ -896,7 +959,7 @@ export function runCli(argv: readonly string[]): CliResult {
       return cannotVerify(
         keysFileRefused
           ? `${err.message}\nThe --keys file must be a {keyId: SPKI-DER-base64} map or a list of {keyId, publicKey, ...} entries (the .data list from /v1/verification-keys).`
-          : `${parsed.target}: ${err.message}`,
+          : `${parsed.target}: ${flagMessage(err.message)}`,
         parsed.reportFormat,
       );
     }
