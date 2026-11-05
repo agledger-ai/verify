@@ -107,6 +107,7 @@ describe('parseArgs', () => {
       target: '/tmp/dump',
       reportFormat: 'text',
       showHelp: false,
+      showVersion: false,
       ...parsedDefaults,
     });
   });
@@ -116,6 +117,7 @@ describe('parseArgs', () => {
       target: '/tmp/dump',
       reportFormat: 'json',
       showHelp: false,
+      showVersion: false,
       ...parsedDefaults,
     });
   });
@@ -125,6 +127,7 @@ describe('parseArgs', () => {
       target: '/tmp/dump',
       reportFormat: 'json',
       showHelp: false,
+      showVersion: false,
       ...parsedDefaults,
     });
   });
@@ -149,6 +152,7 @@ describe('parseArgs', () => {
       target: 'export.json',
       reportFormat: 'text',
       showHelp: false,
+      showVersion: false,
       keys: 'keys.json',
       requireKeyId: 'abc',
       requireSuppliedKeys: true,
@@ -264,6 +268,16 @@ describe('runCli (dump-dir end-to-end)', () => {
     const result = runCli(['--help']);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('Usage:');
+  });
+
+  it('prints its version and verify-core\'s on --version and exits 0', () => {
+    const own = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8')) as { version: string }).version;
+    for (const flag of ['--version', '-V']) {
+      const result = runCli([flag]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toMatch(new RegExp(`^agledger-verify ${own.replace(/\./g, '\\.')} \\(@agledger/verify-core \\d+\\.\\d+\\.\\d+\\)\\n$`));
+      expect(result.stderr).toBe('');
+    }
   });
 
   it('exits 2 (could not verify) with a usage message when target is missing', () => {
