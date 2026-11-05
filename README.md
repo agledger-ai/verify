@@ -4,7 +4,7 @@ Standalone offline verifier for a **full AGLedger installation dump**: the
 per-record `audit_vault` hash chain, the vault checkpoints, the
 `org_admin_reads` Merkle log, and the signed key statements that anchor every
 vault key, all read from a static NDJSON dump. No Server, no database, no
-network. It reads dumps and exports from AGLedger Server 2.0.
+network. It reads dumps and exports from AGLedger Server 2.0 or later.
 
 Built on [`@agledger/verify-core`](https://www.npmjs.com/package/@agledger/verify-core): the per-record (and per-org
 schema-event) hash-chain walk is the same body of logic the SDK `/verify`
@@ -20,8 +20,9 @@ the server-side opt-in). A customer's auditor
 needs an independent verifier that does not trust the Server. A report the
 Server produces about itself rests on the Server being sound. This package
 runs no Server code: it reads a dump the operator exports from the Server and
-checks it alone, so given keys held out of band, a compromised Server cannot
-make it report a pass it did not earn.
+checks it alone, so a Server that does not hold a key you trust cannot make it
+pass a dump. Anchoring and its limits are described under "What verification
+does not prove".
 
 The one thing a dump cannot tell you on its own is which keys to trust: anything
 with write access to the database can add a key row and sign entries with it.
@@ -76,7 +77,7 @@ After a peer changes its federation key, the entries a receiver wrote before
 the change seal the earlier key. Pass the peer's key history (the JSON its
 `GET /.well-known/agledger-federation-keys.json` serves, no auth) with
 `--federation-key-history <file>` beside the `--federation-key` you hold for
-that hub: every key the history links to it through successions both keys
+that hub (federation key histories need a Server 2.2 or later on the peer): every key the history links to it through successions both keys
 signed is trusted inside its window. Each message is placed by its sealed
 `wire.timestamp`, which the peer signed and the receiver sealed, never by the
 entry's unsigned `createdAt`. A message the peer signed under a key after the
@@ -117,8 +118,8 @@ A vault key is trusted only when signed **key statements** link it to a key you
 pinned. The dump carries them in `vault_key_statements.ndjson`: a genesis for
 the install's first key, a succession signed by the old key and the new one at
 each rotation, a closure at each retirement. A database writer can add a key
-row; it cannot add a statement, because every link is a signature it does not
-hold. Pin the SPKI digest of a vault key taken out of band: the installer
+row; unless it also holds the private half of a key you trust, it cannot add a
+statement, because every link is a signature it does not hold. Pin the SPKI digest of a vault key taken out of band: the installer
 prints the first key's, and the Server's `signing-key-digest.js` derives one
 from any key you hold.
 
@@ -162,7 +163,7 @@ signed either, so the holder of a leaked key can still sign entries dated
 before its cutoff, and no offline verifier can tell those from history inside
 the key's legitimate window. It needs a `--trust-anchor`.
 
-A Server 2.0 lists a key its `VAULT_DISTRUSTED_KEYS` names with
+A Server 2.0 or later lists a key its `VAULT_DISTRUSTED_KEYS` names with
 `distrustedFrom`, the entry's instant, in an export's `signingKeyWindows`, and
 where that instant is earlier than the retirement the key's closures sign, it
 lists the key retired at that instant. A run not given the same entry still
@@ -218,8 +219,8 @@ without `--trust-anchor`, a pinned key distrusted with no instant, and a
 target that does not exist are each refused with exit `2` before anything is
 read; the library throws `TypeError` for the same inputs, before it reads the
 directory, and for an option `verifyDump` does not read. The Python
-`agledger-verify` and `agledger verify` refuse them with the same words and
-the same code.
+`agledger-verify` package and the `agledger verify` command of `@agledger/cli`
+refuse them with the same words and the same code.
 
 Without a pin nothing is anchored. The chains are still checked against the
 dump's own `vault_signing_keys`, so tampering that leaves the keys alone is
@@ -244,12 +245,12 @@ with `--keys`.
 
 `audit_vault.ndjson` is streamed and verified one chain at a time, so a dump is
 bounded by disk rather than by memory. Peak memory is the largest single chain,
-not the vault. There is no size ceiling to work around.
+not the vault; disk must hold the dump itself.
 
 Failure lists are capped at `MAX_REPORTED_FAILURES` entries per section, with
 the true total in `failureCount` and a `... and N more not shown` line in the
 text report. A systemic problem on a large vault produces one failure per
-entry, and burying the finding under a million identical lines helps nobody.
+entry, so the text report shows the first of them and the count.
 
 ### Supplied keys for an export
 
@@ -284,15 +285,15 @@ signed key history (`vault_signing_keys.ndjson` and
 An agent that authenticates with an ephemeral cert can sign each request body
 it sends. The Server checks that signature, then seals it into the chain entry
 as `predicate.on_behalf_of.agent_signature`, beside the RFC 7638 thumbprint of
-the cert's public key. The envelope signature proves the Server wrote that. To
-prove the agent itself signed, without taking the Server's word for it, the
+the cert's public key. The envelope signature covers it as the Server wrote it.
+To check that the agent itself signed, without taking the Server's word for it, the
 signature is re-verified offline under the cert's public key.
 
 Where that key comes from depends on what you are verifying:
 
 - **A dump not scoped to one org** carries it. The Server records every cert
   it issues as an `EPHEMERAL_CERT_ISSUED` entry on the platform-ops chain, and
-  from API 1.8.0 that entry signs the cert's `publicKeyJwk` beside its
+  that entry signs the cert's `publicKeyJwk` beside its
   `publicKeyThumbprint`. The verifier takes each such key once the
   platform-ops chain has verified clean (hash chain, vault signatures and
   checkpoints) and only from an entry whose vault signature checked, so it
@@ -300,8 +301,8 @@ Where that key comes from depends on what you are verifying:
 - **An org-scoped dump** (one the Server exported for a single org) leaves the
   platform-ops chain out, and **a per-record `/audit-export`** does not
   include it either. Neither carries cert keys.
-- **A cert issued by a Server older than 1.8.0** has only its thumbprint on
-  the chain.
+- **A cert whose issuance entry carries only its thumbprint** has no key in
+  the dump.
 
 For the last two cases, pass the keys:
 
@@ -380,7 +381,7 @@ peer on the chain entry it writes for it (`payload.wire` on its
 `FEDERATION_*` entries): the body as the peer signed it, the peer's registered
 key, the hub ids, the body hash, the timestamp, the nonce and the signature.
 Every sealed message is held to its body hash and to the entry that carries
-it on every run. To also prove what the peer asserted, pass the peer's
+it on every run. To also check what the peer asserted, pass the peer's
 federation key, which its operator gives you (base64 SPKI DER, or base64 of
 the raw 32 bytes the handshake registered), once per peer:
 
@@ -400,7 +401,7 @@ is not checked, which the text report says. In code, pass `federationKeys`
 `verifyDump` or `verifyAuditExport`.
 
 `verifyDumpStreaming` is the one to reach for: it streams `audit_vault.ndjson`
-instead of materializing it. `loadDump` + `verifyDump` still exist and produce
+instead of materializing it. `loadDump` + `verifyDump` produce
 the same report, but they hold every row, so keep them for dumps small enough
 to fit in heap.
 
@@ -467,15 +468,17 @@ caller need not add a second dependency.
 - An **empty or truncated vault** (zero entries) does NOT verify clean. It
   reports `CHAIN_EMPTY`.
 - A vault row with no `cose_sign1` carries no signed envelope (every row in
-  export format 2.0 has one, so it was written by a Server that predates the
+  export format 2.0 has one, so the row came from a Server that wrote no
   envelope or had the column removed). It fails `UNSUPPORTED_FORMAT` rather than
   being parsed best-effort.
 
-## What is NOT verified
+## What verification does not prove
 
-- **Witness cosignatures** are stored verbatim and reported (checkpoint id,
-  witness key id), but their signature is not checked. The witness key
-  algorithm is customer-chosen and out of band.
+- **That the work was good or true.** AGLedger records what was asked, what was submitted and the principal's verdict. It does not inspect deliverable content, and a pass says nothing about it.
+- **That nothing is missing at the ends.** The chain is checked from its first entry to its last. Entries removed from the end, or an export or dump withheld whole, show up only against a signed checkpoint or a copy you already hold.
+- **That a trusted key was never misused.** Anchoring proves each signing key links back to a key you pinned. Whoever holds a trusted key's private half can sign entries that verify. A compromise is accounted for after the fact by distrusting the key (`--distrusted-key`) from the instant it leaked.
+- **Anything, without a trust anchor.** An unanchored pass shows only that the export agrees with the keys it carries itself.
+- **Witness cosignatures.** They are stored as the dump holds them and reported by checkpoint id and witness key id, but their signatures are not checked. The witness key algorithm is chosen by the customer and kept out of band.
 
 ## Wire format
 
@@ -504,4 +507,5 @@ and the EXPORT-kind vectors under
 are the anti-drift seam shared with the independent Python verifier. They live
 in the source repository; the npm package does not ship them. They are
 **real Server output**, not synthesized here, so the two verifiers are held to
-the same wire format and agree verdict-for-verdict.
+the same wire format and agree on every vector of the shared conformance
+corpus.
