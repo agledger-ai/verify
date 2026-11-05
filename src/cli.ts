@@ -69,6 +69,7 @@ export interface ParsedArgs {
   target: string | null;
   reportFormat: 'text' | 'json';
   showHelp: boolean;
+  showVersion: boolean;
   keys: string | null;
   requireKeyId: string | null;
   requireSuppliedKeys: boolean;
@@ -86,6 +87,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     target: null,
     reportFormat: 'text',
     showHelp: false,
+    showVersion: false,
     keys: null,
     requireKeyId: null,
     requireSuppliedKeys: false,
@@ -105,6 +107,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     if (!arg) continue;
     if (arg === '--help' || arg === '-h') {
       out.showHelp = true;
+    } else if (arg === '--version' || arg === '-V') {
+      out.showVersion = true;
     } else if (arg === '--report-format' || arg === '-f') {
       const next = argv[i + 1];
       if (next !== 'json' && next !== 'text') {
@@ -265,6 +269,8 @@ Options:
                               whose only key is the export's own fails. This
                               says where a key came from, not that it is
                               trusted; pin --trust-anchor for that.
+  --version, -V               Print this verifier's version and the
+                              @agledger/verify-core it runs on.
   --help, -h                  Show this help.
 
 Without --trust-anchor no key is anchored. Every key is taken from the
@@ -703,6 +709,32 @@ export function parseFederationKeys(values: readonly string[]): Record<string, s
   return out;
 }
 
+/** The `version` in a package.json, or `unknown` when it cannot be read. */
+function packageVersion(packageJson: URL): string {
+  try {
+    const { version } = JSON.parse(readFileSync(packageJson, 'utf-8')) as { version?: unknown };
+    return typeof version === 'string' ? version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * `agledger-verify <version> (@agledger/verify-core <version>)`, so an audit
+ * record can name the verifier that produced it. verify-core's exports map
+ * hides its package.json, so it is found from the resolved entry point.
+ */
+function versionLine(): string {
+  const own = packageVersion(new URL('../package.json', import.meta.url));
+  let core = 'unknown';
+  try {
+    core = packageVersion(new URL('../package.json', import.meta.resolve('@agledger/verify-core')));
+  } catch {
+    // Not resolvable from here; the version stays unknown.
+  }
+  return `agledger-verify ${own} (@agledger/verify-core ${core})\n`;
+}
+
 export function runCli(argv: readonly string[]): CliResult {
   let parsed: ParsedArgs;
   try {
@@ -717,6 +749,9 @@ export function runCli(argv: readonly string[]): CliResult {
   }
   if (parsed.showHelp) {
     return { exitCode: EXIT_OK, stdout: HELP_TEXT, stderr: '' };
+  }
+  if (parsed.showVersion) {
+    return { exitCode: EXIT_OK, stdout: versionLine(), stderr: '' };
   }
   if (!parsed.target) {
     return { exitCode: EXIT_CANNOT_VERIFY, stdout: '', stderr: `Missing <target>.\n\n${HELP_TEXT}` };

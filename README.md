@@ -70,6 +70,10 @@ agledger-verify <target> [--trust-anchor sha256:<hex>]...
 `--report-format json` emits a single JSON object (not NDJSON), including for
 input errors, so a machine consumer always gets something parseable.
 
+`agledger-verify --version` prints the verifier's version and the
+`@agledger/verify-core` it runs on, for the audit record of which verifier
+produced a result.
+
 ### Exit codes
 
 | Code | Meaning |
