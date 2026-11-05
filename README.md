@@ -20,9 +20,9 @@ the server-side opt-in). A customer's auditor
 needs an independent verifier that does not trust the Server. A report the
 Server produces about itself rests on the Server being sound. This package
 runs no Server code: it reads a dump the operator exports from the Server and
-checks it alone, so a Server that does not hold a key you trust cannot make it
-pass a dump. Anchoring and its limits are described under "What verification
-does not prove".
+checks it alone, so a Server that holds no key you trust cannot make it
+report a trusted verdict: that needs a `--trust-anchor` linking the signing keys
+to a key you pinned.
 
 The one thing a dump cannot tell you on its own is which keys to trust: anything
 with write access to the database can add a key row and sign entries with it.
@@ -472,13 +472,11 @@ caller need not add a second dependency.
   envelope or had the column removed). It fails `UNSUPPORTED_FORMAT` rather than
   being parsed best-effort.
 
-## What verification does not prove
+## What is NOT verified
 
-- **That the work was good or true.** AGLedger records what was asked, what was submitted and the principal's verdict. It does not inspect deliverable content, and a pass says nothing about it.
-- **That nothing is missing at the ends.** The chain is checked from its first entry to its last. Entries removed from the end, or an export or dump withheld whole, show up only against a signed checkpoint or a copy you already hold.
-- **That a trusted key was never misused.** Anchoring proves each signing key links back to a key you pinned. Whoever holds a trusted key's private half can sign entries that verify. A compromise is accounted for after the fact by distrusting the key (`--distrusted-key`) from the instant it leaked.
-- **Anything, without a trust anchor.** An unanchored pass shows only that the export agrees with the keys it carries itself.
-- **Witness cosignatures.** They are stored as the dump holds them and reported by checkpoint id and witness key id, but their signatures are not checked. The witness key algorithm is chosen by the customer and kept out of band.
+- **Witness cosignatures** are stored verbatim and reported (checkpoint id,
+  witness key id), but their signature is not checked. The witness key
+  algorithm is customer-chosen and out of band.
 
 ## Wire format
 
