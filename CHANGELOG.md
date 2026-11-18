@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-18
+
 ### Added
 
 - **Checkpoints and the read log are held to their signing key's window.** An AGLedger Server later than 2.2.0 reports a vault checkpoint, a read-log leaf or a read-log tree head written outside the signed window of the key that signed it, and a dump holding one verified clean here. Each is now placed by the time its row was written (`created_at`, `read_at`, `checkpoint_at`), after its signature verifies, by the rule chain entries are held to: `CHECKPOINT_KEY_NOT_YET_ACTIVE` and `CHECKPOINT_KEY_EXPIRED` for a vault checkpoint, `TENANT_READ_KEY_NOT_YET_ACTIVE` and `TENANT_READ_KEY_EXPIRED` for a leaf, `TENANT_CHECKPOINT_KEY_NOT_YET_ACTIVE` and `TENANT_CHECKPOINT_KEY_EXPIRED` for a tree head. A row written exactly at the retirement passes. With `--trust-anchor` the window is the one the key's statements sign; without, the one its registry row lists.
@@ -13,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
-- A sealed federation message is placed in its key's window with 300 seconds allowed at each edge, through `@agledger/verify-core`.
+- A sealed federation message is placed in its key's window with 300 seconds allowed at each edge, through `@agledger/verify-core` 2.2.0, which this release needs.
 - `cborg` is pinned at 7.0.0, the version the Server encodes with.
 - Documentation and code comments describe the Server's behaviour rather than its internals.
 
