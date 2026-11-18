@@ -45,6 +45,7 @@ function exportResult(overrides: Partial<VerifyExportResult> = {}): VerifyExport
     agentSignatures: { present: 0, verified: 0 },
     federationWire: { present: 0, verified: 0, failed: 0, afterRetirement: 0 },
     evidenceBinding: { present: 0, verified: 0, clientHashed: 0, failed: 0 },
+    entryCount: { expectedEntries: null, statedEntries: null },
     keyTrust: reportKeyTrust(new Map(), null, null),
     ...overrides,
   };
@@ -224,6 +225,22 @@ describe('formatDumpReportText', () => {
     const text = formatDumpReportText(verifyDump(tampered));
     expect(text).toMatch(/^\[FAIL\]/);
     expect(text).toContain('CHAIN_HASH_MISMATCH');
+  });
+});
+
+describe('formatExportReportText: what the entry count was held to', () => {
+  const line = (text: string) => text.split('\n').find((l) => l.includes('entry count'));
+  it('names the checkpoint position, the stated count, or neither', () => {
+    expect(line(formatExportReportText(exportResult({ totalEntries: 9, entryCount: { expectedEntries: 7, statedEntries: 9 } }))))
+      .toContain('held to the checkpoint at position 7; 2 newer than it');
+    expect(line(formatExportReportText(exportResult({ totalEntries: 9, entryCount: { expectedEntries: null, statedEntries: 9 } }))))
+      .toContain('held to the 9 the export states; it names no checkpoint for this record yet');
+    expect(line(formatExportReportText(exportResult())))
+      .toContain("the file's own");
+    expect(line(formatExportReportText(exportResult({ valid: false, totalEntries: 4, entryCount: { expectedEntries: 7, statedEntries: 7 } }))))
+      .toContain('4 where the checkpoint at position 7 anchors 7');
+    expect(line(formatExportReportText(exportResult({ valid: false, totalEntries: 6, entryCount: { expectedEntries: null, statedEntries: 9 } }))))
+      .toContain('6 where the export states 9');
   });
 });
 
@@ -604,7 +621,7 @@ describe('dumpReportWithFlags', () => {
       verdict: 'failed' as const,
       keyTrust: { ...keyTrust, findings: [{ code: 'KEY_CLOSURE_INVALID' as const, keyId: 'trustAnchors', statementId: 'distrustedKeys', detail: 'give distrustedKeys sha256:ab@x' }] },
       vault: {
-        recordCount: 1, entryCount: 1, checkpointCount: 0, failureCount: 1, accountedCount: 1, accountedCheckpointCount: 1, signedEntries: 0, certKeysFromChain: 0,
+        recordCount: 1, entryCount: 1, checkpointCount: 0, checkpointedChainCount: 0, failureCount: 1, accountedCount: 1, accountedCheckpointCount: 1, signedEntries: 0, certKeysFromChain: 0,
         failures: [{ code: 'CHAIN_KEY_EXPIRED' as const, message: 'the instant distrustedKeys gives', scopeId: 'distrustedKeys', signingKeyId: 'trustAnchors' }],
         accounted: [{ code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY' as const, chain: 'record' as const, recordId: 'distrustedKeys', orgId: 'trustAnchors', scopeId: 'requireKeyId', position: 0, keyId: 'agentKeys', detail: 'which distrustedKeys names' }],
         accountedCheckpoints: [{ code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY' as const, chain: 'record' as const, recordId: 'distrustedKeys', orgId: 'trustAnchors', scopeId: 'requireKeyId', position: 0, keyId: 'agentKeys', detail: 'which distrustedKeys names' }],

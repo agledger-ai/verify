@@ -204,6 +204,14 @@ export interface VaultChainsReport {
   recordCount: number;
   entryCount: number;
   checkpointCount: number;
+  /**
+   * How many of the `recordCount` chains were compared with at least one
+   * checkpoint. A checkpoint is what holds a chain's length: a chain cut
+   * below one fails CHECKPOINT_ROW_MISSING. The remaining chains have no
+   * checkpoint the dump was judged against (none written yet, or only ones
+   * set aside), so their length is the dump's own.
+   */
+  checkpointedChainCount: number;
   /** Capped sample, oldest first. See MAX_REPORTED_FAILURES. */
   failures: Failure[];
   /** Total failures found, including any beyond the cap. */

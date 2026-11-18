@@ -456,7 +456,16 @@ caller need not add a second dependency.
   band (`CHECKPOINT_ROW_MISSING`). The claim signed inside the envelope must say
   what the row says (position, tip hash, record subject, key id), or it is
   `CHECKPOINT_CLAIM_MISMATCH`: the hash cross-check reads the columns, so a
-  rewritten column pair beside an intact envelope would otherwise pass.
+  rewritten column pair beside an intact envelope would otherwise pass. The
+  report's `checkpointed` line (`vault.checkpointedChainCount`) says how many
+  chains were compared with a checkpoint; the length of each of the others is
+  the dump's own until its first checkpoint is written.
+- **A record export's length**: the export states the position of the record's
+  latest checkpoint (`exportMetadata.expectedEntries`) and how many entries the
+  Server wrote (`exportMetadata.totalEntries`). An export carrying fewer than
+  the first is `CHECKPOINT_ROW_MISSING` and fewer than the second is
+  `CHAIN_POSITION_GAP`; the report's `entry count` line says which count the
+  chain was held to.
 - **`org_admin_reads` chain**: leaf_hash is the RFC 9162 leaf hash of the
   envelope, sha256(0x00 || cose_sign1); leaf_index is gap-free per org; each
   leaf's signed claim gives its position, the previous leaf's hash and the

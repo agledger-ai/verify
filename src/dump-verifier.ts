@@ -568,9 +568,12 @@ function verifyChainCheckpoints(
   keys: DumpKeyTrust,
   failures: FailureSink,
   accounted: CappedSink<AccountedEntry>,
-): void {
+): { held: boolean } {
   const { signingSince } = keys;
   const setAside = new Set<VaultCheckpointDump>();
+  // Whether the chain was compared with at least one checkpoint, which is
+  // what holds its length: one set aside is never compared with anything.
+  const judged = { held: false };
   for (const cp of checkpoints) {
     const chainKey = checkpointChainKeyOf(cp);
     const label = chainLabel(chainKey);
@@ -590,6 +593,7 @@ function verifyChainCheckpoints(
         continue;
       }
     }
+    judged.held = true;
     const entry = chain[cp.chain_position - 1];
     if (!entry) {
       failures.push({
@@ -685,7 +689,7 @@ function verifyChainCheckpoints(
       }
     }
   }
-  if (setAside.size === 0) return;
+  if (setAside.size === 0) return judged;
 
   const first = checkpoints[0];
   const chainKey = first ? checkpointChainKeyOf(first) : '';
@@ -706,7 +710,7 @@ function verifyChainCheckpoints(
       scopeId: chainKey,
       position: last?.chain_position,
     });
-    return;
+    return judged;
   }
   // Server mirror of `accounted_checkpoint_only`, which the Server reports
   // for a record chain and the platform-ops chain.
@@ -718,6 +722,7 @@ function verifyChainCheckpoints(
       position: 0,
     });
   }
+  return judged;
 }
 
 /**
@@ -789,6 +794,7 @@ export function verifyVaultChains(
   const closed = new Set<string>();
   let entryCount = 0;
   let chainCount = 0;
+  let checkpointedChainCount = 0;
 
   const report = (recordCount: number): VaultChainsReport => ({
     // Includes per-record chains AND per-enterprise schema-event chains
@@ -797,6 +803,7 @@ export function verifyVaultChains(
     recordCount,
     entryCount,
     checkpointCount: checkpoints.length,
+    checkpointedChainCount,
     failures: failures.listed,
     failureCount: failures.count,
     accounted: accounted.listed,
@@ -834,7 +841,9 @@ export function verifyVaultChains(
     const failuresBefore = failures.count;
     collectChainFailures(chainKey, result, failures);
     for (const a of result.accounted) accounted.push(a);
-    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keys, failures, accountedCheckpoints);
+    if (verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keys, failures, accountedCheckpoints).held) {
+      checkpointedChainCount++;
+    }
     checkpointsByChain.delete(chainKey);
     if (result.valid && failures.count === failuresBefore) {
       certKeysFromChain += harvestCertKeys(chain, result, agentKeys);

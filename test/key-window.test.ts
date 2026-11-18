@@ -161,6 +161,14 @@ describe('rows a distrustedKeys entry accounts for', () => {
     expect(report.vault.accountedCheckpoints.map((a) => a.position)).toEqual([3, 999]);
     expect(report.vault.accountedCheckpoints[0]).toMatchObject({ chain: 'record', keyId: k1.keyId, code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY' });
     expect(formatDumpReportText(report)).toMatch(/checkpoints set aside: 2 /);
+    // A checkpoint set aside holds no chain's length; one the walk trusts does.
+    expect(report.vault.checkpointedChainCount).toBe(0);
+    const first = dump.vaultEntries.find((e) => e.record_id === cp.record_id && e.chain_position === 1)!;
+    dump.vaultCheckpoints.push({ ...buildVaultCheckpoint('record-bbbb', 1, first.payload_hash, k2), created_at: '2026-07-01T00:00:00.000Z' });
+    const held = verifyDump(dump, options(k1, k2));
+    expect(codes(held)).toEqual([]);
+    expect(held.vault.accountedCheckpointCount).toBe(2);
+    expect(held.vault.checkpointedChainCount).toBe(1);
   });
 
   it('compares no root and finds no fork among tree heads set aside', () => {

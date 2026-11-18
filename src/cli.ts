@@ -546,6 +546,7 @@ export function formatDumpReportText(report: VerifyReport, options: TextReportOp
   lines.push(`  records     : ${report.vault.recordCount}`);
   lines.push(`  entries     : ${report.vault.entryCount}`);
   lines.push(`  checkpoints : ${report.vault.checkpointCount}`);
+  lines.push(`  checkpointed: ${checkpointedChainsSummary(report.vault.checkpointedChainCount, report.vault.recordCount)}`);
   lines.push(
     `  agent sigs  : ${agentSignatureSummary(report.vault.agentSignatures, report.vault.optionalChecks.agent_signature, options.agentKeysSupplied ?? false, report.vault.certKeysFromChain, report.vault.failureCount > 0)}`,
   );
@@ -602,6 +603,7 @@ export function formatExportReportText(
   lines.push('');
   lines.push(`  record            : ${result.recordId}`);
   lines.push(`  entries           : ${result.verifiedEntries}/${result.totalEntries} verified`);
+  lines.push(`  entry count       : ${entryCountSummary(result.entryCount, result.totalEntries)}`);
   lines.push(
     `  signature coverage: signed=${result.signatureCoverage.signed} unsigned=${result.signatureCoverage.unsigned} skipped=${result.signatureCoverage.skipped}`,
   );
@@ -652,6 +654,33 @@ export function formatExportReportText(
     );
   }
   return lines.join('\n');
+}
+
+/**
+ * What the export's entry count was held to. A chain cut from the end still
+ * verifies entry by entry, so the reader is told which stated count, if any,
+ * stood behind the number above.
+ */
+function entryCountSummary(count: VerifyExportResult['entryCount'], held: number): string {
+  if (count.expectedEntries !== null) {
+    return held < count.expectedEntries
+      ? `${held} where the checkpoint at position ${count.expectedEntries} anchors ${count.expectedEntries}`
+      : `held to the checkpoint at position ${count.expectedEntries}; ${held - count.expectedEntries} newer than it`;
+  }
+  if (count.statedEntries !== null) {
+    return held < count.statedEntries
+      ? `${held} where the export states ${count.statedEntries}; it names no checkpoint for this record yet`
+      : `held to the ${count.statedEntries} the export states; it names no checkpoint for this record yet`;
+  }
+  return 'the file\'s own; the export states no count and names no checkpoint';
+}
+
+/** How many chains a checkpoint holds the length of, and what the rest rest on. */
+function checkpointedChainsSummary(checkpointed: number, chains: number): string {
+  const rest = chains - checkpointed;
+  if (chains === 0) return '0 of 0 chains';
+  if (rest <= 0) return `${checkpointed} of ${chains} chains, each held to a checkpoint`;
+  return `${checkpointed} of ${chains} chains held to a checkpoint; the length of the other ${rest} is the dump's own`;
 }
 
 export interface CliResult {

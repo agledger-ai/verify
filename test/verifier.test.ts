@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDump } from '../src/loader.js';
 import { verifyDump, verifyOrgAdminReadsChains, verifyVaultChains, walkDumpKeys } from '../src/dump-verifier.js';
+import { formatDumpReportText } from '../src/cli.js';
 import {
   buildHappyDump,
   buildOrgAdminRead,
@@ -38,6 +39,9 @@ describe('verifyDump: happy path', () => {
     expect(report.vault.recordCount).toBe(2);
     expect(report.vault.entryCount).toBe(6);
     expect(report.vault.checkpointCount).toBe(1);
+    // One of the two chains has a checkpoint holding its length.
+    expect(report.vault.checkpointedChainCount).toBe(1);
+    expect(formatDumpReportText(report)).toContain("checkpointed: 1 of 2 chains held to a checkpoint; the length of the other 1 is the dump's own");
     expect(report.orgAdminReads.orgCount).toBe(2);
     expect(report.orgAdminReads.leafCount).toBe(4);
   });
