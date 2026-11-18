@@ -80,8 +80,9 @@ the change seal the earlier key. Pass the peer's key history (the JSON its
 that hub (federation key histories need a Server 2.2 or later on the peer): every key the history links to it through successions both keys
 signed is trusted inside its window. Each message is placed by its sealed
 `wire.timestamp`, which the peer signed and the receiver sealed, never by the
-entry's unsigned `createdAt`. A message the peer signed under a key after the
-key's retirement verifies and is reported as after retirement, which is in
+entry's unsigned `createdAt`, with 300 seconds allowed at each edge of the
+window. A message the peer signed under a key more than that after the key's
+retirement verifies and is reported as after retirement, which is in
 order when the receiver's `federation.peer_revoked` audit row for the peer
 comes after it. A key the history does not list (one in use before a change
 made with neither predecessor setting) takes a second `--federation-key` for
@@ -209,9 +210,28 @@ anchoring`. In JSON they are `vault.accounted` (capped at 1000, as
 `vault.failures` is) with the true total in `vault.accountedCount`, and
 `keyTrust.accounted`. Each entry carries `code`, `chain` (`record`, `admin` or
 `schema`), `recordId`, `orgId`, `scopeId`, `position`, `keyId` and `detail`.
-Accounted entries do not count toward `vault.signedEntries`. Anything the key
-signed after that retirement, or under a distrusted key no trusted key has
-retired, still fails. An export file has nothing accounted for: such entries
+Accounted entries do not count toward `vault.signedEntries`.
+
+Vault checkpoints, read-log leaves and read-log tree heads are set aside by
+the same rule, as the Server's scan lists them in `distrustedCheckpoints` and
+`orgAdminReads.distrustedEntries`. A row set aside is never evidence: no chain
+is compared with a checkpoint set aside, no root is compared and no fork is
+read from a tree head set aside, so whoever holds the leaked key cannot use
+one to raise a finding on an intact chain or log. A leaf set aside keeps its
+index, hash and claim checks. The text report lists them as `checkpoints set
+aside` under `audit_vault chain` and `accounted for` under `org_admin_reads
+chain`. In JSON they are `vault.accountedCheckpoints` (the entry shape above,
+`position` being the checkpoint's) with `vault.accountedCheckpointCount`, and
+`orgAdminReads.accounted` (`code`, `orgId`, `kind` `leaf` or `checkpoint`,
+`at` the leaf index or tree size, `keyId`, `detail`) with
+`orgAdminReads.accountedCount`. Two findings keep that from hiding a chain: a
+record or platform-ops chain with no entry in the dump whose only checkpoints
+are set aside is `CHECKPOINT_ACCOUNTED_ONLY`, and more than 1000 checkpoints
+set aside above the newest one that is not is
+`CHECKPOINT_ACCOUNTED_RUN_EXCEEDED`.
+
+Anything the key signed after that retirement, or under a distrusted key no
+trusted key has retired, still fails. An export file has nothing accounted for: such entries
 and statements fail there, as they do in the Server's export.
 
 A malformed pin or distrusted key, a key named twice, `--distrusted-key`
@@ -462,6 +482,17 @@ caller need not add a second dependency.
   still verifies.
 - **Server fork detection**: two checkpoints at the same `tree_size` carrying
   different `root_hash` is `TENANT_CHECKPOINT_FORK`.
+- **Key windows on checkpoints and the read log**: a vault checkpoint, a
+  read-log leaf and a tree head whose signature verifies is held to the window
+  of its key by the time its row was written (`created_at`, `read_at`,
+  `checkpoint_at`), by the rule entries are held to. One written before the
+  key's activation is `CHECKPOINT_KEY_NOT_YET_ACTIVE`,
+  `TENANT_READ_KEY_NOT_YET_ACTIVE` or `TENANT_CHECKPOINT_KEY_NOT_YET_ACTIVE`;
+  one written after its retirement is `CHECKPOINT_KEY_EXPIRED`,
+  `TENANT_READ_KEY_EXPIRED` or `TENANT_CHECKPOINT_KEY_EXPIRED`. A row written
+  exactly at the retirement passes, and a signature that does not verify is
+  reported ahead of the window. With `--trust-anchor` the window is the one
+  the key's statements sign; without, the one its registry row lists.
 
 ## Fail-closed posture
 

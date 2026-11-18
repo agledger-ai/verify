@@ -63,7 +63,10 @@ import {
   computeKeyTrust,
   decodeCoseSign1,
   decodePredicate,
+  ACCOUNTED_ENTRY_CODE,
+  chainOfScope,
   describeUnsupportedAlgorithm,
+  distrustAccounts,
   earliestKeyActivation,
   ed25519JwkThumbprint,
   ed25519JwkToSpki,
@@ -72,6 +75,7 @@ import {
   orgReadLeafHash,
   orgReadMerkleRoot,
   parseTrustAnchors,
+  placeInKeyWindow,
   reportKeyTrust,
   settleKeyTrust,
   trustKeyFromDumpRow,
@@ -99,6 +103,7 @@ import type {
   KeyStatementDump,
   SigningKeyDump,
   OrgAdminReadDump,
+  AccountedReadLogEntry,
   OrgAdminReadsCheckpointDump,
   TenantAdminReadsReport,
   VaultChainsReport,
@@ -385,6 +390,64 @@ function signingKeyFor(
 }
 
 /**
+ * The key a signed row is set aside under, when a `distrustedKeys` entry and
+ * the retirement a trusted key signed account for it (verify-core's
+ * `distrustAccounts`) and its signature verifies under that key; null
+ * otherwise. A row set aside is listed, never verified, and never evidence:
+ * no hash, root or claim of it is read, so the holder of a leaked key cannot
+ * use one to raise a finding on an intact chain or log. The Server's scan
+ * lists the same rows in `distrustedCheckpoints` and
+ * `orgAdminReads.distrustedEntries`.
+ */
+function setAsideUnder(registry: KeyRegistry, keyId: string, writtenAt: unknown, coseSign1: unknown): VerificationKey | null {
+  const key = registry.get(keyId);
+  if (!key || !distrustAccounts(key, writtenAt)) return null;
+  return verifyCoseSign1(envelopeBytes(coseSign1), key.spkiBase64) === 'ok' ? key : null;
+}
+
+/** Why a row signed under a distrusted key is set aside, for the report. */
+function setAsideDetail(what: string, writtenAt: unknown, key: VerificationKey): string {
+  return `${what} written ${String(writtenAt)} is signed by key ${key.keyId}, which distrustedKeys names, before ${key.distrustSpan?.retiredAt ?? 'its retirement'}, when a key the walk trusts retired it: the distrust entry accounts for it. Not verified, and not a failure.`;
+}
+
+/**
+ * Hold a row whose signature verified to its key's signed window, by the time
+ * the row was written (Server mirror of `checkpoint_key_not_yet_active`,
+ * `checkpoint_key_expired`, `leaf_key_not_yet_active` and `leaf_key_expired`).
+ * Runs after the signature check, as the Server orders it. A row whose time
+ * cannot be read where its key has a window fails closed.
+ */
+function keyWindowFailure(
+  key: VerificationKey,
+  writtenAt: unknown,
+  what: string,
+  at: string,
+  codes: { notYetActive: FailureCode; expired: FailureCode },
+): { code: FailureCode; message: string } | null {
+  const placed = placeInKeyWindow(key, writtenAt, what);
+  switch (placed.placement) {
+    case 'inside':
+    // Past the distrust instant with a verifying signature: set aside before
+    // this is reached, so nothing is left to report here.
+    case 'accounted':
+      return null;
+    case 'not-yet-active':
+      return { code: codes.notYetActive, message: `${at}: ${placed.detail}` };
+    case 'expired':
+      return { code: codes.expired, message: `${at}: ${placed.detail}` };
+    case 'unplaceable':
+      return { code: 'CHAIN_MALFORMED_ENTRY', message: `${at}: ${placed.detail}` };
+  }
+}
+
+/**
+ * How many checkpoints a `distrustedKeys` entry accounts for may sit above
+ * the newest one it does not, before the chain is reported
+ * (CHECKPOINT_ACCOUNTED_RUN_EXCEEDED). The Server's bound.
+ */
+export const ACCOUNTED_CHECKPOINT_RUN_CAP = 1000;
+
+/**
  * The chain identity of one vault row. Two chain shapes exist in `audit_vault`:
  *   - **Per-record** (record_id NOT NULL): the normal lifecycle chain for one
  *     record. Group key = record_id.
@@ -504,11 +567,29 @@ function verifyChainCheckpoints(
   checkpoints: readonly VaultCheckpointDump[],
   keys: DumpKeyTrust,
   failures: FailureSink,
+  accounted: CappedSink<AccountedEntry>,
 ): void {
   const { signingSince } = keys;
+  const setAside = new Set<VaultCheckpointDump>();
   for (const cp of checkpoints) {
     const chainKey = checkpointChainKeyOf(cp);
     const label = chainLabel(chainKey);
+    // Set aside before anything about the row or the chain is read.
+    if (cp.signing_key_id != null) {
+      const under = setAsideUnder(keys.registry, cp.signing_key_id, cp.created_at, cp.cose_sign1);
+      if (under !== null) {
+        setAside.add(cp);
+        accounted.push({
+          code: ACCOUNTED_ENTRY_CODE,
+          ...chainOfScope(chainKey),
+          scopeId: chainKey,
+          position: cp.chain_position,
+          keyId: under.keyId,
+          detail: setAsideDetail('Checkpoint', cp.created_at, under),
+        });
+        continue;
+      }
+    }
     const entry = chain[cp.chain_position - 1];
     if (!entry) {
       failures.push({
@@ -593,8 +674,49 @@ function verifyChainCheckpoints(
           position: cp.chain_position,
           signingKeyId: cp.signing_key_id,
         });
+        continue;
+      }
+      const window = keyWindowFailure(key, cp.created_at, 'Checkpoint', `${label} pos ${cp.chain_position}`, {
+        notYetActive: 'CHECKPOINT_KEY_NOT_YET_ACTIVE',
+        expired: 'CHECKPOINT_KEY_EXPIRED',
+      });
+      if (window !== null) {
+        failures.push({ ...window, scopeId: chainKey, position: cp.chain_position, signingKeyId: cp.signing_key_id });
       }
     }
+  }
+  if (setAside.size === 0) return;
+
+  const first = checkpoints[0];
+  const chainKey = first ? checkpointChainKeyOf(first) : '';
+  const label = chainLabel(chainKey);
+  // Server mirror of `checkpoint_accounted_run_exceeded`: the chain is judged
+  // against the newest checkpoint not set aside, and a longer run above it
+  // than a rotation leaves is rows planted under the leaked key.
+  const newestFirst = [...checkpoints];
+  byIntegerColumn(newestFirst, (cp) => cp.chain_position);
+  newestFirst.reverse();
+  const run = newestFirst.findIndex((cp) => !setAside.has(cp));
+  const runLength = run === -1 ? newestFirst.length : run;
+  if (runLength > ACCOUNTED_CHECKPOINT_RUN_CAP) {
+    const last = newestFirst[ACCOUNTED_CHECKPOINT_RUN_CAP];
+    failures.push({
+      code: 'CHECKPOINT_ACCOUNTED_RUN_EXCEEDED',
+      message: `${label}: ${runLength} checkpoints a distrustedKeys entry accounts for sit above the newest one it does not, more than the ${ACCOUNTED_CHECKPOINT_RUN_CAP} a walk reads`,
+      scopeId: chainKey,
+      position: last?.chain_position,
+    });
+    return;
+  }
+  // Server mirror of `accounted_checkpoint_only`, which the Server reports
+  // for a record chain and the platform-ops chain.
+  if (chain.length === 0 && setAside.size === checkpoints.length && !chainKey.startsWith('schema:')) {
+    failures.push({
+      code: 'CHECKPOINT_ACCOUNTED_ONLY',
+      message: `${label}: the dump holds no entry for this chain, and its only checkpoints (${checkpoints.length}) are ones a distrustedKeys entry accounts for, so nothing vouches for the chain and nothing explains its absence`,
+      scopeId: chainKey,
+      position: 0,
+    });
   }
 }
 
@@ -624,6 +746,7 @@ export function verifyVaultChains(
 ): VaultChainsReport {
   const failures = new FailureSink();
   const accounted = new CappedSink<AccountedEntry>();
+  const accountedCheckpoints = new CappedSink<AccountedEntry>();
   const { registry: keyRegistry, signingSince } = keys;
   // Caller keys first, then the cert keys each clean chain signs. A chain can
   // only use keys harvested from chains closed before it; the producer sorts
@@ -678,6 +801,8 @@ export function verifyVaultChains(
     failureCount: failures.count,
     accounted: accounted.listed,
     accountedCount: accounted.count,
+    accountedCheckpoints: accountedCheckpoints.listed,
+    accountedCheckpointCount: accountedCheckpoints.count,
     optionalChecks,
     agentSignatures,
     federationWire,
@@ -709,7 +834,7 @@ export function verifyVaultChains(
     const failuresBefore = failures.count;
     collectChainFailures(chainKey, result, failures);
     for (const a of result.accounted) accounted.push(a);
-    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keys, failures);
+    verifyChainCheckpoints(chain, checkpointsByChain.get(chainKey) ?? [], keys, failures, accountedCheckpoints);
     checkpointsByChain.delete(chainKey);
     if (result.valid && failures.count === failuresBefore) {
       certKeysFromChain += harvestCertKeys(chain, result, agentKeys);
@@ -776,7 +901,7 @@ export function verifyVaultChains(
   // with the same code as a short chain, since both mean the anchor outlived
   // its rows.
   for (const orphaned of checkpointsByChain.values()) {
-    verifyChainCheckpoints([], orphaned, keys, failures);
+    verifyChainCheckpoints([], orphaned, keys, failures, accountedCheckpoints);
   }
 
   return report(chainCount);
@@ -794,10 +919,13 @@ function groupByOrg<T extends { org_id: string }>(rows: readonly T[]): Map<strin
 
 function detectCheckpointForks(
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
+  setAside: ReadonlySet<OrgAdminReadsCheckpointDump>,
   failures: FailureSink,
 ): void {
   const byKey = new Map<string, OrgAdminReadsCheckpointDump>();
   for (const cp of checkpoints) {
+    // A tree head set aside is not evidence, of a fork or of anything else.
+    if (setAside.has(cp)) continue;
     const key = `${cp.org_id}:${cp.tree_size}`;
     const prior = byKey.get(key);
     if (prior && prior.root_hash !== cp.root_hash) {
@@ -814,10 +942,11 @@ function detectCheckpointForks(
 }
 
 /**
- * Grade one read-log leaf's signature the way the Server does, after its index
- * and hash have been checked. Returns the failure, or null when the leaf holds
- * up. `mustSign.signedBefore` is set by any leaf that names a real key,
- * whatever its own verdict, as the Server's walk does.
+ * Grade one read-log leaf's signature the way the Server does, after its
+ * index, hash and claim have been checked. Returns the failure, the key the
+ * leaf is set aside under (`setAsideUnder`), or null when the leaf holds up.
+ * `mustSign.signedBefore` is set by any leaf that names a real key, whatever
+ * its own verdict, as the Server's walk does.
  */
 function checkLeafSignature(
   orgId: string,
@@ -825,7 +954,7 @@ function checkLeafSignature(
   coseSign1Bytes: Buffer,
   registry: KeyRegistry,
   mustSign: { signedBefore: boolean; signingSince: string | null },
-): Failure | null {
+): Failure | { setAsideUnder: VerificationKey } | null {
   const at = `Org ${orgId} leaf ${leaf.leaf_index}`;
   const parts = decodeCoseSign1(coseSign1Bytes);
   const kid = parts ? extractKid(parts.protectedBstr) : null;
@@ -857,12 +986,20 @@ function checkLeafSignature(
         };
   }
   mustSign.signedBefore = true;
+  const under = setAsideUnder(registry, kid, leaf.read_at, leaf.cose_sign1);
+  if (under !== null) return { setAsideUnder: under };
   const key = signingKeyFor(registry, kid, 'TENANT_READ_KEY_UNANCHORED', at, 'leaf kid');
   if ('code' in key) return { ...key, scopeId: orgId, leafIndex: leaf.leaf_index, signingKeyId: kid };
   const outcome = verifyCoseSign1(coseSign1Bytes, key.spkiBase64);
   // Fail closed on ANY non-ok outcome; an all-zero signature under a real kid
   // ('unsigned') is a wiped signature, as the Server grades it.
-  if (outcome === 'ok') return null;
+  if (outcome === 'ok') {
+    const window = keyWindowFailure(key, leaf.read_at, 'Leaf', at, {
+      notYetActive: 'TENANT_READ_KEY_NOT_YET_ACTIVE',
+      expired: 'TENANT_READ_KEY_EXPIRED',
+    });
+    return window === null ? null : { ...window, scopeId: orgId, leafIndex: leaf.leaf_index, signingKeyId: kid };
+  }
   return {
     code: outcome === 'unsupported-key-algorithm' ? 'CHAIN_UNSUPPORTED_ALGORITHM' : 'TENANT_READ_SIGNATURE_INVALID',
     message:
@@ -881,6 +1018,8 @@ function verifyOneOrgAdminReadsLog(
   checkpoints: readonly OrgAdminReadsCheckpointDump[],
   keys: DumpKeyTrust,
   failures: FailureSink,
+  setAsideHeads: ReadonlyMap<OrgAdminReadsCheckpointDump, VerificationKey>,
+  accounted: CappedSink<AccountedReadLogEntry>,
 ): void {
   const { registry, signingSince } = keys;
   byIntegerColumn(leaves, (r) => r.leaf_index);
@@ -929,9 +1068,18 @@ function verifyOneOrgAdminReadsLog(
       });
       return;
     }
-    const signatureFailure = checkLeafSignature(orgId, leaf, coseSign1Bytes, registry, mustSign);
-    if (signatureFailure) {
-      failures.push(signatureFailure);
+    const graded = checkLeafSignature(orgId, leaf, coseSign1Bytes, registry, mustSign);
+    if (graded !== null && 'setAsideUnder' in graded) {
+      accounted.push({
+        code: ACCOUNTED_ENTRY_CODE,
+        orgId,
+        kind: 'leaf',
+        at: leaf.leaf_index,
+        keyId: graded.setAsideUnder.keyId,
+        detail: setAsideDetail('Leaf', leaf.read_at, graded.setAsideUnder),
+      });
+    } else if (graded !== null) {
+      failures.push(graded);
       return;
     }
   }
@@ -939,6 +1087,19 @@ function verifyOneOrgAdminReadsLog(
   const leafHashes = leaves.map((l) => l.leaf_hash);
 
   for (const cp of checkpoints) {
+    // Set aside before its leaf count, root or claim is read.
+    const under = setAsideHeads.get(cp);
+    if (under !== undefined) {
+      accounted.push({
+        code: ACCOUNTED_ENTRY_CODE,
+        orgId,
+        kind: 'checkpoint',
+        at: cp.tree_size,
+        keyId: under.keyId,
+        detail: setAsideDetail('Tree head', cp.checkpoint_at, under),
+      });
+      continue;
+    }
     if (!Number.isSafeInteger(cp.tree_size) || cp.tree_size > leafHashes.length) {
       failures.push({
         code: 'TENANT_CHECKPOINT_LEAF_COUNT_MISMATCH',
@@ -1022,6 +1183,14 @@ function verifyOneOrgAdminReadsLog(
           treeSize: cp.tree_size,
           signingKeyId: cp.signing_key_id,
         });
+        continue;
+      }
+      const window = keyWindowFailure(key, cp.checkpoint_at, 'Tree head', `Org ${orgId}: checkpoint ${cp.id}`, {
+        notYetActive: 'TENANT_CHECKPOINT_KEY_NOT_YET_ACTIVE',
+        expired: 'TENANT_CHECKPOINT_KEY_EXPIRED',
+      });
+      if (window !== null) {
+        failures.push({ ...window, scopeId: orgId, treeSize: cp.tree_size, signingKeyId: cp.signing_key_id });
       }
     }
   }
@@ -1033,10 +1202,17 @@ export function verifyOrgAdminReadsChains(
   keys: DumpKeyTrust,
 ): TenantAdminReadsReport {
   const failures = new FailureSink();
+  const accounted = new CappedSink<AccountedReadLogEntry>();
   const leavesByOrg = groupByOrg(reads);
   const checkpointsByOrg = groupByOrg(checkpoints);
 
-  detectCheckpointForks(checkpoints, failures);
+  const setAsideHeads = new Map<OrgAdminReadsCheckpointDump, VerificationKey>();
+  for (const cp of checkpoints) {
+    if (cp.signing_key_id == null) continue;
+    const under = setAsideUnder(keys.registry, cp.signing_key_id, cp.checkpoint_at, cp.cose_sign1);
+    if (under !== null) setAsideHeads.set(cp, under);
+  }
+  detectCheckpointForks(checkpoints, new Set(setAsideHeads.keys()), failures);
 
   // Walk every org that has either leaves OR checkpoints; a checkpoint for an
   // empty leaf set would otherwise slip through silently.
@@ -1048,6 +1224,8 @@ export function verifyOrgAdminReadsChains(
       checkpointsByOrg.get(orgId) ?? [],
       keys,
       failures,
+      setAsideHeads,
+      accounted,
     );
   }
 
@@ -1067,6 +1245,8 @@ export function verifyOrgAdminReadsChains(
     witnessCosignedCheckpoints,
     failures: failures.listed,
     failureCount: failures.count,
+    accounted: accounted.listed,
+    accountedCount: accounted.count,
   };
 }
 

@@ -94,7 +94,10 @@ describe('a key is used only from a chain the verifier has verified', () => {
     dump.vaultCheckpoints = dump.vaultCheckpoints.filter(
       (c) => c.chain_key !== PLATFORM || c.chain_position <= early.length,
     );
-    dump.signingKeys[0]!.activated_at = new Date(firstRecordAt - 1).toISOString();
+    const activated = firstRecordAt - 1;
+    dump.signingKeys[0]!.activated_at = new Date(activated).toISOString();
+    // A checkpoint the key signed before that would be outside its window.
+    dump.vaultCheckpoints = dump.vaultCheckpoints.filter((c) => Date.parse(c.created_at) >= activated);
     const report = verifyDump(dump);
     expect(report.verdict, JSON.stringify(report.vault.failures)).toBe('unanchored');
     expect(report.vault.certKeysFromChain).toBe(0);

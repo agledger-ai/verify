@@ -491,3 +491,62 @@ export function pinOf(key: KeyMaterial): string {
  */
 export const LIVE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'live-2.0.0');
 export const LIVE_PIN = 'sha256:7319bc5f0f636d72778028cf069db7e7a4a62a7a44e5433ab94d66a53d9b23a4';
+
+const KEY_STATEMENT_CTY = 'application/vnd.agledger.key-statement+cbor';
+
+/**
+ * One row of vault_key_statements.ndjson: a genesis, succession or closure for
+ * `subject`, signed by `signers` in order, as a conforming Server writes it.
+ * Instants are microsecond RFC 3339; the row's write time is `createdAt`.
+ */
+export function buildKeyStatement(
+  kind: 'genesis' | 'succession' | 'closure',
+  subject: KeyMaterial,
+  opts: {
+    signers: KeyMaterial[];
+    endorser?: KeyMaterial;
+    activatedAt: string;
+    retiredAt?: string;
+    forced?: boolean;
+    createdAt: string;
+  },
+): Dump['keyStatements'][number] {
+  const digestOf = (k: KeyMaterial): string => hash('sha256', Buffer.from(k.publicKeyDerB64, 'base64'), 'hex');
+  const subjectMap: Record<string, unknown> = {
+    kid: subject.keyId,
+    spkiSha256: digestOf(subject),
+    alg: 'Ed25519',
+    spki: Uint8Array.from(Buffer.from(subject.publicKeyDerB64, 'base64')),
+    activatedAt: opts.activatedAt,
+  };
+  if (opts.retiredAt !== undefined) subjectMap['retiredAt'] = opts.retiredAt;
+  const payload: Record<string, unknown> = {
+    typ: kind,
+    iss: 'https://ledger.example',
+    subject: subjectMap,
+    iat: Math.floor(Date.parse(opts.createdAt) / 1000),
+  };
+  if (opts.endorser) payload['endorser'] = { kid: opts.endorser.keyId, spkiSha256: digestOf(opts.endorser) };
+  if (kind === 'closure') payload['forced'] = opts.forced ?? false;
+  const payloadBstr = cborEncode(payload, rfc8949EncodeOptions);
+  const statement = opts.signers.map((k) => {
+    const protectedBstr = cborEncode(
+      new Map<number, unknown>([[1, COSE_ALG_EDDSA], [3, KEY_STATEMENT_CTY], [4, hexToBytes(k.keyId)]]),
+      rfc8949EncodeOptions,
+    );
+    const signature = signEd25519Bytes(
+      k.privateKeyDerB64,
+      cborEncode(['Signature1', protectedBstr, new Uint8Array(0), payloadBstr], rfc8949EncodeOptions),
+    );
+    const inner = cborEncode([protectedBstr, new Map(), payloadBstr, signature], rfc8949EncodeOptions);
+    return Buffer.concat([Buffer.from([COSE_SIGN1_TAG_PREFIX]), Buffer.from(inner)]).toString('base64');
+  });
+  return {
+    id: `ks-${kind}-${subject.keyId}-${opts.createdAt}`,
+    kind,
+    subject_key_id: subject.keyId,
+    endorser_key_id: opts.endorser?.keyId ?? null,
+    statement,
+    created_at: `${opts.createdAt.slice(0, 23)}Z`,
+  };
+}

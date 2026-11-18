@@ -13,6 +13,7 @@ export {
   verifyOrgAdminReadsChains,
   assembleReport,
   walkDumpKeys,
+  ACCOUNTED_CHECKPOINT_RUN_CAP,
   MAX_REPORTED_FAILURES,
 } from './dump-verifier.js';
 export type { DumpKeyTrust, KeyTrustOptions, VaultChainOptions, VerifyDumpOptions } from './dump-verifier.js';
@@ -20,6 +21,7 @@ export type { DumpKeyTrust, KeyTrustOptions, VaultChainOptions, VerifyDumpOption
 // verifyDump(loadDump(dir)) for anything larger than a demo vault.
 export { verifyDumpStreaming } from './verify-dir.js';
 export type {
+  AccountedReadLogEntry,
   Dump,
   Failure,
   FailureCode,

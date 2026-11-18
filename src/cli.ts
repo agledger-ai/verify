@@ -266,8 +266,10 @@ Options:
                               so entries sealed before the peer changed its
                               federation key verify. Each message is placed
                               by its signed wire.timestamp, never by the
-                              unsigned createdAt. One signed under a key
-                              before the key's activation fails; one signed
+                              unsigned createdAt, with 300 seconds allowed
+                              at each edge of the window. One signed under a
+                              key earlier than that before the key's
+                              activation fails; one signed later than that
                               after its retirement is counted as after
                               retirement, in order when the receiver's
                               federation.peer_revoked row for the peer comes
@@ -561,6 +563,14 @@ export function formatDumpReportText(report: VerifyReport, options: TextReportOp
     const withheld = report.vault.accountedCount - report.vault.accounted.length;
     if (withheld > 0) lines.push(`    ... and ${withheld} more not shown (${report.vault.accountedCount} total)`);
   }
+  if (report.vault.accountedCheckpointCount > 0) {
+    // Set aside the same way, and never evidence: no chain was compared with
+    // one of these.
+    lines.push(`  checkpoints set aside: ${report.vault.accountedCheckpointCount} (signed by a distrusted key before its retirement; not verified, and no chain was judged against them)`);
+    lines.push(...report.vault.accountedCheckpoints.map((a) => `    [${a.code}] ${accountedChainName(a)} checkpoint pos ${a.position} key ${a.keyId}: ${a.detail}`));
+    const withheld = report.vault.accountedCheckpointCount - report.vault.accountedCheckpoints.length;
+    if (withheld > 0) lines.push(`    ... and ${withheld} more not shown (${report.vault.accountedCheckpointCount} total)`);
+  }
   lines.push('');
   lines.push('org_admin_reads chain');
   lines.push(`  orgs             : ${report.orgAdminReads.orgCount}`);
@@ -574,6 +584,12 @@ export function formatDumpReportText(report: VerifyReport, options: TextReportOp
   lines.push(
     ...failureLines(report.orgAdminReads.failures, report.orgAdminReads.failureCount, '    '),
   );
+  if (report.orgAdminReads.accountedCount > 0) {
+    lines.push(`  accounted for    : ${report.orgAdminReads.accountedCount} (signed by a distrusted key before its retirement; not verified, and no root was compared for a tree head)`);
+    lines.push(...report.orgAdminReads.accounted.map((a) => `    [${a.code}] Org ${a.orgId} ${a.kind === 'leaf' ? `leaf ${a.at}` : `tree head at size ${a.at}`} key ${a.keyId}: ${a.detail}`));
+    const withheld = report.orgAdminReads.accountedCount - report.orgAdminReads.accounted.length;
+    if (withheld > 0) lines.push(`    ... and ${withheld} more not shown (${report.orgAdminReads.accountedCount} total)`);
+  }
   return lines.join('\n');
 }
 
@@ -612,7 +628,11 @@ export function formatExportReportText(
   // (e.g. actorDisplayName). The attribution the export's guide points at
   // instead, actorOwnerId/actorId, IS signature-covered, so say whether this
   // run actually checked it rather than leaving the reader to assume.
-  if (result.unsignedProjectionFields.length > 0) {
+  // An export taken with ?evidence=true lists `evidence` among its unsigned
+  // fields. It is no display projection: each body is held to the hash its
+  // entry signs, and the evidence-bodies line above carries that result.
+  const projections = result.unsignedProjectionFields.filter((f) => f !== 'evidence');
+  if (projections.length > 0) {
     // `applied` says the check RAN, not that it passed, so a failed run must
     // not be told its attribution agrees: on a FAIL the verdict above is the
     // only thing this note may defer to.
@@ -623,7 +643,12 @@ export function formatExportReportText(
           ? 'Attribution (actorId/actorOwnerId/actorRole) was cross-checked against the signed actor claim and agrees.'
           : 'Attribution (actorId/actorOwnerId/actorRole) is cross-checked against the signed actor claim, and this run did not verify, so nothing above is vouched for.';
     lines.push(
-      `  note              : ${result.unsignedProjectionFields.length} unsigned display projection field(s) (${result.unsignedProjectionFields.join(', ')}) are NOT signature-covered. ${attribution}`,
+      `  note              : ${projections.length} unsigned display projection field(s) (${projections.join(', ')}) are NOT signature-covered. ${attribution}`,
+    );
+  }
+  if (projections.length < result.unsignedProjectionFields.length) {
+    lines.push(
+      '  note              : inlined evidence bodies sit outside the signature and count only as far as each was held to the hash its entry signs; see "evidence bodies" above.',
     );
   }
   return lines.join('\n');
@@ -739,8 +764,13 @@ export function dumpReportWithFlags(report: VerifyReport): VerifyReport {
       ...report.vault,
       failures: report.vault.failures.map(failure),
       accounted: report.vault.accounted.map((a) => ({ ...a, detail: flagWording(a.detail) })),
+      accountedCheckpoints: report.vault.accountedCheckpoints.map((a) => ({ ...a, detail: flagWording(a.detail) })),
     },
-    orgAdminReads: { ...report.orgAdminReads, failures: report.orgAdminReads.failures.map(failure) },
+    orgAdminReads: {
+      ...report.orgAdminReads,
+      failures: report.orgAdminReads.failures.map(failure),
+      accounted: report.orgAdminReads.accounted.map((a) => ({ ...a, detail: flagWording(a.detail) })),
+    },
   };
 }
 

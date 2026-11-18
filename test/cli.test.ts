@@ -239,6 +239,17 @@ describe('formatExportReportText: unsigned-projection note', () => {
     expect(text).toContain('actorOwnerId'); // points at the signed identity
   });
 
+  it('does not call inlined evidence a display projection, and points at the check that binds it', () => {
+    const text = formatExportReportText(
+      exportResult({ unsignedProjectionFields: ['actorDisplayName', 'evidence'] }),
+    );
+    expect(text).toContain('1 unsigned display projection field(s) (actorDisplayName)');
+    expect(text).toMatch(/inlined evidence bodies sit outside the signature and count only as far as each was held to the hash its entry signs/);
+    const only = formatExportReportText(exportResult({ unsignedProjectionFields: ['evidence'] }));
+    expect(only).not.toContain('display projection');
+    expect(only).toContain('inlined evidence bodies');
+  });
+
   it('emits no note when the export carries no unsigned-projection guidance', () => {
     const text = formatExportReportText(exportResult({ unsignedProjectionFields: [] }));
     expect(text).not.toContain('note');
@@ -593,13 +604,18 @@ describe('dumpReportWithFlags', () => {
       verdict: 'failed' as const,
       keyTrust: { ...keyTrust, findings: [{ code: 'KEY_CLOSURE_INVALID' as const, keyId: 'trustAnchors', statementId: 'distrustedKeys', detail: 'give distrustedKeys sha256:ab@x' }] },
       vault: {
-        recordCount: 1, entryCount: 1, checkpointCount: 0, failureCount: 1, accountedCount: 1, signedEntries: 0, certKeysFromChain: 0,
+        recordCount: 1, entryCount: 1, checkpointCount: 0, failureCount: 1, accountedCount: 1, accountedCheckpointCount: 1, signedEntries: 0, certKeysFromChain: 0,
         failures: [{ code: 'CHAIN_KEY_EXPIRED' as const, message: 'the instant distrustedKeys gives', scopeId: 'distrustedKeys', signingKeyId: 'trustAnchors' }],
         accounted: [{ code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY' as const, chain: 'record' as const, recordId: 'distrustedKeys', orgId: 'trustAnchors', scopeId: 'requireKeyId', position: 0, keyId: 'agentKeys', detail: 'which distrustedKeys names' }],
+        accountedCheckpoints: [{ code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY' as const, chain: 'record' as const, recordId: 'distrustedKeys', orgId: 'trustAnchors', scopeId: 'requireKeyId', position: 0, keyId: 'agentKeys', detail: 'which distrustedKeys names' }],
         optionalChecks: {} as VerifyReport['vault']['optionalChecks'],
         agentSignatures: { present: 0, verified: 0 },
       },
-      orgAdminReads: { orgCount: 1, leafCount: 0, checkpointCount: 0, witnessCosignedCheckpoints: [], failureCount: 1, failures: [{ code: 'TENANT_READ_KEY_UNANCHORED' as const, message: 'pin it in trustAnchors', scopeId: 'trustAnchors' }] },
+      orgAdminReads: {
+        orgCount: 1, leafCount: 0, checkpointCount: 0, witnessCosignedCheckpoints: [], failureCount: 1, accountedCount: 1,
+        failures: [{ code: 'TENANT_READ_KEY_UNANCHORED' as const, message: 'pin it in trustAnchors', scopeId: 'trustAnchors' }],
+        accounted: [{ code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY' as const, orgId: 'trustAnchors', kind: 'leaf' as const, at: 0, keyId: 'agentKeys', detail: 'which distrustedKeys names' }],
+      },
     } satisfies VerifyReport;
     const before = JSON.stringify(report);
     const out = dumpReportWithFlags(report);
@@ -609,5 +625,7 @@ describe('dumpReportWithFlags', () => {
     expect(out.vault.failures[0]).toEqual({ code: 'CHAIN_KEY_EXPIRED', message: 'the instant --distrusted-key gives', scopeId: 'distrustedKeys', signingKeyId: 'trustAnchors' });
     expect(out.vault.accounted[0]).toMatchObject({ recordId: 'distrustedKeys', orgId: 'trustAnchors', scopeId: 'requireKeyId', keyId: 'agentKeys', detail: 'which --distrusted-key names' });
     expect(out.orgAdminReads.failures[0]).toEqual({ code: 'TENANT_READ_KEY_UNANCHORED', message: 'pin it with --trust-anchor', scopeId: 'trustAnchors' });
+    expect(out.vault.accountedCheckpoints[0]).toMatchObject({ recordId: 'distrustedKeys', keyId: 'agentKeys', detail: 'which --distrusted-key names' });
+    expect(out.orgAdminReads.accounted[0]).toEqual({ code: 'CHAIN_SIGNED_BY_DISTRUSTED_KEY', orgId: 'trustAnchors', kind: 'leaf', at: 0, keyId: 'agentKeys', detail: 'which --distrusted-key names' });
   });
 });

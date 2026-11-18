@@ -20,6 +20,7 @@
  */
 import type {
   AccountedEntry,
+  AccountedEntryCode,
   CheckApplicability,
   DumpKeyStatementRow,
   FailureCode as CoreFailureCode,
@@ -219,6 +220,17 @@ export interface VaultChainsReport {
   /** Total accounted entries, including any beyond the cap. */
   accountedCount: number;
   /**
+   * Capped sample of checkpoints set aside the same way: signed by a
+   * `distrustedKeys` key, verifying under it, and written inside what the
+   * entry and the trusted retirement account for, as the Server's scan lists
+   * them in `distrustedCheckpoints`. A checkpoint set aside is never evidence:
+   * its position and hash are not compared with the chain. `position` is the
+   * checkpoint's chain position.
+   */
+  accountedCheckpoints: AccountedEntry[];
+  /** Total checkpoints set aside, including any beyond the cap. */
+  accountedCheckpointCount: number;
+  /**
    * Which input-gated checks ran. A check is `applied` when it ran on at least
    * one chain. `agent_signature` is `applied` once a cert key, from
    * `agentKeys` or from the dump (`certKeysFromChain`), matched at least one
@@ -260,6 +272,23 @@ export interface VaultChainsReport {
   certKeysFromChain: number;
 }
 
+/**
+ * A read-log leaf or tree head set aside: signed by a `distrustedKeys` key,
+ * verifying under it, and written inside what that entry and the retirement a
+ * trusted key signed account for. The Server's scan lists the same rows in
+ * `orgAdminReads.distrustedEntries`. Listed, never verified, never a failure.
+ * A leaf keeps its index, hash and claim checks; a tree head's leaf count and
+ * root are not compared. `at` is the leaf index or the tree size.
+ */
+export interface AccountedReadLogEntry {
+  code: AccountedEntryCode;
+  orgId: string;
+  kind: 'leaf' | 'checkpoint';
+  at: number;
+  keyId: string;
+  detail: string;
+}
+
 export interface TenantAdminReadsReport {
   orgCount: number;
   leafCount: number;
@@ -269,6 +298,10 @@ export interface TenantAdminReadsReport {
   failures: Failure[];
   /** Total failures found, including any beyond the cap. */
   failureCount: number;
+  /** Capped sample of leaves and tree heads set aside. See {@link AccountedReadLogEntry}. */
+  accounted: AccountedReadLogEntry[];
+  /** Total leaves and tree heads set aside, including any beyond the cap. */
+  accountedCount: number;
 }
 
 /**

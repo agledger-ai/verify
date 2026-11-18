@@ -6,9 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Checkpoints and the read log are held to their signing key's window.** An AGLedger Server later than 2.2.0 reports a vault checkpoint, a read-log leaf or a read-log tree head written outside the signed window of the key that signed it, and a dump holding one verified clean here. Each is now placed by the time its row was written (`created_at`, `read_at`, `checkpoint_at`), after its signature verifies, by the rule chain entries are held to: `CHECKPOINT_KEY_NOT_YET_ACTIVE` and `CHECKPOINT_KEY_EXPIRED` for a vault checkpoint, `TENANT_READ_KEY_NOT_YET_ACTIVE` and `TENANT_READ_KEY_EXPIRED` for a leaf, `TENANT_CHECKPOINT_KEY_NOT_YET_ACTIVE` and `TENANT_CHECKPOINT_KEY_EXPIRED` for a tree head. A row written exactly at the retirement passes. With `--trust-anchor` the window is the one the key's statements sign; without, the one its registry row lists.
+- **Checkpoints, leaves and tree heads a `--distrusted-key` entry accounts for are set aside.** The Server sets aside what a distrusted key signed before a trusted key retired it, on every signed artifact; here only chain entries were, so after a leaked-key response every checkpoint, leaf and tree head the old key had signed failed as unanchored, and one planted under the leaked key raised `CHECKPOINT_ROW_MISSING`, a root mismatch or a fork on an intact chain or log. They are now listed and never evidence: `vault.accountedCheckpoints` with `vault.accountedCheckpointCount`, and `orgAdminReads.accounted` with `orgAdminReads.accountedCount` (`AccountedReadLogEntry`). A leaf set aside keeps its index, hash and claim checks. A record or platform-ops chain with no entry whose only checkpoints are set aside is `CHECKPOINT_ACCOUNTED_ONLY`, and more than `ACCOUNTED_CHECKPOINT_RUN_CAP` (1000) set aside above the newest that is not is `CHECKPOINT_ACCOUNTED_RUN_EXCEEDED`.
+
 ### Changed
 
+- A sealed federation message is placed in its key's window with 300 seconds allowed at each edge, through `@agledger/verify-core`.
+- `cborg` is pinned at 7.0.0, the version the Server encodes with.
 - Documentation and code comments describe the Server's behaviour rather than its internals.
+
+### Fixed
+
+- **The text report on an `?evidence=true` export called the inlined evidence a display projection.** A Server later than 2.2.0 lists `evidence` among the export's unsigned fields, and the note counted it beside `actorDisplayName`. Evidence bodies are held to the hash their entry signs; the note now leaves `evidence` out of the projections and points at the `evidence bodies` line that reports the check.
 
 ## [2.1.0] - 2026-11-05
 
