@@ -31,6 +31,19 @@ interface VectorOptions {
    * vector that was never actually exercised.
    */
   agentKeysFile?: string;
+  /**
+   * `sha256:<hex>`, optionally `@<RFC 3339 instant>`: the operator's
+   * distrust entries, as `--distrusted-key` takes them. The dump does not
+   * carry them.
+   */
+  distrustedKeys?: string[];
+}
+
+/** What a verifier given the vector's distrust entries lists as accounted for. */
+interface ExpectAccountedSpec {
+  entries: Array<{ recordId: string; position: number }>;
+  checkpoints: Array<{ recordId: string; position: number }>;
+  readLog: Array<{ kind: 'leaf' | 'checkpoint'; at: number }>;
 }
 
 interface SignatureCoverageSpec {
@@ -47,6 +60,7 @@ interface VectorSpec {
   brokenAt?: number;
   options?: VectorOptions;
   expectSignatureCoverage?: SignatureCoverageSpec;
+  expectAccounted?: ExpectAccountedSpec | null;
   note: string;
 }
 
@@ -93,7 +107,20 @@ function currentPin(dir: string): string {
 // An option the runner does not map runs the vector without it, and a renamed
 // key (requireOutOfBandKeys became requireSuppliedKeys) then passes or fails for
 // the wrong reason. Fail on any key VectorOptions does not name.
-const MAPPED_OPTIONS = new Set(['keysFile', 'requireKeyId', 'requireSuppliedKeys', 'trustAnchors', 'agentKeysFile']);
+const MAPPED_OPTIONS = new Set(['keysFile', 'requireKeyId', 'requireSuppliedKeys', 'trustAnchors', 'agentKeysFile', 'distrustedKeys']);
+
+const byPosition = (a: { recordId: string; position: number }, b: { recordId: string; position: number }) =>
+  a.recordId.localeCompare(b.recordId) || a.position - b.position;
+const byAt = (a: { kind: string; at: number }, b: { kind: string; at: number }) => a.at - b.at || a.kind.localeCompare(b.kind);
+
+/** The report's accounted-for artifacts in the manifest's `expectAccounted` form. */
+function accountedOf(report: VerifyReport): ExpectAccountedSpec {
+  return {
+    entries: report.vault.accounted.map((e) => ({ recordId: e.recordId ?? '', position: e.position })).sort(byPosition),
+    checkpoints: report.vault.accountedCheckpoints.map((e) => ({ recordId: e.recordId ?? '', position: e.position })).sort(byPosition),
+    readLog: report.orgAdminReads.accounted.map((e) => ({ kind: e.kind, at: e.at })).sort(byAt),
+  };
+}
 
 describe('every manifest option is mapped', () => {
   it('names no option the runner ignores', () => {
@@ -127,12 +154,24 @@ describe('DUMP conformance corpus (manifest-dump.json)', () => {
     const pinned = anchors ? ` pinned on ${anchors.map((a) => a.slice(7, 23)).join(',')}` : '';
     it(`${vector.file}${pinned} -> ${vector.expect}${vector.failureCode ? ` (${vector.failureCode})` : ''}`, () => {
       const dumpDir = join(CONFORMANCE, vector.file);
-      const report = verifyDump(loadDump(dumpDir), anchors ? { trustAnchors: anchors } : {});
+      const distrusted = vector.options?.distrustedKeys;
+      const report = verifyDump(loadDump(dumpDir), {
+        ...(anchors ? { trustAnchors: anchors } : {}),
+        ...(distrusted ? { distrustedKeys: distrusted } : {}),
+      });
       const codes = allCodes(report);
 
       if (vector.expect === 'pass') {
         expect(codes, 'expected pass').toEqual([]);
         expect(report.verdict).toBe(anchors ? 'trusted' : 'unanchored');
+        if (vector.expectAccounted) {
+          const want = vector.expectAccounted;
+          expect(accountedOf(report)).toEqual({
+            entries: [...want.entries].sort(byPosition),
+            checkpoints: [...want.checkpoints].sort(byPosition),
+            readLog: [...want.readLog].sort(byAt),
+          });
+        }
         return;
       }
 
