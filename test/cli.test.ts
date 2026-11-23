@@ -7,6 +7,7 @@ import { DEFAULT_FILENAMES } from '../src/loader.js';
 import {
   EXIT_CANNOT_VERIFY,
   EXIT_OK,
+  EXIT_NOT_ANCHORED,
   EXIT_VERIFICATION_FAILED,
   dumpReportWithFlags,
   flagWording,
@@ -110,6 +111,7 @@ describe('parseArgs', () => {
     federationKeys: [],
     federationKeyHistories: [],
     allowAfterRetirement: false,
+    expectedEntryCount: null,
   };
 
   it('captures target and defaults to text report format', () => {
@@ -352,14 +354,27 @@ describe('runCli (dump-dir end-to-end)', () => {
     expect(parsed.keyTrust.detail).toMatch(/^No --trust-anchor was given, .* \(sha256:<hex>\) as --trust-anchor\.$/);
   });
 
-  it('exits 1 when the pin reaches none of the keys that signed the dump', () => {
+  it('exits 3, not the tamper code, when the pin reaches none of the keys that signed an untampered dump', () => {
     const { dump } = buildHappyDump();
     writeDump(dump);
     const result = runCli([dir, '--trust-anchor', `sha256:${'0'.repeat(64)}`]);
-    expect(result.exitCode).toBe(EXIT_VERIFICATION_FAILED);
+    expect(result.exitCode).toBe(EXIT_NOT_ANCHORED);
+    expect(result.stdout).toMatch(/^\[NOT ANCHORED\] AGLedger offline verification \(dump\)/);
     for (const code of ['CHAIN_SIGNING_KEY_UNANCHORED', 'CHECKPOINT_KEY_UNANCHORED', 'TENANT_READ_KEY_UNANCHORED']) {
       expect(result.stdout).toContain(`[${code}]`);
     }
+    const json = runCli([dir, '--trust-anchor', `sha256:${'0'.repeat(64)}`, '-f', 'json']);
+    expect(json.exitCode).toBe(EXIT_NOT_ANCHORED);
+    expect(JSON.parse(json.stdout)).toMatchObject({ ok: false, verdict: 'unanchored' });
+  });
+
+  it('exits 1 when the pin reaches none of the keys and the dump is tampered with as well', () => {
+    const { dump } = buildHappyDump();
+    const row = dump.vaultEntries[1]!;
+    row.payload_hash = row.payload_hash.replace(/^./, (c) => (c === '0' ? '1' : '0'));
+    writeDump(dump);
+    expect(runCli([dir]).exitCode).toBe(EXIT_VERIFICATION_FAILED);
+    expect(runCli([dir, '--trust-anchor', `sha256:${'0'.repeat(64)}`]).exitCode).toBe(EXIT_VERIFICATION_FAILED);
   });
 
   // The same inputs, messages and exit codes as the Python agledger-verify and
@@ -446,6 +461,61 @@ describe('runCli key-policy flags (conformance corpus)', () => {
     expect(result.exitCode).toBe(EXIT_OK);
     expect(result.stdout).toMatch(/^\[PASS\]/);
     expect(result.stdout).toContain(`walked from ${PIN}`);
+  });
+
+  it('a clean export pinned on another Server\'s key exits 3, not the tamper code, and a tampered one still exits 1', () => {
+    const other = `sha256:${'ab'.repeat(32)}`;
+    const result = runCli([validExport, '--trust-anchor', other]);
+    expect(result.exitCode).toBe(EXIT_NOT_ANCHORED);
+    expect(result.stdout).toMatch(/^\[NOT ANCHORED\]/);
+    const json = runCli([validExport, '--trust-anchor', other, '-f', 'json']);
+    expect(json.exitCode).toBe(EXIT_NOT_ANCHORED);
+    expect(JSON.parse(json.stdout)).toMatchObject({ verdict: 'unanchored', valid: false, brokenAt: { code: 'CHAIN_SIGNING_KEY_UNANCHORED' } });
+    expect(runCli([join(CONFORMANCE, 'export', 'hash-mismatch.json'), '--trust-anchor', other]).exitCode).toBe(EXIT_VERIFICATION_FAILED);
+  });
+
+  it('--expected-entry-count fails a tail-truncated export whose own counts were deleted, which otherwise exits 0', () => {
+    const exp = JSON.parse(readFileSync(validExport, 'utf8')) as RecordAuditExportInput;
+    const full = exp.entries.length;
+    exp.entries = exp.entries.slice(0, -1);
+    delete exp.exportMetadata.expectedEntries;
+    delete exp.exportMetadata.totalEntries;
+    const dir2 = mkdtempSync(join(tmpdir(), 'agledger-verify-count-'));
+    const file = join(dir2, 'cut.json');
+    writeFileSync(file, JSON.stringify(exp));
+    try {
+      const plain = runCli([file, '--trust-anchor', PIN]);
+      expect(plain.exitCode).toBe(EXIT_OK);
+      expect(plain.stdout).toContain('Hold it to a count you took out of band with --expected-entry-count');
+      const held = runCli([file, '--trust-anchor', PIN, '--expected-entry-count', String(full)]);
+      expect(held.exitCode).toBe(EXIT_VERIFICATION_FAILED);
+      expect(held.stdout).toContain('CHAIN_POSITION_GAP');
+      expect(held.stdout).toContain(`${full - 1} where --expected-entry-count gives ${full}`);
+      const json = JSON.parse(runCli([file, '-f', 'json', `--expected-entry-count=${full}`]).stdout) as VerifyExportResult;
+      expect(json.optionalChecks.entry_count).toBe('applied');
+      const whole = runCli([validExport, '--trust-anchor', PIN, '--expected-entry-count', String(full)]);
+      expect(whole.exitCode).toBe(EXIT_OK);
+      expect(whole.stdout).toContain(`held to the ${full} given with --expected-entry-count`);
+    } finally {
+      rmSync(dir2, { recursive: true, force: true });
+    }
+  });
+
+  it.each([['-1'], ['1.5'], ['x'], ['']])('--expected-entry-count %j is a usage error, exit 2', (value) => {
+    const r = runCli([validExport, `--expected-entry-count=${value}`]);
+    expect(r.exitCode).toBe(EXIT_CANNOT_VERIFY);
+    expect(r.stderr + r.stdout).toContain('--expected-entry-count must be a non-negative integer');
+  });
+
+  it('--expected-entry-count on a dump directory is refused', () => {
+    const d = mkdtempSync(join(tmpdir(), 'agledger-verify-count-'));
+    try {
+      const r = runCli([d, '--expected-entry-count', '3']);
+      expect(r.exitCode).toBe(EXIT_CANNOT_VERIFY);
+      expect(r.stderr + r.stdout).toContain('--expected-entry-count applies to /audit-export files only');
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 
   it('--require-key-id rejects a chain signed by another key', () => {

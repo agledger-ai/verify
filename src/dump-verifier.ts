@@ -1282,13 +1282,16 @@ export function assembleReport(
   vault: VaultChainsReport,
   orgAdminReads: TenantAdminReadsReport,
   keys: DumpKeyTrust,
+  passesUnpinned?: () => boolean,
 ): VerifyReport {
   // Under a walk every key a vault signature verifies against is anchored, so
   // the signed entries are the anchored signatures; with none, the pin proves
-  // nothing and a pass is not trusted.
+  // nothing and a pass is not trusted. A pinned dump that fails only because
+  // the pin reaches none of its keys, and passes without it, is `unanchored`
+  // (see verdictOf).
   const keyTrust = settleKeyTrust(keys.report, vault.signedEntries);
   const failed = vault.failureCount > 0 || orgAdminReads.failureCount > 0 || keyTrust.findings.length > 0;
-  const verdict = verdictOf({ valid: !failed, keyTrust });
+  const verdict = verdictOf({ valid: !failed, keyTrust }, passesUnpinned);
   return {
     ok: !failed,
     verdict,
@@ -1305,5 +1308,12 @@ export function verifyDump(dump: Dump, options: VerifyDumpOptions = {}): VerifyR
     verifyVaultChains(dump.vaultEntries, dump.vaultCheckpoints, keys, options),
     verifyOrgAdminReadsChains(dump.orgAdminReads, dump.orgAdminReadsCheckpoints, keys),
     keys,
+    () => verifyDump(dump, withoutPin(options)).ok,
   );
+}
+
+/** The same options with no key walk: what a pinned run is checked against when its pin reaches nothing. */
+export function withoutPin(options: VerifyDumpOptions): VerifyDumpOptions {
+  const { trustAnchors: _pinned, distrustedKeys: _distrusted, ...unpinned } = options;
+  return unpinned;
 }

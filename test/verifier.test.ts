@@ -454,3 +454,18 @@ describe('a row whose envelope is missing', () => {
     expect([...report.vault.failures, ...report.orgAdminReads.failures].map((f) => f.code)).toContain(code);
   });
 });
+
+describe('a relabelled record_id on a dump row', () => {
+  // The same case and code as the Python verifier: chains are walked by
+  // chain_key, so the row stays in its chain and fails against what it signs.
+  it('is CHAIN_PAYLOAD_BINDING_MISMATCH, not a producer-order refusal', () => {
+    const dump = loadDump(join(import.meta.dirname, '..', 'testdata', 'conformance', 'dump', 'valid'));
+    const row = dump.vaultEntries.find((e) => e.record_id !== null && e.chain_key === e.record_id)!;
+    const siblings = dump.vaultEntries.filter((e) => e.chain_key === row.chain_key);
+    expect(siblings.length).toBeGreaterThan(1);
+    siblings[1]!.record_id = '00000000-0000-7000-8000-0000000000ff';
+    const codes = verifyDump(dump).vault.failures.map((f) => f.code);
+    expect(codes).toContain('CHAIN_PAYLOAD_BINDING_MISMATCH');
+    expect(codes).not.toContain('UNSUPPORTED_FORMAT');
+  });
+});

@@ -58,6 +58,7 @@ agledger-verify <target> [--trust-anchor sha256:<hex>]...
                 [--federation-key <hubId>=<key>]...
                 [--federation-key-history <file>]...
                 [--allow-after-retirement]
+                [--expected-entry-count <n>]
                 [--report-format text|json]
                 [--keys <file>] [--require-key-id <id>]
                 [--require-supplied-keys]
@@ -108,7 +109,7 @@ produced a result.
 | `0` | Verified. No failures. The verdict says whether the keys were anchored: `trusted` with a `--trust-anchor`, `unanchored` without one. |
 | `1` | Verification FAILED. The chain, log, or key statements do not hold up. |
 | `2` | Could NOT verify. The input was missing, unreadable, or malformed (a mistyped pin included); no verdict was reached. |
-| `3` | Not anchored. A `--trust-anchor` was given and the run did not anchor to it: nothing failed, but the pin was not met, as with an export that carries its own keys and nothing signed by the pinned one. |
+| `3` | Not anchored. A `--trust-anchor` was given and the run did not anchor to it: nothing failed, but the pin was not met, as with an export from another Server than the one pinned, or one that carries its own keys and nothing signed by the pinned one. The JSON `verdict` is `unanchored`. |
 
 `1` and `2` mean opposite things, so treat only `1` as evidence of tampering.
 `3` is neither: the run found no failure, but you asked for a pin and it did not
@@ -463,13 +464,19 @@ caller need not add a second dependency.
   rewritten column pair beside an intact envelope would otherwise pass. The
   report's `checkpointed` line (`vault.checkpointedChainCount`) says how many
   chains were compared with a checkpoint; the length of each of the others is
-  the dump's own until its first checkpoint is written.
+  the dump's own until its first checkpoint is written: rows removed from the
+  end of such a chain leave nothing to compare with, so the dump passes. A
+  fresh install writes its first checkpoints on the Server's periodic sweep.
 - **A record export's length**: the export states the position of the record's
   latest checkpoint (`exportMetadata.expectedEntries`) and how many entries the
   Server wrote (`exportMetadata.totalEntries`). An export carrying fewer than
   the first is `CHECKPOINT_ROW_MISSING` and fewer than the second is
   `CHAIN_POSITION_GAP`; the report's `entry count` line says which count the
-  chain was held to.
+  chain was held to. Both counts are unsigned, so an export cut from the end
+  with them deleted still passes on its own. `--expected-entry-count <n>`
+  (`expectedEntryCount` in the library) holds it to a count you took out of
+  band, such as the record's entry count read from the Server or an earlier
+  export, and a different number of entries fails `CHAIN_POSITION_GAP`.
 - **`org_admin_reads` chain**: leaf_hash is the RFC 9162 leaf hash of the
   envelope, sha256(0x00 || cose_sign1); leaf_index is gap-free per org; each
   leaf's signed claim gives its position, the previous leaf's hash and the

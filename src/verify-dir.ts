@@ -12,6 +12,7 @@ import {
   verifyVaultChains,
   assembleReport,
   walkDumpKeys,
+  withoutPin,
   type VerifyDumpOptions,
 } from './dump-verifier.js';
 import { DEFAULT_FILENAMES, loadCompanions, streamVaultEntries, type DumpFiles } from './loader.js';
@@ -50,5 +51,6 @@ export function verifyDumpStreaming(
     verifyVaultChains(streamVaultEntries(dumpDir, filenames), companions.vaultCheckpoints, keys, options),
     verifyOrgAdminReadsChains(companions.orgAdminReads, companions.orgAdminReadsCheckpoints, keys),
     keys,
+    () => verifyDumpStreaming(dumpDir, filenames, withoutPin(options)).ok,
   );
 }

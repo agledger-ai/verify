@@ -99,6 +99,8 @@ export interface ParsedArgs {
   federationKeyHistories: string[];
   /** `--allow-after-retirement`: accept and count a peer message signed after its key's retirement. */
   allowAfterRetirement: boolean;
+  /** `--expected-entry-count`: the number of entries an /audit-export must hold, supplied out of band. */
+  expectedEntryCount: number | null;
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -116,6 +118,13 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     federationKeys: [],
     federationKeyHistories: [],
     allowAfterRetirement: false,
+    expectedEntryCount: null,
+  };
+  const entryCount = (value: string): number => {
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+      throw new Error(`--expected-entry-count must be a non-negative integer (got ${value})`);
+    }
+    return Number(value);
   };
   const takeValue = (flag: string, next: string | undefined): string => {
     if (next === undefined || next.startsWith('-')) {
@@ -193,6 +202,11 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       throw new Error(PLURAL_DISTRUSTED);
     } else if (arg === '--allow-after-retirement') {
       out.allowAfterRetirement = true;
+    } else if (arg === '--expected-entry-count') {
+      out.expectedEntryCount = entryCount(takeValue('--expected-entry-count', argv[i + 1]));
+      i++;
+    } else if (arg.startsWith('--expected-entry-count=')) {
+      out.expectedEntryCount = entryCount(arg.slice('--expected-entry-count='.length));
     } else if (arg === '--require-supplied-keys') {
       out.requireSuppliedKeys = true;
     } else if (arg === '--require-out-of-band-keys') {
@@ -220,6 +234,7 @@ Usage:
                   [--federation-key <hubId>=<key>]...
                   [--federation-key-history <file>]...
                   [--allow-after-retirement]
+                  [--expected-entry-count <n>]
                   [--report-format text|json]
                   [--keys <file>] [--require-key-id <id>]
                   [--require-supplied-keys]
@@ -322,6 +337,13 @@ Options:
   --require-key-id            Require every entry to reference this keyId.
                               Rejects otherwise-valid exports signed by a
                               retired or unexpected key.
+  --expected-entry-count <n>  The number of entries the /audit-export must
+                              hold, taken out of band (the record's entry
+                              count from the Server or an earlier export).
+                              The counts an export states about itself are
+                              unsigned, so a chain cut from the end with
+                              them deleted verifies; with this flag it fails
+                              CHAIN_POSITION_GAP. /audit-export files only.
   --require-supplied-keys     Refuse keys embedded in the export: an entry
                               whose only key is the export's own fails. This
                               says where a key came from, not that it is
@@ -366,8 +388,8 @@ Exit codes:
   1  verification FAILED (the chain, log, or key statements do not hold up)
   2  could NOT verify (input missing, unreadable, or malformed; no verdict)
   3  NOT ANCHORED: a --trust-anchor was given and nothing anchored to it
-     (nothing failed, but the pin was not met; a forged export with its own
-     keys ends here)
+     (nothing fails without the pin, but the pin was not met: an artifact
+     from another Server, or a forged one carrying its own keys, ends here)
 
 Codes 1 and 2 mean opposite things. Treat only 1 as evidence of tampering.
 `;
@@ -392,6 +414,8 @@ export interface TextReportOptions {
   agentKeysSupplied?: boolean;
   /** Whether the caller passed `--federation-key` (peer federation keys). Default false. */
   federationKeysSupplied?: boolean;
+  /** The count the caller passed with `--expected-entry-count`, if any. */
+  expectedEntryCount?: number;
 }
 
 /**
@@ -495,7 +519,7 @@ function agentSignatureSummary(
  * nothing wrong but anchored nothing can never be read, or grepped, as a
  * trusted PASS.
  */
-function headline(verdict: Verdict, kind: string, keyTrust: KeyTrustReport): string[] {
+function headline(verdict: Verdict, kind: string, keyTrust: KeyTrustReport, valid: boolean): string[] {
   if (verdict === 'trusted') {
     return [
       `[PASS] AGLedger offline verification (${kind})`,
@@ -508,6 +532,15 @@ function headline(verdict: Verdict, kind: string, keyTrust: KeyTrustReport): str
       `[FAIL] AGLedger offline verification (${kind})`,
       '  Verification FAILED: the chain, the read log or the key statements do not hold up.',
       '  Each finding is listed below.',
+    ];
+  }
+  if (!valid) {
+    return [
+      `[NOT ANCHORED] AGLedger offline verification (${kind})`,
+      '  The --trust-anchor you gave reaches none of the signing keys here, so every signed entry',
+      '  reads as unanchored. Without the pin, nothing fails: this is the result for an artifact',
+      '  from another Server than the one pinned, and equally for one re-signed wholesale under',
+      '  keys of its own. NOT a trusted verdict. Check that the pin is this Server\'s vault key.',
     ];
   }
   if (keyTrust.status === 'no_anchored_signature') {
@@ -564,7 +597,7 @@ function accountedChainName(a: AccountedEntry): string {
 
 export function formatDumpReportText(report: VerifyReport, options: TextReportOptions = {}): string {
   const lines: string[] = [];
-  lines.push(...headline(report.verdict, 'dump', report.keyTrust));
+  lines.push(...headline(report.verdict, 'dump', report.keyTrust, report.ok));
   lines.push('');
   lines.push('key anchoring');
   lines.push(...keyTrustLines(report.keyTrust, '  '));
@@ -626,11 +659,11 @@ export function formatExportReportText(
   options: TextReportOptions = {},
 ): string {
   const lines: string[] = [];
-  lines.push(...headline(result.verdict, 'audit-export', result.keyTrust));
+  lines.push(...headline(result.verdict, 'audit-export', result.keyTrust, result.valid));
   lines.push('');
   lines.push(`  record            : ${result.recordId}`);
   lines.push(`  entries           : ${result.verifiedEntries}/${result.totalEntries} verified`);
-  lines.push(`  entry count       : ${entryCountSummary(result.entryCount, result.totalEntries)}`);
+  lines.push(`  entry count       : ${entryCountSummary(result.entryCount, result.totalEntries, options.expectedEntryCount)}`);
   lines.push(
     `  signature coverage: signed=${result.signatureCoverage.signed} unsigned=${result.signatureCoverage.unsigned} skipped=${result.signatureCoverage.skipped}`,
   );
@@ -688,7 +721,12 @@ export function formatExportReportText(
  * verifies entry by entry, so the reader is told which stated count, if any,
  * stood behind the number above.
  */
-function entryCountSummary(count: VerifyExportResult['entryCount'], held: number): string {
+function entryCountSummary(count: VerifyExportResult['entryCount'], held: number, supplied?: number): string {
+  if (supplied !== undefined) {
+    return held === supplied
+      ? `held to the ${supplied} given with --expected-entry-count`
+      : `${held} where --expected-entry-count gives ${supplied}`;
+  }
   if (count.expectedEntries !== null) {
     return held < count.expectedEntries
       ? `${held} where the checkpoint at position ${count.expectedEntries} anchors ${count.expectedEntries}`
@@ -699,7 +737,7 @@ function entryCountSummary(count: VerifyExportResult['entryCount'], held: number
       ? `${held} where the export states ${count.statedEntries}; it names no checkpoint for this record yet`
       : `held to the ${count.statedEntries} the export states; it names no checkpoint for this record yet`;
   }
-  return 'the file\'s own; the export states no count and names no checkpoint';
+  return 'the file\'s own; the export states no count and names no checkpoint, so a chain cut from the end would pass. Hold it to a count you took out of band with --expected-entry-count';
 }
 
 /** How many chains a checkpoint holds the length of, and what the rest rest on. */
@@ -776,6 +814,7 @@ const OPTION_FLAGS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bagentKeys\b/g, '--agent-keys'],
   [/\bfederationKeys\b/g, '--federation-key'],
   [/\ballowAfterRetirement\b/g, '--allow-after-retirement'],
+  [/\bexpectedEntryCount\b/g, '--expected-entry-count'],
 ];
 
 /** One prose string from a report, its option names given as this CLI's flags. */
@@ -979,6 +1018,12 @@ export function runCli(argv: readonly string[]): CliResult {
 
   // Directory -> full-vault dump.
   if (isDirectory(parsed.target)) {
+    if (parsed.expectedEntryCount !== null) {
+      return cannotVerify(
+        '--expected-entry-count applies to /audit-export files only; a dump holds every chain of the installation, each held to its own checkpoints.',
+        parsed.reportFormat,
+      );
+    }
     if (hasKeyPolicyFlags) {
       return cannotVerify(
         '--keys / --require-key-id / --require-supplied-keys apply to /audit-export files only; a dump directory carries its own signed key history (vault_signing_keys.ndjson and vault_key_statements.ndjson). Pin it with --trust-anchor.',
@@ -1072,6 +1117,7 @@ export function runCli(argv: readonly string[]): CliResult {
       allowAfterRetirement: parsed.allowAfterRetirement,
       trustAnchors,
       distrustedKeys,
+      ...(parsed.expectedEntryCount !== null ? { expectedEntryCount: parsed.expectedEntryCount } : {}),
     });
   } catch (err) {
     if (err instanceof TypeError) {
@@ -1092,7 +1138,11 @@ export function runCli(argv: readonly string[]): CliResult {
   const stdout =
     parsed.reportFormat === 'json'
       ? JSON.stringify({ verdict, ...rest }, null, 2) + '\n'
-      : formatExportReportText(result, { agentKeysSupplied: agentKeys !== undefined, federationKeysSupplied: federationKeys !== undefined }) + '\n';
+      : formatExportReportText(result, {
+          agentKeysSupplied: agentKeys !== undefined,
+          federationKeysSupplied: federationKeys !== undefined,
+          ...(parsed.expectedEntryCount !== null ? { expectedEntryCount: parsed.expectedEntryCount } : {}),
+        }) + '\n';
   return { exitCode: exitCodeFor(verdict, trustAnchors.length > 0), stdout, stderr: '' };
 }
 
