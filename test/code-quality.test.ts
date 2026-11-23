@@ -1,8 +1,5 @@
 /**
  * Source hygiene checks over this package's own code.
- *
- * Repo-scoped copy (@agledger/verify is its own source-of-truth repo). Mirrors
- * the checks the AGLedger monorepo enforced, narrowed to this package's `src`.
  * Run with `npm test`.
  */
 
@@ -261,13 +258,14 @@ describe('no tracker references', () => {
   // consumer who reads it, and `dist/*.d.ts` puts it in their editor. Say
   // what the behaviour is rather than where it was decided.
   const TRACKER_REF =
-    /(?:agledger-)?(?:agents|api|testbed|web)#\d+|(?<![\w/])#\d{2,4}\b|\bF-\d{3}\b|\bCR-\d+\b/;
+    /[a-z-]+#\d+|(?<![\w/])#\d{2,4}\b|\bF-\d{3}\b|\bCR-\d+\b/;
 
   it('source, tests and docs cite no issue numbers', () => {
     const dirs = readdirSync(ROOT).filter(e => e === 'src' || e === 'test' || e === 'tests');
     const files = [
       ...dirs.flatMap(d => walk(join(ROOT, d), e => extname(e) === '.ts')),
-      ...walk(ROOT, e => extname(e) === '.md' && e !== 'CHANGELOG.md'),
+      ...walk(ROOT, e => extname(e) === '.md'),
+      ...walk(join(ROOT, 'scripts'), e => extname(e) === '.mjs'),
     ];
     const found: string[] = [];
     for (const file of files) {
