@@ -57,6 +57,7 @@ agledger-verify <target> [--trust-anchor sha256:<hex>]...
                 [--agent-keys <file>]
                 [--federation-key <hubId>=<key>]...
                 [--federation-key-history <file>]...
+                [--allow-after-retirement]
                 [--report-format text|json]
                 [--keys <file>] [--require-key-id <id>]
                 [--require-supplied-keys]
@@ -82,9 +83,9 @@ signed is trusted inside its window. Each message is placed by its sealed
 `wire.timestamp`, which the peer signed and the receiver sealed, never by the
 entry's unsigned `createdAt`, with 300 seconds allowed at each edge of the
 window. A message the peer signed under a key more than that after the key's
-retirement verifies and is reported as after retirement, which is in
-order when the receiver's `federation.peer_revoked` audit row for the peer
-comes after it. A key the history does not list (one in use before a change
+retirement fails `CHAIN_FEDERATION_WIRE_INVALID`. `--allow-after-retirement`
+accepts it and counts it as after retirement, for a peer that kept signing
+briefly after rotating because its process had not restarted. A key the history does not list (one in use before a change
 made with neither predecessor setting) takes a second `--federation-key` for
 the same hub and is trusted on its own.
 

@@ -97,6 +97,8 @@ export interface ParsedArgs {
   federationKeys: string[];
   /** `--federation-key-history` paths, each a peer's key-history document, in the order given. */
   federationKeyHistories: string[];
+  /** `--allow-after-retirement`: accept and count a peer message signed after its key's retirement. */
+  allowAfterRetirement: boolean;
 }
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -113,6 +115,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     distrustedKeys: [],
     federationKeys: [],
     federationKeyHistories: [],
+    allowAfterRetirement: false,
   };
   const takeValue = (flag: string, next: string | undefined): string => {
     if (next === undefined || next.startsWith('-')) {
@@ -188,6 +191,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       out.federationKeys.push(value);
     } else if (arg === '--distrusted-keys' || arg.startsWith('--distrusted-keys=')) {
       throw new Error(PLURAL_DISTRUSTED);
+    } else if (arg === '--allow-after-retirement') {
+      out.allowAfterRetirement = true;
     } else if (arg === '--require-supplied-keys') {
       out.requireSuppliedKeys = true;
     } else if (arg === '--require-out-of-band-keys') {
@@ -214,6 +219,7 @@ Usage:
                   [--agent-keys <file>]
                   [--federation-key <hubId>=<key>]...
                   [--federation-key-history <file>]...
+                  [--allow-after-retirement]
                   [--report-format text|json]
                   [--keys <file>] [--require-key-id <id>]
                   [--require-supplied-keys]
@@ -282,11 +288,16 @@ Options:
                               unsigned createdAt, with 300 seconds allowed
                               at each edge of the window. One signed under a
                               key earlier than that before the key's
-                              activation fails; one signed later than that
-                              after its retirement is counted as after
-                              retirement, in order when the receiver's
-                              federation.peer_revoked row for the peer comes
-                              after it.
+                              activation fails, and so does one signed later
+                              than that after its retirement unless
+                              --allow-after-retirement is given.
+  --allow-after-retirement    A sealed peer message signed under a key after
+                              that key's retirement fails by default. This
+                              flag accepts it and counts it as after
+                              retirement, for a peer that kept signing
+                              briefly after rotating because its process had
+                              not restarted. Applies to a dump directory and
+                              to an /audit-export file.
   --agent-keys                Path to a JSON file holding the Ed25519 public
                               keys of agent certs: a JWK, a list of JWKs, or a
                               {keys:[...]} JWK Set. An entry may wrap its key
@@ -405,7 +416,7 @@ function federationWireSummary(
   const base = `present=${counts.present} verified=${counts.verified} failed=${counts.failed}${retired}${failed ? COUNTED_ON_SOUND_ENTRIES : ''}`;
   if (counts.present === 0) return failed ? `${base} (none among them)` : `${base} (none on the chain)`;
   const noKey = counts.present - counts.verified - counts.failed;
-  const retiredNote = `${counts.afterRetirement} signed by the peer under a key it had already retired: in order when the receiver's federation.peer_revoked row for the peer comes after them`;
+  const retiredNote = `${counts.afterRetirement} signed by the peer under a key it had already retired: accepted because --allow-after-retirement was given`;
   if (noKey === 0 && counts.failed === 0) {
     const all = '(each hashed, matched to its entry, and signed by the peer key given for its hub';
     return counts.afterRetirement > 0 ? `${base} ${all}; ${retiredNote})` : `${base} ${all})`;
@@ -764,6 +775,7 @@ const OPTION_FLAGS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\brequireKeyId\b/g, '--require-key-id'],
   [/\bagentKeys\b/g, '--agent-keys'],
   [/\bfederationKeys\b/g, '--federation-key'],
+  [/\ballowAfterRetirement\b/g, '--allow-after-retirement'],
 ];
 
 /** One prose string from a report, its option names given as this CLI's flags. */
@@ -977,7 +989,13 @@ export function runCli(argv: readonly string[]): CliResult {
     try {
       // Streamed, so a multi-GB audit_vault.ndjson is bounded by disk rather
       // than by Node's max string length.
-      report = verifyDumpStreaming(parsed.target, undefined, { agentKeys, federationKeys, trustAnchors, distrustedKeys });
+      report = verifyDumpStreaming(parsed.target, undefined, {
+        agentKeys,
+        federationKeys,
+        trustAnchors,
+        distrustedKeys,
+        allowAfterRetirement: parsed.allowAfterRetirement,
+      });
     } catch (err) {
       // A TypeError here is the walk refusing a statement file it cannot
       // order (rows with and without created_at): no verdict was reached.
@@ -1051,6 +1069,7 @@ export function runCli(argv: readonly string[]): CliResult {
       requireSuppliedKeys: parsed.requireSuppliedKeys,
       agentKeys,
       federationKeys,
+      allowAfterRetirement: parsed.allowAfterRetirement,
       trustAnchors,
       distrustedKeys,
     });

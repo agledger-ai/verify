@@ -142,6 +142,14 @@ export interface VaultChainOptions {
    * failure). Anything that is not an Ed25519 key throws `TypeError`.
    */
   federationKeys?: Readonly<Record<string, string>> | ReadonlyArray<FederationKeyEntry>;
+  /**
+   * A sealed federation message signed by a peer key more than 300 seconds
+   * after that key's retirement fails `CHAIN_FEDERATION_WIRE_INVALID`. With
+   * `true` it verifies and is counted in `federationWire.afterRetirement`,
+   * for a peer that kept signing briefly after rotating because its process
+   * had not restarted. Default `false`.
+   */
+  allowAfterRetirement?: boolean;
 }
 
 /** Inputs to the key-statement walk (see {@link walkDumpKeys}). */
@@ -167,7 +175,7 @@ export interface KeyTrustOptions {
 /** Options for {@link verifyDump} and `verifyDumpStreaming`. */
 export interface VerifyDumpOptions extends VaultChainOptions, KeyTrustOptions {}
 
-const DUMP_OPTIONS = ['agentKeys', 'federationKeys', 'trustAnchors', 'distrustedKeys'] as const satisfies ReadonlyArray<keyof VerifyDumpOptions>;
+const DUMP_OPTIONS = ['agentKeys', 'federationKeys', 'allowAfterRetirement', 'trustAnchors', 'distrustedKeys'] as const satisfies ReadonlyArray<keyof VerifyDumpOptions>;
 
 /**
  * Throw `TypeError` on an option {@link verifyDump} does not read, so a
@@ -828,7 +836,12 @@ export function verifyVaultChains(
     const normalized = chain.map((e) => toNormalizedEntry(chainKey, e));
     // `signingSince` is passed rather than left for the core to derive from
     // `keyRegistry`, so it is the same instant the checkpoint pass uses.
-    const result = verifyChain(normalized, keyRegistry, { agentKeys, federationKeys, signingSince });
+    const result = verifyChain(normalized, keyRegistry, {
+      agentKeys,
+      federationKeys,
+      signingSince,
+      allowAfterRetirement: options.allowAfterRetirement,
+    });
     for (const check of Object.keys(optionalChecks) as OptionalCheck[]) {
       if (result.optionalChecks[check] === 'applied') optionalChecks[check] = 'applied';
     }

@@ -1,0 +1,19 @@
+{
+  "instanceId": "ecb6a363-31b7-4873-9892-b81bef7e5131",
+  "K1": {
+    "privateKey": "MC4CAQAwBQYDK2VwBCIEILsIO6xkQfvBL7E9jibM9lnUWlsS1xtY6yQFTERYq1uE",
+    "publicKey": "MCowBQYDK2VwAyEAE2mOcUP6yu2USh3b20/2FSDsLgylwiwfrt3nH32iJ6o="
+  },
+  "K2": {
+    "privateKey": "MC4CAQAwBQYDK2VwBCIEIPvKcOD9Lg8JOm8qe8nIKjAJzfrP9I461eD7CkD9LYTO",
+    "publicKey": "MCowBQYDK2VwAyEAZ/4+MnMxaGQ4WW7trPNVU7vg1Y/SHBfoqf9ZTl/A7Qo="
+  },
+  "K3": {
+    "privateKey": "MC4CAQAwBQYDK2VwBCIEIJEib07I6gH1bavMXXLvrTUSoaYaAqBRo6G98WpdYzl9",
+    "publicKey": "MCowBQYDK2VwAyEAdMshOQt1kKZyjLTV+F7nEgJFX6PiqfDcRAANbnCQ+wA="
+  },
+  "K4": {
+    "privateKey": "MC4CAQAwBQYDK2VwBCIEILiPsSAjnNWjbyS9NYlBdqzD9m0r9CRUrGwbwvGJPUyb",
+    "publicKey": "MCowBQYDK2VwAyEA0IQDXHQTPrB6G4a0KDdxm4JieFeNKseXtKy0j94zD3s="
+  }
+}

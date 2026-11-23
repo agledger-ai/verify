@@ -72,8 +72,7 @@ describe('peer-message counts', () => {
   it('names the messages signed under a key the peer had retired, and what puts them in order', () => {
     const text = formatExportReportText(fw(3, 3, 0, true, 2), { federationKeysSupplied: true });
     expect(text).toContain('present=3 verified=3 failed=0 after-retirement=2');
-    expect(text).toContain('2 signed by the peer under a key it had already retired');
-    expect(text).toContain('federation.peer_revoked');
+    expect(text).toContain('2 signed by the peer under a key it had already retired: accepted because --allow-after-retirement was given');
   });
 
   it('says a key that did not match failed, not that its hub had no key', () => {
@@ -110,6 +109,7 @@ describe('parseArgs', () => {
     distrustedKeys: [],
     federationKeys: [],
     federationKeyHistories: [],
+    allowAfterRetirement: false,
   };
 
   it('captures target and defaults to text report format', () => {
