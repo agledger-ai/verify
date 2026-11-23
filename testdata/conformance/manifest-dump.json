@@ -2,10 +2,10 @@
   "description": "DUMP-kind conformance vectors for @agledger/verify. Each is a directory of the NDJSON files produced by the AGLedger Server's vault dump tool, then tamper-transformed; verified via verifyDump.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-11-05T15:58:25.244Z",
+  "generatedAt": "2026-11-23T14:18:32.391Z",
   "provenance": {
     "producedBy": "AGLedger Server conformance generator",
-    "serverVersion": "2.2.0",
+    "serverVersion": "3.0.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -27,35 +27,35 @@
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHECKPOINT_ROW_MISSING",
-      "note": "All audit_vault rows for the checkpointed record were deleted out of band; the surviving signed checkpoint proves the missing rows."
+      "note": "All vault entries for the checkpointed record were deleted out of band; the surviving signed checkpoint proves the missing rows."
     },
     {
       "file": "dump/checkpoint-hash-mismatch",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHECKPOINT_HASH_MISMATCH",
-      "note": "The signed checkpoint payload_hash no longer matches the audit_vault row at its position — the chain diverged from what was checkpointed."
+      "note": "The signed checkpoint payload_hash no longer matches the entry at its position: the chain diverged from what was checkpointed."
     },
     {
       "file": "dump/chain-payload-binding-mismatch",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_PAYLOAD_BINDING_MISMATCH",
-      "note": "The denormalised row.payload was rewritten while cose_sign1 still carries the original predicate — binding-integrity failure, not a content judgement."
+      "note": "The readable row.payload was rewritten while cose_sign1 still carries the original predicate: a binding-integrity failure, not a content judgement."
     },
     {
       "file": "dump/chain-oidc-actor-mismatch",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_OIDC_ACTOR_MISMATCH",
-      "note": "actor_oidc_synthesized=true but the denormalised actor_oidc_sub was rewritten away from predicate.on_behalf_of.oidc — DBA tamper on a synthesized row."
+      "note": "actor_oidc_synthesized=true but the row's actor_oidc_sub was rewritten away from predicate.on_behalf_of.oidc: an out-of-band edit to a synthesized row."
     },
     {
       "file": "dump/chain-actor-attribution-mismatch",
       "kind": "dump",
       "expect": "fail",
       "failureCode": "CHAIN_ACTOR_ATTRIBUTION_MISMATCH",
-      "note": "The denormalised actor_owner_id on a vault row was rewritten to an owner the chain never signed — a DBA re-attributing the write to another actor while every signature still verifies."
+      "note": "The actor_owner_id on a vault row was rewritten to an owner the chain never signed: an out-of-band edit re-attributing the write to another actor while every signature still verifies."
     },
     {
       "file": "dump/chain-key-expired",
@@ -67,7 +67,7 @@
           "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
         ]
       },
-      "note": "The vault key admitted a successor, and the successor signed an unforced closure retiring the vault key one hour before its earliest entry was written: every entry the vault key signed lies after the retirement its closure signs. The vault key's genesis dates its activation three hours before that entry, and every registry column carries the signed value."
+      "note": "The vault key admitted a successor, and the successor signed an unforced closure retiring the vault key one hour before its earliest entry was written: every entry the vault key signed lies after the retirement its closure signs. The vault key's genesis dates its activation three hours before that entry, and every registry field carries the signed value."
     },
     {
       "file": "dump/valid-rotation-boundary",
@@ -78,7 +78,7 @@
           "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
         ]
       },
-      "note": "The vault key's genesis signs its activation at exactly the instant, at millisecond precision, the earliest entry was written, and the registry column carries the same value. The temporal window is inclusive at both ends; this must verify clean."
+      "note": "The vault key's genesis signs its activation at exactly the instant, at millisecond precision, the earliest entry was written, and the registry field carries the same value. The temporal window is inclusive at both ends; this must verify clean."
     },
     {
       "file": "dump/chain-key-not-yet-active",
@@ -90,7 +90,7 @@
           "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
         ]
       },
-      "note": "The vault key's genesis signs its activation one hour after the earliest entry was written, and the registry column carries the same value: an entry signed before its key existed, which is backdating or clock skew rather than a retention question."
+      "note": "The vault key's genesis signs its activation one hour after the earliest entry was written, and the registry field carries the same value: an entry signed before its key existed, which is backdating or clock skew rather than a retention question."
     },
     {
       "file": "dump/chain-signing-key-drift",
@@ -229,13 +229,438 @@
       "note": "valid-key-succession plus what a leaked copy of the retired vault key can write: a succession admitting a new key, signed by both, stored after the vault key's closure, and an entry the new key signed on the tip. Pinned to the successor, the walk reaches the vault key backward; every signature verifies, but every edge out of a key stored after its first closure is void, so nothing anchors the new key. Without the closure the same rows anchor it. The Server also reports the planted succession itself as a statement its endorser signed after its closure (KEY_STATEMENT_INVALID); that finding is expected beside this one."
     },
     {
+      "file": "dump/checkpoint-key-not-yet-active",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_KEY_NOT_YET_ACTIVE",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "A vault checkpoint whose signature verifies under its key, written (vault_checkpoints.created_at) 1 ms before the activatedAt that key's admission signs: the Server's checkpoint_key_not_yet_active. The window is read against the row's write time, never the signed iat."
+    },
+    {
+      "file": "dump/checkpoint-key-expired",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_KEY_EXPIRED",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "A vault checkpoint whose signature verifies under its key, written 1 ms after the retiredAt the forced closure of that key signs: the Server's checkpoint_key_expired."
+    },
+    {
+      "file": "dump/valid-checkpoint-at-retirement",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "A vault checkpoint written at exactly the retiredAt the forced closure of its key signs. The retirement edge is inclusive, so it verifies. The dump carries milliseconds and the Server compares microseconds: the artifact is stamped at exactly the retiredAt the forced closure signs, which the dump shows truncated to the millisecond, so a verifier reads it at or just before the edge. The vector pins that an artifact at the retirement is not expired; it does not tell an inclusive comparison from an exclusive one. valid-distrust-at-instant does, on an edge set on a millisecond."
+    },
+    {
+      "file": "dump/checkpoint-signature-invalid-outside-window",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_SIGNATURE_INVALID",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "A vault checkpoint written 1 ms after its key's retirement whose signature does not verify (one bit of it flipped): the signature is checked before the window, so the Server reports checkpoint_signature_invalid, not checkpoint_key_expired."
+    },
+    {
+      "file": "dump/tenant-read-leaf-key-not-yet-active",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_READ_KEY_NOT_YET_ACTIVE",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads leaf (leaf_index 0, no tree head over it) whose signature verifies under its key, written (read_at) 1 ms before that key's signed activatedAt: the Server's leaf_key_not_yet_active at leaf_index 0."
+    },
+    {
+      "file": "dump/tenant-read-leaf-key-expired",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_READ_KEY_EXPIRED",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads leaf whose signature verifies under its key, written 1 ms after the retiredAt the forced closure of that key signs: the Server's leaf_key_expired at leaf_index 0."
+    },
+    {
+      "file": "dump/valid-tenant-read-leaf-at-retirement",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads leaf written at exactly the retiredAt the forced closure of its key signs: inside the window, so it verifies. The dump carries milliseconds and the Server compares microseconds: the artifact is stamped at exactly the retiredAt the forced closure signs, which the dump shows truncated to the millisecond, so a verifier reads it at or just before the edge. The vector pins that an artifact at the retirement is not expired; it does not tell an inclusive comparison from an exclusive one. valid-distrust-at-instant does, on an edge set on a millisecond."
+    },
+    {
+      "file": "dump/tenant-read-leaf-signature-invalid-outside-window",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_READ_SIGNATURE_INVALID",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads leaf written 1 ms after its key's retirement whose signature does not verify (one bit flipped, leaf_hash recomputed over the new bytes): the signature is checked before the window, so the Server reports leaf_signature_invalid, not leaf_key_expired."
+    },
+    {
+      "file": "dump/tenant-checkpoint-key-not-yet-active",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_CHECKPOINT_KEY_NOT_YET_ACTIVE",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads tree head (tree_size 1) whose root matches its leaf and whose signature verifies under its key, written (checkpoint_at) 1 ms before that key's signed activatedAt: the Server's checkpoint_key_not_yet_active at tree_size 1."
+    },
+    {
+      "file": "dump/tenant-checkpoint-key-expired",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_CHECKPOINT_KEY_EXPIRED",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads tree head written 1 ms after the retiredAt the forced closure of its key signs: the Server's checkpoint_key_expired at tree_size 1."
+    },
+    {
+      "file": "dump/valid-tenant-checkpoint-at-retirement",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads tree head written at exactly the retiredAt the forced closure of its key signs: inside the window, so it verifies. The dump carries milliseconds and the Server compares microseconds: the artifact is stamped at exactly the retiredAt the forced closure signs, which the dump shows truncated to the millisecond, so a verifier reads it at or just before the edge. The vector pins that an artifact at the retirement is not expired; it does not tell an inclusive comparison from an exclusive one. valid-distrust-at-instant does, on an edge set on a millisecond."
+    },
+    {
+      "file": "dump/tenant-checkpoint-signature-invalid-outside-window",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_CHECKPOINT_SIGNATURE_INVALID",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ]
+      },
+      "note": "An org_admin_reads tree head written 1 ms after its key's retirement whose signature does not verify (one bit flipped; the root still matches its leaf): the signature is checked before the window, so the Server reports checkpoint_signature_invalid, not checkpoint_key_expired."
+    },
+    {
+      "file": "dump/valid-distrust-set-aside",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "expectAccounted": {
+        "entries": [
+          {
+            "recordId": "866aeffe-ca56-4879-b106-77b5d175003a",
+            "position": 3
+          }
+        ],
+        "checkpoints": [
+          {
+            "recordId": "866aeffe-ca56-4879-b106-77b5d175003a",
+            "position": 3
+          }
+        ],
+        "readLog": [
+          {
+            "kind": "leaf",
+            "at": 1
+          },
+          {
+            "kind": "checkpoint",
+            "at": 2
+          }
+        ]
+      },
+      "note": "K1 signed entries 1-2, the checkpoint at position 2, leaf 0 and the tree head at tree_size 1 before D, then, as a process not yet restarted, entry 3, the checkpoint at position 3, leaf 1 and the tree head at tree_size 2 after D and before the retirement K2 signs for K1 by a forced closure. With the dated entry for K1 at D, everything K1 signed after D is set aside: listed, never verified, never evidence. The chain is judged against the checkpoint at position 2; the set-aside leaf keeps its index, hash and link checks; the set-aside tree head has no root compared. The Server's scan lists entry 3 in distrustedEntries, the checkpoint at position 3 in distrustedCheckpoints, and leaf 1 and tree head 2 in orgAdminReads.distrustedEntries, the same as expectAccounted. The Server's scan lists a set-aside vault checkpoint only in the run above the newest checkpoint of its chain that is not set aside (it reads down from the newest and stops there); an offline verifier reading every checkpoint lists every one, which expectAccounted states."
+    },
+    {
+      "file": "dump/valid-distrust-set-aside",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675"
+        ]
+      },
+      "expectAccounted": {
+        "entries": [],
+        "checkpoints": [],
+        "readLog": []
+      },
+      "note": "The same dump with the entry for K1 undated. An undated entry takes as its cutoff the earliest retiredAt a trusted key signs for K1, here the forced closure K2 signs, and K1 stays anchored through K2's admission, which K1 signed before that retirement. Everything K1 signed was written before the retirement, so all of it verifies and nothing is set aside: the Server's scan lists nothing in distrustedEntries, distrustedCheckpoints or orgAdminReads.distrustedEntries. An undated entry is what an operator writes when nothing dates the leak, and it never fails what the key signed before a trusted key retired it."
+    },
+    {
+      "file": "dump/valid-distrust-tree-head-root-not-compared",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "expectAccounted": {
+        "entries": [
+          {
+            "recordId": "2dacbf94-244b-4156-a8be-0e3dba6aacbb",
+            "position": 3
+          }
+        ],
+        "checkpoints": [
+          {
+            "recordId": "2dacbf94-244b-4156-a8be-0e3dba6aacbb",
+            "position": 3
+          }
+        ],
+        "readLog": [
+          {
+            "kind": "leaf",
+            "at": 1
+          },
+          {
+            "kind": "checkpoint",
+            "at": 2
+          }
+        ]
+      },
+      "note": "valid-distrust-set-aside's shape, with the root_hash column of the set-aside tree head (tree_size 2) rewritten to zeros. A tree head a distrust entry accounts for is never evidence: its leaf count and root are not compared, so the rewrite raises nothing, where the same rewrite on a tree head that is not set aside is TENANT_CHECKPOINT_ROOT_MISMATCH. The Server's scan lists what expectAccounted lists. The Server's scan lists a set-aside vault checkpoint only in the run above the newest checkpoint of its chain that is not set aside (it reads down from the newest and stops there); an offline verifier reading every checkpoint lists every one, which expectAccounted states."
+    },
+    {
+      "file": "dump/distrust-leaf-hash-mismatch",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "TENANT_READ_LEAF_HASH_MISMATCH",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "note": "Leaf 1, which K1 signed after D and the dated entry would set aside, with its leaf_hash column rewritten. A leaf is set aside only after its index, hash and claim checks, so the Server reports leaf_hash_mismatch at leaf_index 1."
+    },
+    {
+      "file": "dump/valid-distrust-at-instant",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "expectAccounted": {
+        "entries": [],
+        "checkpoints": [],
+        "readLog": []
+      },
+      "note": "The checkpoint at position 2, leaf 0 and the tree head at tree_size 1, all K1's, each written at exactly D, the instant the dated entry gives, which is on a millisecond so the dump carries it whole. The entry ends K1's window at D and the edge is inclusive, so all three verify as K1's and none is set aside: the Server's scan lists nothing."
+    },
+    {
+      "file": "dump/distrust-checkpoint-after-retirement",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_KEY_EXPIRED",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "note": "A checkpoint K1 signed, written 1 ms after the retirement K2 signs for K1. The dated entry accounts only for what K1 wrote before that retirement, so this one is not set aside: the Server reports checkpoint_key_expired."
+    },
+    {
+      "file": "dump/distrust-checkpoint-signature-invalid",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_SIGNATURE_INVALID",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "note": "The checkpoint at position 3, written by K1 after D and before its retirement, with one bit of its signature flipped. Only a checkpoint whose signature verifies under the distrusted key is set aside, so this one is read as evidence and the Server reports checkpoint_signature_invalid. Entry 3, which K1 also signed after D, is set aside as usual."
+    },
+    {
+      "file": "dump/valid-distrust-accounted-below-anchor",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "expectAccounted": {
+        "entries": [
+          {
+            "recordId": "3151a558-1515-46a5-b225-43c20bb4f7b4",
+            "position": 3
+          }
+        ],
+        "checkpoints": [
+          {
+            "recordId": "3151a558-1515-46a5-b225-43c20bb4f7b4",
+            "position": 3
+          }
+        ],
+        "readLog": []
+      },
+      "note": "K1 signed entries 1-2 and the checkpoint at position 2 before D, and entry 3 and the checkpoint at position 3 after D; after the retirement, K2 signed entry 4 and the checkpoint at position 4. The chain is judged against position 4, which is not set aside. The Server's scan reads down from the newest checkpoint and stops at the first one not set aside, so its distrustedCheckpoints lists nothing for this chain; an offline verifier reading every checkpoint lists the one at position 3, as expectAccounted does. Both are intended; neither is a finding. Entry 3 is set aside, and both list it."
+    },
+    {
+      "file": "dump/checkpoint-accounted-only",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_ACCOUNTED_ONLY",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "note": "A record chain K1 wrote entirely after D (two entries and the checkpoint at position 2), whose entries were then deleted out of band, beside an intact one-entry chain in the same org. Its only checkpoint is one the dated entry sets aside, which vouches for nothing, and a chain is never empty once written: the Server reports accounted_checkpoint_only. The scan lists the checkpoint in distrustedCheckpoints."
+    },
+    {
+      "file": "dump/checkpoint-accounted-run-exceeded",
+      "kind": "dump",
+      "expect": "fail",
+      "failureCode": "CHECKPOINT_ACCOUNTED_RUN_EXCEEDED",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:3f8077ed9d166e62a98b87ac78e44565cdde3c587ccb3d18bc63ddb42fb1f675@2026-11-23T14:18:26.886000Z"
+        ]
+      },
+      "note": "A two-entry chain with K1's checkpoint at position 2 written before D, and 1001 copies of that checkpoint envelope inserted after D at positions 1000000-1001000: what the leaked half and an INSERT by the runtime role write. Each is set aside before its claim is read, so none raises a claim finding. More than 1000 set-aside checkpoints above the newest one that is not is reported rather than walked: the Server reports checkpoint_accounted_run_exceeded at position 1000000, the last one it read (the newest plus the 1000 below it), and never reads the checkpoint at position 2. A run of exactly 1000 is walked."
+    },
+    {
+      "file": "dump/valid-distrust-staged-key-set-aside",
+      "kind": "dump",
+      "expect": "pass",
+      "options": {
+        "trustAnchors": [
+          "sha256:693c761c417de26072708aea634a93b152ec6b3244b86a25ce08a03d1ab9475a",
+          "sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e"
+        ],
+        "distrustedKeys": [
+          "sha256:6c26870be9e95b416c3e778f896dd03a56943469a7b4253c38a285310f5584b3@2026-11-23T14:18:28.226000Z",
+          "sha256:0d7c1407599852470626f046ef01e89a0d61b552538b6b8feb1634eed7033697"
+        ]
+      },
+      "expectAccounted": {
+        "entries": [
+          {
+            "recordId": "e23ba675-854c-45c1-8757-b8cf871d5a79",
+            "position": 1
+          },
+          {
+            "recordId": "e23ba675-854c-45c1-8757-b8cf871d5a79",
+            "position": 2
+          }
+        ],
+        "checkpoints": [
+          {
+            "recordId": "e23ba675-854c-45c1-8757-b8cf871d5a79",
+            "position": 2
+          }
+        ],
+        "readLog": [
+          {
+            "kind": "leaf",
+            "at": 0
+          },
+          {
+            "kind": "checkpoint",
+            "at": 1
+          }
+        ]
+      },
+      "note": "K2 admitted K3; after K3's half leaked (the dated entry's instant), a process holding it staged K4 under K3 and wrote with K4 entries 1-2, the checkpoint at position 2, leaf 0 and the tree head at tree_size 1. Beside it, K2 signs a one-entry chain in the same org. K2 then force-retired K3, which voids every edge out of K3, and K4 with it. Pinned on K2 nothing anchors K4, and the undated entry for K4 takes the retirement K2 signs for it as its cutoff. A key the walk does not anchor, named in VAULT_DISTRUSTED_KEYS, that a trusted key has retired: what it signed before that retirement, its signature verifying under it, is accounted for, set aside rather than reported unanchored. Without the entry for K4 the same dump fails CHAIN_SIGNING_KEY_UNANCHORED. The Server's scan lists entries 1-2, the checkpoint at position 2 (the only one on the chain), leaf 0 and tree head 1, the same as expectAccounted."
+    },
+    {
       "file": "dump/valid-es256",
       "kind": "dump",
       "expect": "pass",
       "requiresAlgorithms": [
         "ES256"
       ],
-      "note": "Record chain, vault checkpoint, and org-admin-reads tree head all signed under the ES256 vault key (registry row algorithm=ES256). Requires an ES256-capable verifier (wave 2); earlier verifiers fail it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
+      "note": "Record chain, vault checkpoint, and org-admin-reads tree head all signed under the ES256 vault key (registry row algorithm=ES256). Requires an ES256-capable verifier; one without ES256 support fails it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
     }
   ]
 }

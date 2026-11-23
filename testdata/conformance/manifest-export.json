@@ -2,10 +2,10 @@
   "description": "EXPORT-kind conformance corpus for @agledger/verify-core verifyAuditExport. Each vector is a REAL /audit-export document produced by the AGLedger Server, then tamper-transformed; pass/fail + canonical FailureCode are asserted by the corpus runner.",
   "formatVersion": "2.0",
   "canonicalization": "RFC8949-CDE",
-  "generatedAt": "2026-11-05T15:58:25.240Z",
+  "generatedAt": "2026-11-23T14:18:32.390Z",
   "provenance": {
     "producedBy": "AGLedger Server conformance generator",
-    "serverVersion": "2.2.0",
+    "serverVersion": "3.0.0",
     "formatVersion": "2.0"
   },
   "vectors": [
@@ -29,7 +29,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_POSITION_GAP",
       "brokenAt": 3,
-      "note": "Entry 2 row chainPosition renumbered to 5 — monotonic position broken; after sort the gap surfaces at the position-3 entry."
+      "note": "Entry 2 row chainPosition renumbered to 5: monotonic position broken; after sort the gap surfaces at the position-3 entry."
     },
     {
       "file": "export/genesis-invalid.json",
@@ -37,7 +37,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_GENESIS_INVALID",
       "brokenAt": 1,
-      "note": "Genesis entry carries a non-null previousHash — chain head removed."
+      "note": "Genesis entry carries a non-null previousHash: the chain head was removed."
     },
     {
       "file": "export/link-broken.json",
@@ -77,7 +77,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_COSE_HEADER_MISMATCH",
       "brokenAt": 2,
-      "note": "Entry 2 has a valid signature but its signed -65537 chain claim (prevHash) disagrees with the chain — the visible columns were renumbered after signing."
+      "note": "Entry 2 has a valid signature but its signed -65537 chain claim (prevHash) disagrees with the chain: the row fields were renumbered after signing."
     },
     {
       "file": "export/signature-invalid.json",
@@ -104,7 +104,7 @@
       "expect": "fail",
       "failureCode": "UNSUPPORTED_FORMAT",
       "brokenAt": 0,
-      "note": "exportFormatVersion 3.0 — precedes any chain walk."
+      "note": "exportFormatVersion 3.0. The check precedes any chain walk."
     },
     {
       "file": "export/unsupported-canonicalization.json",
@@ -112,7 +112,7 @@
       "expect": "fail",
       "failureCode": "UNSUPPORTED_FORMAT",
       "brokenAt": 0,
-      "note": "canonicalization JCS (not RFC8949-CDE) — precedes any chain walk."
+      "note": "canonicalization JCS (not RFC8949-CDE). The check precedes any chain walk."
     },
     {
       "file": "export/empty.json",
@@ -120,7 +120,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_EMPTY",
       "brokenAt": 0,
-      "note": "Zero entries — a chain with nothing to verify is never a silent pass."
+      "note": "Zero entries: a chain with nothing to verify is never a silent pass."
     },
     {
       "file": "export/valid.json",
@@ -132,13 +132,13 @@
         "keysFile": "export/keys-oob.json",
         "requireKeyId": "some-other-key"
       },
-      "note": "Clean chain, but the caller requires a key id no entry uses — policy violation at the first entry."
+      "note": "Clean chain, but the caller requires a key id no entry uses: a policy violation at the first entry."
     },
     {
       "file": "export/key-substitution.json",
       "kind": "export",
       "expect": "pass",
-      "note": "Entry 2 re-signed with the attacker key (identical predicate, consistent kid+column swap) and embedded in signingPublicKeys. With no options it PASSES only as unanchored: an embedded key verifies the signature and nothing admits it. Pinned on `anchoredFrom` (trustAnchors) the same fixture fails CHAIN_SIGNING_KEY_UNANCHORED, the stronger statement of what this documents; the requireSuppliedKeys vector below fails it closed on key policy."
+      "note": "Entry 2 re-signed with the attacker key (identical predicate, kid and row signingKeyId swapped together) and embedded in signingPublicKeys. With no options it PASSES only as unanchored: an embedded key verifies the signature and nothing admits it. Pinned on `anchoredFrom` (trustAnchors) the same fixture fails CHAIN_SIGNING_KEY_UNANCHORED, the stronger statement of what this documents; the requireSuppliedKeys vector below fails it closed on key policy."
     },
     {
       "file": "export/key-substitution.json",
@@ -158,7 +158,7 @@
       "expect": "fail",
       "failureCode": "CHAIN_SIGNING_KEY_DRIFT",
       "brokenAt": 2,
-      "note": "Entry 2 re-signed with the attacker key but the signature-covered kid still names the vault key; the row signingKeyId column points at the attacker key. The kid binding (the Server's signing_key_drift check) fails it with no options."
+      "note": "Entry 2 re-signed with the attacker key but the signature-covered kid still names the vault key; the row signingKeyId field points at the attacker key. The kid binding (the Server's signing_key_drift check) fails it with no options."
     },
     {
       "file": "export/payload-binding-mismatch.json",
@@ -169,7 +169,7 @@
       "options": {
         "keysFile": "export/keys-oob.json"
       },
-      "note": "Entry 2 denormalised payload rewritten while coseSign1 carries the original predicate — binding-integrity failure caught before any content evaluation."
+      "note": "Entry 2 readable payload rewritten while coseSign1 carries the original predicate: a binding-integrity failure, caught before any content evaluation."
     },
     {
       "file": "export/actor-attribution-mismatch.json",
@@ -180,7 +180,7 @@
       "options": {
         "keysFile": "export/keys-oob.json"
       },
-      "note": "Entry 2 actorOwnerId rewritten to an owner the chain never signed, with nothing else touched — the action re-attributed to another actor after export. Must fail even under out-of-band keys, where every signature still verifies."
+      "note": "Entry 2 actorOwnerId rewritten to an owner the chain never signed, with nothing else touched: the action was re-attributed to another actor after export. Must fail even under out-of-band keys, where every signature still verifies."
     },
     {
       "file": "export/valid-record-updated.json",
@@ -355,7 +355,7 @@
       "requiresAlgorithms": [
         "ES256"
       ],
-      "note": "Clean 3-entry chain signed under ES256 (COSE -7, P1363 low-S) by a Server booted with a P-256 vault key behind AGLEDGER_ALLOW_NON_DEFAULT_SIGNING_ALG. Requires an ES256-capable verifier (wave 2); earlier verifiers fail it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
+      "note": "Clean 3-entry chain signed under ES256 (COSE -7, P1363 low-S) by a Server booted with a P-256 vault key behind AGLEDGER_ALLOW_NON_DEFAULT_SIGNING_ALG. Requires an ES256-capable verifier; one without ES256 support fails it CHAIN_UNSUPPORTED_ALGORITHM, fail-closed."
     },
     {
       "file": "export/es256-signature-invalid.json",
