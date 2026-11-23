@@ -204,8 +204,7 @@ export interface DumpKeyTrust {
   report: KeyTrustReport;
   /**
    * When the install began signing: the earliest `activated_at` across the
-   * registry rows (retired keys included, as the Server's `min(activated_at)`
-   * reads them) and, once the walk ran, across the activations the anchored
+   * registry rows (retired keys included, as the Server reads them) and, once the walk ran, across the activations the anchored
    * keys' statements sign.
    */
   signingSince: string | null;
@@ -852,8 +851,8 @@ export function verifyVaultChains(
     }
   };
 
-  // `undefined` means "no row seen yet"; `null` is a real value (schema chains).
-  let previousRecordId: string | null | undefined;
+  // The chain key of the previous row, the same key chains are opened under.
+  let previousChainKey: string | undefined;
 
   for (const e of entries) {
     entryCount++;
@@ -873,12 +872,11 @@ export function verifyVaultChains(
       return report(0);
     }
 
-    if (previousRecordId !== undefined && previousRecordId !== null && e.record_id !== previousRecordId) {
-      closeChain(previousRecordId);
-    }
-    previousRecordId = e.record_id;
-
     const chainKey = chainKeyOf(e);
+    if (previousChainKey !== undefined && chainKey !== previousChainKey) {
+      closeChain(previousChainKey);
+    }
+    previousChainKey = chainKey;
     if (closed.has(chainKey)) {
       failures.push({
         code: 'UNSUPPORTED_FORMAT',

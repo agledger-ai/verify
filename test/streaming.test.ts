@@ -216,12 +216,47 @@ describe('fail-closed on a dump that is not in producer order', () => {
     ).toBe(true);
   });
 
+  it('refuses a reappearing chain whose chain_key differs from its record_id', () => {
+    // Chains are opened by chain_key, so they must be closed by it too. Give
+    // every row the same record_id: a walk that closed on record_id would never
+    // close anything, and the interleaved chain below would slip through.
+    const rows = readFileSync(join(VALID_DUMP, DEFAULT_FILENAMES.vaultEntries), 'utf8')
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l) as { chain_key?: string; record_id?: string | null });
+    const keyOf = (r: { chain_key?: string; record_id?: string | null }): string =>
+      r.chain_key ?? r.record_id ?? '__schema__';
+    const byChain = new Map<string, typeof rows>();
+    for (const r of rows) byChain.set(keyOf(r), [...(byChain.get(keyOf(r)) ?? []), r]);
+    const multi = [...byChain.entries()].find(([, rs]) => rs.length >= 2);
+    if (!multi || byChain.size < 2) throw new Error('corpus dump needs 2+ chains, one with 2+ rows');
+    const [splitKey, splitRows] = multi;
+    const others = [...byChain.entries()].filter(([k]) => k !== splitKey).flatMap(([, rs]) => rs);
+    const reordered = [...splitRows.slice(0, -1), ...others, splitRows.at(-1)!].map((r) => ({
+      ...r,
+      chain_key: keyOf(r),
+      record_id: '00000000-0000-4000-8000-000000000001',
+    }));
+    const staged = stageDump(VALID_DUMP, {
+      [DEFAULT_FILENAMES.vaultEntries]: reordered.map((r) => JSON.stringify(r)).join('\n') + '\n',
+    });
+
+    const report = verifyDumpStreaming(staged);
+    expect(report.ok).toBe(false);
+    expect(
+      report.vault.failures.some(
+        (f) => f.code === 'UNSUPPORTED_FORMAT' && /not in producer order/.test(f.message),
+      ),
+    ).toBe(true);
+  });
+
   it('still verifies the same dump clean when the rows are in producer order', () => {
     expect(verifyDumpStreaming(stageDump(VALID_DUMP)).verdict).toBe('unanchored');
   });
 });
 
 describe('exit codes separate "failed" from "could not verify"', () => {
+
   it('exits 0 on the valid corpus dump, pinned or not', () => {
     expect(runCli([VALID_DUMP, '--trust-anchor', VALID_PIN]).exitCode).toBe(EXIT_OK);
     expect(runCli([VALID_DUMP]).exitCode).toBe(EXIT_OK);
