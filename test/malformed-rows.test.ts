@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { spkiSha256 } from '@agledger/verify-core';
 import { DEFAULT_FILENAMES, loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
-import { EXIT_OK, EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
+import { EXIT_NOT_ANCHORED, EXIT_OK, EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
 import type { Dump, FailureCode, VerifyReport } from '../src/types.js';
 
 /**
@@ -140,9 +140,12 @@ describe('a pin over a dump with nothing signed under a key it anchors', () => {
     const dir = writeDump(dump);
     try {
       const r = runCli([dir, '--trust-anchor', `sha256:${'a'.repeat(64)}`]);
-      expect(r.exitCode).toBe(EXIT_OK);
+      // A pin was asked for and not met: not a pass for a gate, and not tampering.
+      expect(r.exitCode).toBe(EXIT_NOT_ANCHORED);
       expect(r.stdout).toContain('[VERIFIED, NOT ANCHORED] AGLedger offline verification (dump)');
       expect(r.stdout).toContain('the --trust-anchor was walked, but no');
+      // The same dump with no pin supplied keeps exiting 0.
+      expect(runCli([dir]).exitCode).toBe(EXIT_OK);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -107,8 +107,11 @@ produced a result.
 | `0` | Verified. No failures. The verdict says whether the keys were anchored: `trusted` with a `--trust-anchor`, `unanchored` without one. |
 | `1` | Verification FAILED. The chain, log, or key statements do not hold up. |
 | `2` | Could NOT verify. The input was missing, unreadable, or malformed (a mistyped pin included); no verdict was reached. |
+| `3` | Not anchored. A `--trust-anchor` was given and the run did not anchor to it: nothing failed, but the pin was not met, as with an export that carries its own keys and nothing signed by the pinned one. |
 
 `1` and `2` mean opposite things, so treat only `1` as evidence of tampering.
+`3` is neither: the run found no failure, but you asked for a pin and it did not
+hold.
 An audit gate wired to "nonzero means the chain is broken" will otherwise raise
 a tamper alarm over a mistyped path. A gate that needs a trusted verdict reads
 `verdict` from `--report-format json`, or passes `--trust-anchor`.

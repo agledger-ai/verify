@@ -14,6 +14,7 @@
  *      as not anchored without one)
  *   1  VERIFICATION FAILED, the chain or log does not hold up
  *   2  COULD NOT VERIFY, the input could not be read or parsed at all
+ *   3  NOT ANCHORED, a --trust-anchor was given and nothing anchored to it
  *
  * Collapsing those into a single nonzero code is what made an oversized vault
  * look like a tamper alarm. A gate wired to "nonzero means the chain is broken"
@@ -54,11 +55,23 @@ export const EXIT_VERIFICATION_FAILED = 1;
  *  reached, which is NOT the same as a failed verdict. */
 export const EXIT_CANNOT_VERIFY = 2;
 
+/** Nothing failed, but a --trust-anchor was given and the run did not anchor to
+ *  it. Not tampering evidence, and not a pass: the pin the caller asked for was
+ *  not met. */
+export const EXIT_NOT_ANCHORED = 3;
+
 const EXIT_BY_VERDICT: Readonly<Record<Verdict, number>> = {
   trusted: EXIT_OK,
   unanchored: EXIT_OK,
   failed: EXIT_VERIFICATION_FAILED,
 };
+
+/** A plain run with no pin keeps exiting 0 when unanchored; one that supplied
+ *  a pin and did not anchor to it does not. */
+function exitCodeFor(verdict: Verdict, trustAnchorsGiven: boolean): number {
+  if (verdict === 'unanchored' && trustAnchorsGiven) return EXIT_NOT_ANCHORED;
+  return EXIT_BY_VERDICT[verdict];
+}
 
 /** Machine-readable shape emitted under `--report-format json` when no verdict
  *  could be reached. Distinguishable from a VerifyReport by the `error` key. */
@@ -307,9 +320,9 @@ Options:
   --help, -h                  Show this help.
 
 Without --trust-anchor no key is anchored. Every key is taken from the
-artifact itself (the dump's vault_signing_keys, the export's embedded keys, or
-keys fetched from the same Server), and a key written into the Server's
-database alone would verify. Such a run still finds tampering and still exits
+artifact itself (the dump's signing keys, the export's embedded keys, or
+keys fetched from the same Server), and a key added to the Server alone
+would verify. Such a run still finds tampering and still exits
 0 when nothing fails, but it reports VERIFIED, NOT ANCHORED (JSON verdict
 "unanchored"), never a trusted verdict. Ask the operator for the digest of a
 vault key: the installer prints it, and signing-key-digest.js derives it.
@@ -341,6 +354,9 @@ Exit codes:
      unanchored without one)
   1  verification FAILED (the chain, log, or key statements do not hold up)
   2  could NOT verify (input missing, unreadable, or malformed; no verdict)
+  3  NOT ANCHORED: a --trust-anchor was given and nothing anchored to it
+     (nothing failed, but the pin was not met; a forged export with its own
+     keys ends here)
 
 Codes 1 and 2 mean opposite things. Treat only 1 as evidence of tampering.
 `;
@@ -975,7 +991,7 @@ export function runCli(argv: readonly string[]): CliResult {
       parsed.reportFormat === 'json'
         ? JSON.stringify(report, null, 2) + '\n'
         : formatDumpReportText(report, { agentKeysSupplied: agentKeys !== undefined, federationKeysSupplied: federationKeys !== undefined }) + '\n';
-    return { exitCode: EXIT_BY_VERDICT[report.verdict], stdout, stderr: '' };
+    return { exitCode: exitCodeFor(report.verdict, trustAnchors.length > 0), stdout, stderr: '' };
   }
 
   // File -> parse JSON, branch on exportMetadata.
@@ -1058,7 +1074,7 @@ export function runCli(argv: readonly string[]): CliResult {
     parsed.reportFormat === 'json'
       ? JSON.stringify({ verdict, ...rest }, null, 2) + '\n'
       : formatExportReportText(result, { agentKeysSupplied: agentKeys !== undefined, federationKeysSupplied: federationKeys !== undefined }) + '\n';
-  return { exitCode: EXIT_BY_VERDICT[verdict], stdout, stderr: '' };
+  return { exitCode: exitCodeFor(verdict, trustAnchors.length > 0), stdout, stderr: '' };
 }
 
 /**
