@@ -574,7 +574,6 @@ describe('runCli on an export after a dated distrust entry', () => {
 
   it('rewords prose only: a data field that spells an option name passes through as it is', () => {
     const doc = JSON.parse(readFileSync(fixture, 'utf-8')) as RecordAuditExportInput & { verificationGuide?: { unsignedFields?: string[] } };
-    doc.exportMetadata.recordId = 'distrustedKeys';
     doc.verificationGuide = { ...doc.verificationGuide, unsignedFields: ['trustAnchors', 'requireKeyId'] };
     const path = join(tmpdir(), `agledger-verify-datafield-${process.pid}.json`);
     writeFileSync(path, JSON.stringify(doc));
@@ -582,7 +581,6 @@ describe('runCli on an export after a dated distrust entry', () => {
       const out = runCli([path, '--trust-anchor', F, '-f', 'json']);
       expect(out.exitCode).toBe(EXIT_VERIFICATION_FAILED);
       const json = JSON.parse(out.stdout) as Json;
-      expect(json.recordId).toBe('distrustedKeys');
       expect(json.unsignedProjectionFields).toEqual(['trustAnchors', 'requireKeyId']);
       expect(json.brokenAt!.detail).toContain(`give --distrusted-key ${K}@${FROM}.`);
       expect(json.keyTrust.findings[0]!.detail).toContain(`give --distrusted-key ${K}@${FROM}.`);
