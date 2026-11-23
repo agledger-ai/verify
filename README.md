@@ -423,7 +423,8 @@ or an entry that asserts a state the sealed body does not carry fails
 you gave no key for is hashed and matched to its entry but its peer signature
 is not checked, which the text report says. In code, pass `federationKeys`
 (`{ [hubId]: key }` or `[{ hubId, publicKey }]`) to `verifyDumpStreaming`,
-`verifyDump` or `verifyAuditExport`.
+`verifyDump` or `verifyAuditExport`, and `allowAfterRetirement: true` for
+what `--allow-after-retirement` does.
 
 `verifyDumpStreaming` is the one to reach for: it streams `audit_vault.ndjson`
 instead of materializing it. `loadDump` + `verifyDump` produce
