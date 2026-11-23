@@ -489,7 +489,7 @@ export function pinOf(key: KeyMaterial): string {
  * key.
  */
 export const LIVE_DIR = join(import.meta.dirname, 'fixtures', 'live-2.0.0');
-export const LIVE_PIN = 'sha256:7319bc5f0f636d72778028cf069db7e7a4a62a7a44e5433ab94d66a53d9b23a4';
+export const LIVE_PIN = 'sha256:71f2bd9dca75d7b090b3a748d1f91de8bd5f88810162dbdcab6f83752c4f8d51';
 
 const KEY_STATEMENT_CTY = 'application/vnd.agledger.key-statement+cbor';
 

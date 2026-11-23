@@ -1,9 +1,9 @@
 {
-  "certId": "c8f7398c-6cb9-4cce-85cb-1427f8708e28",
-  "publicKeyThumbprint": "sha256:8b2844211147892ad370d233c0215373afcd6562595516638c9832a66d08066c",
+  "certId": "043d77bb-15ca-4445-b0f2-6c199ef6b25e",
+  "publicKeyThumbprint": "sha256:1199c095f56cd8a05c34d6a2535eecd65791d316ae5181d17947ce7ef2fff6b8",
   "publicKeyJwk": {
     "kty": "OKP",
     "crv": "Ed25519",
-    "x": "xweV7xvKL_y_eDEcXxC2vyNlsX7iF952uU_pwXV1d7Q"
+    "x": "SPcuyLq-QvllKYpY5V6klx5IMYzVqvnAHouo13duMB4"
   }
 }
