@@ -3,14 +3,13 @@ import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 // `npm pack <folder>` runs the folder's own `prepack`, and an installed copy
 // of this package is such a folder: no sources, no compiler. There `prepack`
 // must leave the built `dist/` alone, since the build begins by deleting it.
 
 function packageRoot(): string {
-  let dir = dirname(fileURLToPath(import.meta.url));
+  let dir = import.meta.dirname;
   while (!existsSync(join(dir, 'package.json'))) dir = dirname(dir);
   return dir;
 }

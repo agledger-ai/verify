@@ -13,8 +13,7 @@
  * conforming producer that isn't Server code.
  */
 import { createPrivateKey, generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { encode as cborEncode, rfc8949EncodeOptions } from 'cborg';
 import type { Dump, SigningKeyDump } from '../src/types.js';
 
@@ -52,7 +51,7 @@ function hexToBytes(hex: string): Uint8Array {
 }
 
 function uuidToBytes(uuid: string): Uint8Array {
-  return hexToBytes(uuid.replace(/-/g, ''));
+  return hexToBytes(uuid.replaceAll('-', ''));
 }
 
 interface Actor {
@@ -489,7 +488,7 @@ export function pinOf(key: KeyMaterial): string {
  * instance (see the header of agent-keys.test.ts), and the pin of its vault
  * key.
  */
-export const LIVE_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'live-2.0.0');
+export const LIVE_DIR = join(import.meta.dirname, 'fixtures', 'live-2.0.0');
 export const LIVE_PIN = 'sha256:7319bc5f0f636d72778028cf069db7e7a4a62a7a44e5433ab94d66a53d9b23a4';
 
 const KEY_STATEMENT_CTY = 'application/vnd.agledger.key-statement+cbor';

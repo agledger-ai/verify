@@ -426,9 +426,9 @@ function keyWindowFailure(
 ): { code: FailureCode; message: string } | null {
   const placed = placeInKeyWindow(key, writtenAt, what);
   switch (placed.placement) {
+    // 'accounted' is past the distrust instant with a verifying signature: set
+    // aside before this is reached, so nothing is left to report here.
     case 'inside':
-    // Past the distrust instant with a verifying signature: set aside before
-    // this is reached, so nothing is left to report here.
     case 'accounted':
       return null;
     case 'not-yet-active':
@@ -463,6 +463,8 @@ function chainKeyOf(e: VaultEntryDump): string {
   if (e.chain_key != null) return String(e.chain_key);
   if (e.record_id != null) return String(e.record_id);
   const orgId = e.payload !== null && typeof e.payload === 'object' ? e.payload['orgId'] : undefined;
+  // The legacy wire value is stringified as it always was; its type is not narrowed here.
+  // oxlint-disable-next-line typescript/no-base-to-string -- orgId is an unvalidated payload value and String() is the documented legacy fallback
   return `schema:${orgId == null ? '__platform__' : String(orgId)}`;
 }
 
@@ -902,7 +904,7 @@ export function verifyVaultChains(
     return report(0);
   }
 
-  for (const chainKey of [...open.keys()]) {
+  for (const chainKey of open.keys()) {
     closeChain(chainKey);
   }
 
@@ -1064,7 +1066,7 @@ function verifyOneOrgAdminReadsLog(
     // leaf to the one before it and to the record it says was read.
     const leafClaim = claimDisagreement(leaf.cose_sign1, (c) => [
       ['position', c.position, i + 1],
-      ['previous_hash', c.previousHash, i === 0 ? null : leaves[i - 1]!.leaf_hash],
+      ['previous_hash', c.previousHash, i === 0 ? null : leaves[i - 1].leaf_hash],
       ['record_id', c.predicate['record_id'], leaf.record_id],
       ['subject digest', c.subjectSha256, uuidSubjectDigest(leaf.record_id)],
     ]);

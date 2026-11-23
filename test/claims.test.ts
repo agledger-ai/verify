@@ -6,15 +6,14 @@
  * while leaving the hash and root cross-checks intact, which is the gap the
  * claim checks close.
  */
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { orgReadMerkleRoot } from '@agledger/verify-core';
 import { verifyDump } from '../src/dump-verifier.js';
 import { loadDump } from '../src/loader.js';
 import type { Dump, Failure, VerifyReport } from '../src/types.js';
 
-const VALID = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance', 'dump', 'valid');
+const VALID = join(import.meta.dirname, '..', 'testdata', 'conformance', 'dump', 'valid');
 
 function only(report: VerifyReport): Failure {
   const all = [...report.vault.failures, ...report.orgAdminReads.failures];

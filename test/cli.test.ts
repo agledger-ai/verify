@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_FILENAMES } from '../src/loader.js';
 import {
@@ -313,7 +312,7 @@ describe('runCli (dump-dir end-to-end)', () => {
     for (const flag of ['--version', '-V']) {
       const result = runCli([flag]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toMatch(new RegExp(`^agledger-verify ${own.replace(/\./g, '\\.')} \\(@agledger/verify-core \\d+\\.\\d+\\.\\d+\\)\\n$`));
+      expect(result.stdout).toMatch(new RegExp(`^agledger-verify ${own.replaceAll('.', '\\.')} \\(@agledger/verify-core \\d+\\.\\d+\\.\\d+\\)\\n$`));
       expect(result.stderr).toBe('');
     }
   });
@@ -325,7 +324,7 @@ describe('runCli (dump-dir end-to-end)', () => {
   });
 
   it('lists a key note under key anchoring when an honest rotation off a key distrusted after it is voided', () => {
-    const fx = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'distrusted-rotation');
+    const fx = join(import.meta.dirname, 'fixtures', 'distrusted-rotation');
     const { pin, distrust } = JSON.parse(readFileSync(join(fx, 'meta.json'), 'utf-8')) as { pin: string; distrust: string };
     const result = runCli([join(fx, 'export.json'), '--keys', join(fx, 'keys.json'), '--trust-anchor', pin, '--distrusted-key', distrust]);
     expect(result.exitCode).toBe(EXIT_OK);
@@ -390,7 +389,7 @@ describe('runCli (dump-dir end-to-end)', () => {
     const tampered = cloneDump(dump);
     const target = tampered.vaultEntries[1]!;
     const buf = Buffer.from(target.cose_sign1, 'base64');
-    buf[buf.length - 1] = (buf[buf.length - 1]! ^ 0xff) & 0xff;
+    buf[buf.length - 1] = (buf.at(-1)! ^ 0xff) & 0xff;
     target.cose_sign1 = buf.toString('base64');
     target.payload_hash = createHash('sha256').update(buf).digest('hex');
     writeDump(tampered);
@@ -413,7 +412,7 @@ describe('runCli (dump-dir end-to-end)', () => {
 });
 
 describe('runCli key-policy flags (conformance corpus)', () => {
-  const CONFORMANCE = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance');
+  const CONFORMANCE = join(import.meta.dirname, '..', 'testdata', 'conformance');
   const keySub = join(CONFORMANCE, 'export', 'key-substitution.json');
   const validExport = join(CONFORMANCE, 'export', 'valid.json');
   const oobKeys = join(CONFORMANCE, 'export', 'keys-oob.json');
@@ -521,7 +520,7 @@ describe('runCli key-policy flags (conformance corpus)', () => {
  * from the export; the CLI reports what it advises with the flag names.
  */
 describe('runCli on an export after a dated distrust entry', () => {
-  const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'live-2.0.0', 'export-dated-distrust.json');
+  const fixture = join(import.meta.dirname, 'fixtures', 'live-2.0.0', 'export-dated-distrust.json');
   const F = 'sha256:78e7bba47a2dccdb1dbf4f2dc81dc58a5c58735abe480de49d05081d3452aa3a';
   const K = 'sha256:b649db0ec7c5c0fd921c2cb4d40466d91f4d98252dad2f7c0243851167b2d09e';
   const FROM = '2026-10-05T23:03:51.537314Z';

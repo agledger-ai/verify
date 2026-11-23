@@ -6,12 +6,11 @@
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { verifyDump } from '../src/dump-verifier.js';
 import { DEFAULT_FILENAMES, loadDump } from '../src/loader.js';
-import { EXIT_CANNOT_VERIFY, EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
+import { EXIT_VERIFICATION_FAILED, runCli } from '../src/cli.js';
 import type { Dump, FailureCode, VerifyReport } from '../src/types.js';
 import {
   buildHappyDump,
@@ -23,7 +22,7 @@ import {
   signingKeyDump,
 } from './fixtures.js';
 
-const VALID = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance', 'dump', 'valid');
+const VALID = join(import.meta.dirname, '..', 'testdata', 'conformance', 'dump', 'valid');
 const VALID_PIN = 'sha256:15d63684b387235c47fe3a81e3004b928f4ea535236a2c1b47465ce5fdd7ce0e';
 
 function codes(report: VerifyReport): FailureCode[] {
@@ -80,7 +79,7 @@ describe('the key statements themselves', () => {
     const dump = loadDump(VALID);
     const st = dump.keyStatements[0]!;
     const bytes = Buffer.from(st.statement[0]!, 'base64');
-    bytes[bytes.length - 1] = (bytes[bytes.length - 1]! ^ 0xff) & 0xff;
+    bytes[bytes.length - 1] = (bytes.at(-1)! ^ 0xff) & 0xff;
     st.statement[0] = bytes.toString('base64');
     const report = verifyDump(dump, { trustAnchors: [VALID_PIN] });
     expect(report.verdict).toBe('failed');

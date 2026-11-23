@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decode as cborDecode, encode as cborEncode, rfc8949EncodeOptions } from 'cborg';
 import { decodeCoseSign1, orgReadLeafHash, orgReadMerkleRoot } from '@agledger/verify-core';
@@ -23,7 +22,7 @@ import type { Dump, Failure, FailureCode, OrgAdminReadDump, VerifyReport } from 
  * signed tree head, one key activated before all of it).
  */
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 const VALID = join(HERE, '..', 'testdata', 'conformance', 'dump', 'valid');
 const UNSIGNED_KID = '0000000000000000';
 
@@ -158,7 +157,7 @@ describe('audit_vault chain entries: CHAIN_ENTRY_UNSIGNED', () => {
     const dump = validDump();
     for (const k of dump.signingKeys) delete k.activated_at;
     const chain = longChain(dump);
-    chain[chain.length - 1]!.signing_key_id = null;
+    chain.at(-1)!.signing_key_id = null;
     expect(only(verifyDump(dump))).toMatchObject({ code: 'CHAIN_ENTRY_UNSIGNED', position: chain.length });
   });
 
@@ -200,7 +199,7 @@ describe('audit_vault chain entries: CHAIN_ENTRY_UNSIGNED', () => {
     dump.vaultCheckpoints = [];
     dump.orgAdminReads = [];
     dump.orgAdminReadsCheckpoints = [];
-    const last = chain[chain.length - 1]!.created_at;
+    const last = chain.at(-1)!.created_at;
     dump.signingKeys[0]!.activated_at = shiftMs(last, 1);
     const report = verifyDump(dump);
     expect(report.verdict, JSON.stringify(codes(report))).toBe('unanchored');
@@ -351,7 +350,7 @@ describe('org_admin_reads leaves: the signature a real kid claims', () => {
   it('a leaf restamped over altered envelope bytes fails its signature', () => {
     const dump = validDump();
     const bytes = Buffer.from(dump.orgAdminReads[0]!.cose_sign1, 'base64');
-    bytes[bytes.length - 1] = (bytes[bytes.length - 1]! + 1) % 256;
+    bytes[bytes.length - 1] = (bytes.at(-1)! + 1) % 256;
     replaceLeaf(dump, 0, bytes.toString('base64'));
     expect(only(verifyDump(dump))).toMatchObject({ code: 'TENANT_READ_SIGNATURE_INVALID', leafIndex: 0 });
   });

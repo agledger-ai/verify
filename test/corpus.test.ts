@@ -1,7 +1,6 @@
 import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadDump } from '../src/loader.js';
 import { verifyDump } from '../src/dump-verifier.js';
@@ -15,7 +14,7 @@ import {
 } from '@agledger/verify-core';
 import type { Failure, FailureCode, VerifyReport } from '../src/types.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 const CONFORMANCE = join(here, '..', 'testdata', 'conformance');
 
 interface VectorOptions {

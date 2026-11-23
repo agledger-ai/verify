@@ -59,7 +59,7 @@ function rotated(): { dump: Dump; k1: KeyMaterial; k2: KeyMaterial } {
 /** Flip a bit of the signature, the last bytes of the envelope. */
 function wipeSignature(coseSign1: string): string {
   const bytes = Buffer.from(coseSign1, 'base64');
-  bytes[bytes.length - 1]! ^= 0x01;
+  bytes[bytes.length - 1] = bytes.at(-1)! ^ 0x01;
   return bytes.toString('base64');
 }
 

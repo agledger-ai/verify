@@ -94,6 +94,7 @@ describe('no truthiness tests on signing-key ids', () => {
 
 describe('no emoji in source files', () => {
   const emojiPattern =
+    // oxlint-disable-next-line no-misleading-character-class -- the class deliberately lists the variation selector, ZWJ and keycap marks as single code points to flag
     /[\u{1F300}-\u{1F9FF}\u{2700}-\u{27BF}\u{2600}-\u{26FF}\u{2300}-\u{23FF}\u{2B50}\u{2B55}\u{2705}\u{274C}\u{274E}\u{2728}\u{2734}\u{2744}\u{2747}\u{2757}\u{2763}\u{2764}\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]|[✓✅⚡⏳📋📊❌⚠️✨🔥💡🚀🎉]/gu;
 
   it('should not contain emoji characters', () => {

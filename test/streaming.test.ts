@@ -15,8 +15,7 @@
  */
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_FILENAMES,
@@ -36,7 +35,7 @@ import {
   type CannotVerifyReport,
 } from '../src/cli.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 const CORPUS_DUMPS = join(here, '..', 'testdata', 'conformance', 'dump');
 const VALID_DUMP = join(CORPUS_DUMPS, 'valid');
 /** The corpus vault key, the pin its installer printed. */
@@ -200,7 +199,7 @@ describe('fail-closed on a dump that is not in producer order', () => {
     if (!multi || byChain.size < 2) throw new Error('corpus dump needs 2+ chains, one with 2+ rows');
     const [splitKey, splitRows] = multi;
     const others = [...byChain.entries()].filter(([k]) => k !== splitKey).flatMap(([, ls]) => ls);
-    const reordered = [...splitRows.slice(0, -1), ...others, splitRows[splitRows.length - 1]!];
+    const reordered = [...splitRows.slice(0, -1), ...others, splitRows.at(-1)!];
     const staged = stageDump(VALID_DUMP, {
       [DEFAULT_FILENAMES.vaultEntries]: reordered.join('\n') + '\n',
     });
@@ -311,7 +310,7 @@ describe('vaults past the Node string cap', () => {
     expect(statSync(path).size).toBeGreaterThan(MAX_STRING);
 
     let count = 0;
-    for (const _line of readLines(path)) count++;
+    for (const line of readLines(path)) count += line === undefined ? 0 : 1;
     expect(count).toBe(handle.length * 500);
   }, 600_000);
 });

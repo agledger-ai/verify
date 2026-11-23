@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { spkiSha256 } from '@agledger/verify-core';
 import { DEFAULT_FILENAMES, loadDump } from '../src/loader.js';
@@ -16,7 +15,7 @@ import type { Dump, FailureCode, VerifyReport } from '../src/types.js';
  * a trusted pass. Every case is a mutation of a real corpus dump.
  */
 
-const CONFORMANCE = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance', 'dump');
+const CONFORMANCE = join(import.meta.dirname, '..', 'testdata', 'conformance', 'dump');
 const VALID = join(CONFORMANCE, 'valid');
 const HISTORY = join(CONFORMANCE, 'valid-unsigned-history-then-signed');
 

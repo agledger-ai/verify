@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { loadDump } from '../src/loader.js';
 import { verifyDump, verifyOrgAdminReadsChains, verifyVaultChains, walkDumpKeys } from '../src/dump-verifier.js';
 import { formatDumpReportText } from '../src/cli.js';
@@ -151,7 +150,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const tampered = cloneDump(dump);
     const target = tampered.vaultEntries[1]!;
     const buf = Buffer.from(target.cose_sign1, 'base64');
-    buf[buf.length - 1] = (buf[buf.length - 1]! ^ 0xff) & 0xff;
+    buf[buf.length - 1] = (buf.at(-1)! ^ 0xff) & 0xff;
     target.cose_sign1 = buf.toString('base64');
     target.payload_hash = createHash('sha256').update(buf).digest('hex');
     const report = verifyVaultChains(tampered.vaultEntries, tampered.vaultCheckpoints, walkDumpKeys(tampered.signingKeys));
@@ -293,7 +292,7 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const d = asSchemaChain(cloneDump(dump), 'schema:org-1', key);
     // Drop the row the checkpoint anchors: real tampering must still fail.
     const anchored = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
-    d.vaultEntries = d.vaultEntries.filter((e) => e !== anchored[anchored.length - 1]);
+    d.vaultEntries = d.vaultEntries.filter((e) => e !== anchored.at(-1));
     const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
     const missing = report.failures.find((f) => f.code === 'CHECKPOINT_ROW_MISSING');
     expect(missing).toBeDefined();
@@ -306,14 +305,14 @@ describe('verifyVaultChains: adversarial cases via verify-core', () => {
     const { dump, key } = buildHappyDump();
     const d = asSchemaChain(cloneDump(dump), 'schema:org-1', key);
     const onSchema = d.vaultEntries.filter((e) => e.chain_key === 'schema:org-1');
-    onSchema[onSchema.length - 1]!.payload_hash = '0'.repeat(64);
+    onSchema.at(-1)!.payload_hash = '0'.repeat(64);
     const report = verifyVaultChains(d.vaultEntries, d.vaultCheckpoints, walkDumpKeys(d.signingKeys));
     const entryFailure = report.failures.find((f) => f.scopeId === 'schema:org-1' && f.position !== undefined);
     expect(entryFailure).toBeDefined();
     expect(entryFailure!.message).toMatch(/^Chain schema:org-1 pos \d+: /);
 
     const plain = cloneDump(dump);
-    const recordEntry = plain.vaultEntries[plain.vaultEntries.length - 1]!;
+    const recordEntry = plain.vaultEntries.at(-1)!;
     recordEntry.payload_hash = '0'.repeat(64);
     const recordReport = verifyVaultChains(plain.vaultEntries, plain.vaultCheckpoints, walkDumpKeys(plain.signingKeys));
     const recordFailure = recordReport.failures.find((f) => f.position !== undefined);
@@ -423,7 +422,7 @@ describe('verifyOrgAdminReadsChains: adversarial cases', () => {
     const phantomLeaves = [...realLeaves];
     for (let i = 0; i < 5; i++) {
       phantomLeaves.push(
-        buildOrgAdminRead({ orgId: 'enterprise-1', leafIndex: realLeaves.length + i, key, previousHash: phantomLeaves[phantomLeaves.length - 1]!.leaf_hash }),
+        buildOrgAdminRead({ orgId: 'enterprise-1', leafIndex: realLeaves.length + i, key, previousHash: phantomLeaves.at(-1)!.leaf_hash }),
       );
     }
     tampered.orgAdminReadsCheckpoints = [buildOrgAdminReadsCheckpoint('enterprise-1', phantomLeaves, key)];
@@ -440,7 +439,7 @@ describe('a row whose envelope is missing', () => {
   // The Server never writes cose_sign1 null, so such a row was edited. It must
   // fail its own check, not throw out of the walk (which the CLI would report
   // as "could not verify" rather than as a failed verdict).
-  const VALID = join(dirname(fileURLToPath(import.meta.url)), '..', 'testdata', 'conformance', 'dump', 'valid');
+  const VALID = join(import.meta.dirname, '..', 'testdata', 'conformance', 'dump', 'valid');
   it.each([
     ['vaultCheckpoints', 'CHECKPOINT_CLAIM_MISMATCH', true],
     ['orgAdminReads', 'TENANT_READ_LEAF_HASH_MISMATCH', false],

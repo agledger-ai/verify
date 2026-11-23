@@ -31,7 +31,7 @@
     "prepack": "node -e \"fs.existsSync('tsconfig.json')&&child_process.execSync('npm run build',{stdio:'inherit'})\"",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo",
-    "lint": "tsc --noEmit",
+    "lint": "oxlint --type-aware .",
     "test": "vitest run",
     "deps:lag": "node scripts/dep-lag.mjs",
     "deps:refresh": "npm update && node scripts/dep-lag.mjs",
@@ -45,6 +45,8 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.3",
     "@types/node": "^24.0.0",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
     "publint": "^0.3.21",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"

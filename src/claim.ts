@@ -46,20 +46,20 @@ export function decodeSignedClaim(coseSign1: Uint8Array): SignedClaim | null {
     const cwt = ph.get(COSE_HEADER_CWT_CLAIMS);
     const chain = ph.get(AGLEDGER_LABEL_CHAIN);
     if (!(cwt instanceof Map) || !(chain instanceof Map)) return null;
-    const actor = cwt.get(AGLEDGER_LABEL_ACTOR);
+    const actor: unknown = cwt.get(AGLEDGER_LABEL_ACTOR);
     if (!(actor instanceof Map)) return null;
     const kid = ph.get(COSE_HEADER_KID);
     if (!(kid instanceof Uint8Array)) return null;
-    const iat = cwt.get(CWT_LABEL_IAT);
+    const iat: unknown = cwt.get(CWT_LABEL_IAT);
     if (typeof cwt.get(CWT_LABEL_ISS) !== 'string' || typeof cwt.get(CWT_LABEL_SUB) !== 'string') return null;
     if (typeof iat !== 'number' && typeof iat !== 'bigint') return null;
-    const position = chain.get(CHAIN_SUBLABEL_POSITION);
+    const position: unknown = chain.get(CHAIN_SUBLABEL_POSITION);
     if (typeof position !== 'number' && typeof position !== 'bigint') return null;
-    const prev = chain.get(CHAIN_SUBLABEL_PREVIOUS_HASH);
+    const prev: unknown = chain.get(CHAIN_SUBLABEL_PREVIOUS_HASH);
     if (prev !== null && !(prev instanceof Uint8Array)) return null;
     if (!(actor.get(ACTOR_SUBLABEL_KEY_ID) instanceof Uint8Array)) return null;
     if (!(actor.get(ACTOR_SUBLABEL_OWNER_ID) instanceof Uint8Array)) return null;
-    const role = actor.get(ACTOR_SUBLABEL_ROLE);
+    const role: unknown = actor.get(ACTOR_SUBLABEL_ROLE);
     if (role !== 'admin' && role !== 'agent' && role !== 'platform') return null;
     const predicateType = payload['predicateType'];
     if (typeof predicateType !== 'string' || !PREDICATE_TYPE.test(predicateType)) return null;
@@ -85,6 +85,6 @@ export function decodeSignedClaim(coseSign1: Uint8Array): SignedClaim | null {
 /** sha256 of a UUID's 16 bytes, the digest the Server signs as a record's subject. */
 export function uuidSubjectDigest(uuid: unknown): string | null {
   if (typeof uuid !== 'string') return null;
-  const h = uuid.replace(/-/g, '').toLowerCase();
+  const h = uuid.replaceAll('-', '').toLowerCase();
   return /^[0-9a-f]{32}$/.test(h) ? sha256Hex(Buffer.from(h, 'hex')) : null;
 }

@@ -723,8 +723,8 @@ function cannotVerify(message: string, format: ParsedArgs['reportFormat']): CliR
 /** A pin parser's message, named by the flag that carried the value. */
 function flagMessage(message: string): string {
   return message
-    .replace(/\bfederationKeys\[\d+\]\.history\b/g, '--federation-key-history')
-    .replace(/\bfederationKeys\[\d+\]/g, '--federation-key')
+    .replaceAll(/\bfederationKeys\[\d+\]\.history\b/g, '--federation-key-history')
+    .replaceAll(/\bfederationKeys\[\d+\]/g, '--federation-key')
     .replace(/^trustAnchors entry /, '--trust-anchor ')
     .replace(/^distrustedKeys entry /, '--distrusted-key ')
     .replace(/^distrustedKeys names /, '--distrusted-key names ')
@@ -1111,7 +1111,7 @@ export function loadAgentKeys(path: string): AgentPublicKeyJwk[] | string {
   }
   const jwks = list.map((entry) =>
     entry && typeof entry === 'object' && 'publicKeyJwk' in entry
-      ? (entry as { publicKeyJwk: unknown }).publicKeyJwk
+      ? entry.publicKeyJwk
       : entry,
   ) as AgentPublicKeyJwk[];
   try {

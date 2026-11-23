@@ -13,8 +13,7 @@
  * breaking its vault signature.
  */
 import { generateKeyPairSync, hash, sign as nodeSign } from 'node:crypto';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AGENT_SIGNATURE_CONTEXT, ed25519JwkThumbprint, type AgentPublicKeyJwk } from '@agledger/verify-core';
 import { loadDump } from '../src/loader.js';
@@ -23,7 +22,7 @@ import { EXIT_OK, runCli } from '../src/cli.js';
 import type { Dump } from '../src/types.js';
 import { buildVaultEntry, generateKey, signingKeyDump } from './fixtures.js';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 const DUMPS = join(HERE, '..', 'testdata', 'conformance', 'dump');
 const PLATFORM = '00000000-0000-0000-0000-000000000000';
 
