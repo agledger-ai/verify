@@ -67,7 +67,7 @@ jobs:
         run: npm run lint:pkg
 
       - name: Generate CycloneDX SBOM
-        run: npx cyclonedx-npm --output-format JSON --output-file sbom.cdx.json
+        run: npx cyclonedx-npm --omit dev --output-format JSON --output-file sbom.cdx.json
 
       # Deterministic npm tarball, the SBOM-attestation subject. npm tarballs are
       # reproducible, so this digest matches the artifact `npm publish` uploads
