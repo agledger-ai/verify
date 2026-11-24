@@ -22,8 +22,6 @@ updates:
       # @types/node tracks the LTS runtime we ship to, not the newest Node. This
       # package declares engines.node >=24, and typing against a newer
       # @types/node lets tsc accept APIs that do not exist on the runtime
-      # customers actually run. Node 24 (Krypton) is the current Active LTS;
-      # Node 26 goes LTS on 2026-10-28. Take the @types/node major once its
-      # matching Node line is LTS, not while it is still Current.
+      # customers actually run. Raise it together with the engines floor.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]

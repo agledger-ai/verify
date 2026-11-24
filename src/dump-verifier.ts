@@ -44,7 +44,7 @@
  * taken only from a chain this walk has itself verified clean, entry
  * signature included, and added to any keys the caller passes as `agentKeys`.
  *
- * Fail-closed posture (security review):
+ * Fail-closed posture:
  *   - A dump with zero vault entries is CHAIN_EMPTY, never a silent pass.
  *   - A vault entry lacking `cose_sign1` carries no signed envelope -> UNSUPPORTED_FORMAT;
  *     we do not parse it best-effort.

@@ -64,8 +64,7 @@ describe('no truthiness tests on signing-key ids', () => {
   // null is the system-wide unsigned-mode marker for these fields. A
   // truthiness test treats a tampered "" like null and skips the signature
   // check (fail-open); the empty string must instead fall through to key
-  // resolution and fail as an unknown key. Six instances of this class
-  // shipped in an earlier release; this pins it at zero.
+  // resolution and fail as an unknown key.
   // Legal spellings: `=== null`, `!== null`, and `??`.
   const TRUTHY_PATTERNS = [
     /if \((?:[\w.]+\.)?(?:signingKeyId|signing_key_id)\)/,
@@ -252,11 +251,9 @@ describe('published tarball carries no dangling source-map references', () => {
   });
 });
 
-describe('no tracker references', () => {
-  // These packages are public; the trackers they used to cite are not. A
-  // private issue number in a shipped docstring is a dead link for every
-  // consumer who reads it, and `dist/*.d.ts` puts it in their editor. Say
-  // what the behaviour is rather than where it was decided.
+describe('no issue references', () => {
+  // An issue number in a shipped docstring means nothing to a reader of
+  // `dist/*.d.ts`. Say what the behaviour is rather than where it was decided.
   const TRACKER_REF =
     /[a-z-]+#\d+|(?<![\w/])#\d{2,4}\b|\bF-\d{3}\b|\bCR-\d+\b/;
 
