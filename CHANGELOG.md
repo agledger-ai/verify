@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-## [2.2.0] - 2026-11-18
+## [2.2.0] - 2026-11-23
 
 Requires `@agledger/verify-core` 2.2.0.
 
